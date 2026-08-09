@@ -63,6 +63,23 @@ to that location, so keep the folder at `~/.phone-harness` (or re-run `pip
 install -e .` if you relocate it). If your Python can't reach PyPI to resolve the
 pyobjc deps, `--no-deps` skips them (they're installed by the line above).
 
+## Externally managed Python
+
+If `pip install` exits with `error: externally-managed-environment` (PEP 668 —
+common with Homebrew and system Python), install into a venv and put the entry
+point on your PATH yourself:
+
+```bash
+cd ~/.phone-harness
+python3 -m venv .venv                 # or: uv venv .venv
+.venv/bin/pip install pyobjc-framework-Quartz pyobjc-framework-Vision \
+    pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices
+.venv/bin/pip install -e . --no-deps
+ln -s ~/.phone-harness/.venv/bin/phone-harness ~/.local/bin/phone-harness
+```
+
+`.venv/` is already in `.gitignore`, so this leaves the tree clean.
+
 ## Register as a skill
 
 So the agent reaches for phone-harness on its own, register `SKILL.md` as a
@@ -91,3 +108,7 @@ Common cases:
   Mirroring shows a connect screen — open the app manually once.
 - **Taps do nothing**: Accessibility missing, or another window stole focus —
   events land only when the mirroring window is frontmost.
+- **`--doctor` says pyobjc is missing even though you installed it**: you ran
+  `./phone-harness --doctor`. The `./` form is the dev launcher and always uses
+  the system `python3`, which won't see packages installed anywhere else. Run
+  the installed `phone-harness --doctor` instead.

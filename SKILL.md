@@ -100,3 +100,9 @@ raises a clear message (call `connection_state()` yourself to check —
   fine for in-app buttons and list rows.
 - Mouse taps map to touches 1:1, but there is no multi-touch: no pinch, no
   two-finger gestures.
+- **Pull-to-refresh needs a wheel overscroll, not a drag.** A synthetic
+  touch-drag does not register as a pull: the list stays pinned, nothing
+  refreshes, and the screen then settles looking exactly as it would have on
+  success — so the failure is silent and you will read stale content as fresh.
+  Scroll the wheel past the top instead. Verify by capturing *during* the
+  gesture: if the content hasn't moved, the pull never happened.

@@ -63,6 +63,34 @@ to that location, so keep the folder at `~/.phone-harness` (or re-run `pip
 install -e .` if you relocate it). If your Python can't reach PyPI to resolve the
 pyobjc deps, `--no-deps` skips them (they're installed by the line above).
 
+## If pip refuses: externally managed Python
+
+Homebrew and system Python mark themselves externally managed (PEP 668), so the
+`pip install` lines above stop before installing anything:
+
+```text
+error: externally-managed-environment
+```
+
+Install into a virtualenv instead. The symlink is not optional — the whole
+design depends on `phone-harness` being callable from any directory, because
+that is how the skill invokes it:
+
+```bash
+cd ~/.phone-harness
+python3 -m venv .venv
+.venv/bin/pip install pyobjc-framework-Quartz pyobjc-framework-Vision pyobjc-framework-AppKit
+.venv/bin/pip install -e . --no-deps
+
+mkdir -p ~/bin
+ln -sf ~/.phone-harness/.venv/bin/phone-harness ~/bin/phone-harness
+```
+
+`.venv/` is already in `.gitignore`, so the tree stays clean. Confirm `~/bin` is
+on your PATH (`echo $PATH | tr ':' '\n' | grep -x "$HOME/bin"`) and add it in
+your shell profile if it is not — otherwise the command resolves only from this
+directory and the skill cannot reach it.
+
 ## Register as a skill
 
 So the agent reaches for phone-harness on its own, register `SKILL.md` as a
@@ -91,3 +119,17 @@ Common cases:
   Mirroring shows a connect screen — open the app manually once.
 - **Taps do nothing**: Accessibility missing, or another window stole focus —
   events land only when the mirroring window is frontmost.
+- **`--doctor` reports pyobjc missing on an install that works**: check which
+  form you ran. `./phone-harness` is the dev launcher and it hardcodes the
+  system interpreter:
+
+  ```sh
+  PYTHONPATH="$DIR/src" exec python3 -m phone_harness.run "$@"
+  ```
+
+  If pyobjc lives anywhere else — a venv, pipx, uv — that interpreter genuinely
+  cannot import it, and the failure looks identical to the missing dependency
+  the doctor exists to catch, so it sends you to reinstall packages you already
+  have. Run the installed command `phone-harness --doctor`, or point the
+  launcher at the right interpreter yourself:
+  `PYTHONPATH=src .venv/bin/python3 -m phone_harness.run --doctor`.

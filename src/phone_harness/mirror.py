@@ -41,8 +41,17 @@ def find_window():
     for w in wins:
         if w.get("kCGWindowOwnerPID") == pid and w.get("kCGWindowLayer", 1) == 0:
             b = w["kCGWindowBounds"]
-            if b["Width"] < 100:  # ignore panels/toolbars
-                continue
+            # No size filter. The old `Width < 100` guard was there to skip
+            # panels and toolbars, but PID + on-screen + layer 0 already
+            # excludes those: the app's other windows (Settings, Welcome, and
+            # four unnamed 1512x33 strips) are never in the on-screen list, so
+            # this loop sees exactly one candidate. What the guard did hit was
+            # a real mirroring window that macOS had shrunk — with Stage
+            # Manager on, an inactive window is parked in the left rail at
+            # about 38x130, which is on-screen and genuinely the phone. The
+            # guard discarded it, so every time another app took the stage the
+            # harness reported a disconnected phone (#8). Window list order is
+            # front to back, so the first match is the frontmost.
             return {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
                     "id": int(w["kCGWindowNumber"])}
     return None

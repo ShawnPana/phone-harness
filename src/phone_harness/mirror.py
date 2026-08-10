@@ -22,11 +22,24 @@ TMP.mkdir(exist_ok=True)
 # --- window / app state ---
 
 def find_window():
-    """{x, y, w, h, id} of the mirroring window in screen points, or None."""
+    """{x, y, w, h, id} of the mirroring window in screen points, or None.
+
+    Windows are matched by the owner PID of the com.apple.ScreenContinuity
+    process, never by kCGWindowOwnerName. The owner name is localized — macOS
+    reports "iPhone镜像" on a Simplified Chinese system and "iPhone鏡像輸出" on
+    a Traditional Chinese one — so an equality test against the English
+    APP_NAME finds nothing, and the harness reports a permanently disconnected
+    phone on any non-English Mac. The bundle id behind running_app() is never
+    localized.
+    """
+    app = running_app()
+    if app is None:
+        return None                     # not running, so it owns no windows
+    pid = app.processIdentifier()
     wins = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
     for w in wins:
-        if w.get("kCGWindowOwnerName") == APP_NAME and w.get("kCGWindowLayer", 1) == 0:
+        if w.get("kCGWindowOwnerPID") == pid and w.get("kCGWindowLayer", 1) == 0:
             b = w["kCGWindowBounds"]
             if b["Width"] < 100:  # ignore panels/toolbars
                 continue

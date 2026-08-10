@@ -5,13 +5,26 @@ PH_AGENT_WORKSPACE/agent_helpers.py (defaults to <repo>/agent-workspace).
 Raw Quartz is always available: `import Quartz` in your script for anything
 these helpers don't cover.
 """
-import hashlib, importlib.util, os, time
+import hashlib, importlib, importlib.util, os, time
 from pathlib import Path
 
-from . import mirror, ocr as _ocr
-from .mirror import (  # re-exported input primitives
-    tap, long_press, drag, press, type_text, activate, find_window,
-)
+from . import ocr as _ocr
+
+# Every helper below rests on two primitives — capture + tap — so the transport
+# is swappable. PHONE_HARNESS_BACKGROUND=1 selects the background backend, which
+# drives iPhone Mirroring without ever taking focus (SkyLight event records);
+# the default is the classic mirror backend that must be frontmost.
+_BACKGROUND = os.environ.get("PHONE_HARNESS_BACKGROUND") in ("1", "true", "yes")
+mirror = importlib.import_module(
+    ".background" if _BACKGROUND else ".mirror", __package__)
+
+tap = mirror.tap
+long_press = mirror.long_press
+drag = mirror.drag
+press = mirror.press
+type_text = mirror.type_text
+activate = mirror.activate
+find_window = mirror.find_window
 
 CORE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CORE_DIR.parent.parent

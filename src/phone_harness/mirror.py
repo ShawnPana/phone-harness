@@ -9,7 +9,7 @@ import subprocess, tempfile, time
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import NSRunningApplication
 
 APP_NAME = "iPhone Mirroring"
 BUNDLE_ID = "com.apple.ScreenContinuity"
@@ -40,21 +40,61 @@ def running_app():
     return apps[0] if apps else None
 
 
+def frontmost_window():
+    """The frontmost normal-layer window, or None.
+
+    NOT NSWorkspace.frontmostApplication(): that value is delivered by a
+    workspace notification, and this process has no run loop to receive one,
+    so it returns whatever was true when the process first looked and never
+    updates. Believing it is how input ends up in the wrong app — activate()
+    would see a stale "already frontmost" and skip focusing entirely, and
+    every CGEvent after that lands in whatever the user actually has focused.
+    The window list is queried live, costs ~7ms, and needs no run loop.
+    """
+    wins = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly
+        | Quartz.kCGWindowListExcludeDesktopElements,
+        Quartz.kCGNullWindowID) or []
+    for w in wins:                      # front-to-back order
+        if w.get("kCGWindowLayer", 1) == 0:
+            return w
+    return None
+
+
 def is_frontmost():
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return bool(front and front.bundleIdentifier() == BUNDLE_ID)
+    app = running_app()
+    if app is None:
+        return False
+    win = frontmost_window()
+    return bool(win) and win.get("kCGWindowOwnerPID") == app.processIdentifier()
 
 
-def activate():
-    """Bring iPhone Mirroring frontmost. Does NOT launch it — opening the app
-    and connecting the phone is the user's job, not the agent's."""
+def activate(timeout=2.5):
+    """Bring iPhone Mirroring frontmost and *confirm* it. Does NOT launch it —
+    opening the app and connecting the phone is the user's job, not the agent's.
+
+    Raises rather than returning unfocused: a silent failure here means every
+    subsequent tap and drag is delivered to some other app, which is both
+    confusing to debug and potentially destructive.
+    """
     app = running_app()
     if app is None:
         raise RuntimeError(
             f"{APP_NAME} isn't running — open it and connect your phone.")
-    if not is_frontmost():
-        app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
-        time.sleep(0.5)
+    if is_frontmost():
+        return
+    app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(0.05)
+        if is_frontmost():
+            return
+    win = frontmost_window() or {}
+    owner = win.get("kCGWindowOwnerName", "unknown")
+    raise RuntimeError(
+        f"could not bring {APP_NAME} frontmost after {timeout:.1f}s — "
+        f"{owner!r} still has focus. Input would be swallowed, so nothing "
+        f"was sent.")
 
 
 def ensure_window(timeout=5.0):

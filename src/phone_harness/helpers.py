@@ -11,12 +11,23 @@ from pathlib import Path
 from . import ocr as _ocr
 
 # Every helper below rests on two primitives — capture + tap — so the transport
-# is swappable. PHONE_HARNESS_BACKGROUND=1 selects the background backend, which
-# drives iPhone Mirroring without ever taking focus (SkyLight event records);
-# the default is the classic mirror backend that must be frontmost.
-_BACKGROUND = os.environ.get("PHONE_HARNESS_BACKGROUND") in ("1", "true", "yes")
-mirror = importlib.import_module(
-    ".background" if _BACKGROUND else ".mirror", __package__)
+# is swappable. The background backend drives iPhone Mirroring without ever
+# taking focus (SkyLight event records) and is the default: not stealing the
+# user's screen is what you want unless something is broken. Set
+# PHONE_HARNESS_BACKGROUND=0 to force the classic mirror backend, which must
+# bring the window frontmost. If the background backend can't load (its private
+# SkyLight symbols aren't guaranteed across macOS builds), fall back rather than
+# leaving the harness unusable.
+_BACKGROUND = os.environ.get("PHONE_HARNESS_BACKGROUND", "1").lower() not in (
+    "0", "false", "no")
+if _BACKGROUND:
+    try:
+        mirror = importlib.import_module(".background", __package__)
+    except Exception:
+        mirror = importlib.import_module(".mirror", __package__)
+        _BACKGROUND = False
+else:
+    mirror = importlib.import_module(".mirror", __package__)
 
 tap = mirror.tap
 long_press = mirror.long_press

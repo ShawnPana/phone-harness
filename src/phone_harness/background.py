@@ -86,6 +86,9 @@ def find_window():
 
 running_app = mirror.running_app
 window_ax_content = mirror.window_ax_content
+focus_probe = mirror.focus_probe
+interruption = mirror.interruption
+frontmost_window = mirror.frontmost_window
 
 
 # Shared with the mirror backend. Nothing here needs focus, but screen_info()

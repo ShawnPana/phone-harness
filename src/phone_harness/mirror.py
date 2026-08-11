@@ -6,6 +6,8 @@ macOS accessibility sees nothing inside it, so input is synthesized at the
 HID level and the window must be frontmost or events are swallowed.
 """
 import subprocess, tempfile, time
+
+import ApplicationServices as _AS
 from pathlib import Path
 
 import Quartz
@@ -55,6 +57,57 @@ def find_window():
             return {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
                     "id": int(w["kCGWindowNumber"])}
     return None
+
+
+def focus_probe():
+    """(app_frontmost, depth) — the two interruptions a user actually notices.
+
+    app_frontmost  does iPhone Mirroring have keyboard focus / the menu bar.
+                   Read from the accessibility API, which reports it live.
+                   NSWorkspace.frontmostApplication() cannot be used: it is
+                   delivered by a workspace notification, and a process with no
+                   run loop never receives one — measured returning the same
+                   stale pid across two deliberate app switches.
+    depth          our window's index in the front-to-back on-screen window
+                   list, so 0 means nothing is drawn over it and None means it
+                   is not on screen at all.
+
+    The two are read from different sources on purpose. Deriving focus from
+    z-order makes "took focus but stayed behind" unrepresentable, which is
+    exactly the state worth telling apart from "jumped in front".
+    """
+    app = running_app()
+    if app is None:
+        return None, None
+    pid = app.processIdentifier()
+    el = _AS.AXUIElementCreateApplication(pid)
+    err, val = _AS.AXUIElementCopyAttributeValue(el, "AXFrontmost", None)
+    front = None if err else bool(val)
+    wins = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
+    layer0 = [w for w in wins if w.get("kCGWindowLayer", 1) == 0]
+    depth = next((i for i, w in enumerate(layer0)
+                  if w.get("kCGWindowOwnerPID") == pid), None)
+    return front, depth
+
+
+def interruption(before, after):
+    """{raised, stole_focus} between two focus_probe() readings.
+
+    Raises when either reading has no focus value rather than reporting a
+    clean result. AXFrontmost errors when Accessibility permission is missing,
+    and a probe that silently answers "nothing happened" because it could not
+    look is worse than no probe at all.
+    """
+    b_front, b_depth = before
+    a_front, a_depth = after
+    if b_front is None or a_front is None:
+        raise RuntimeError(
+            "focus_probe() could not read AXFrontmost — grant the terminal "
+            "Accessibility permission. Refusing to report an unmeasured "
+            "result as no interruption.")
+    raised = a_depth is not None and (b_depth is None or a_depth < b_depth)
+    return {"raised": bool(raised), "stole_focus": bool(a_front and not b_front)}
 
 
 def running_app():

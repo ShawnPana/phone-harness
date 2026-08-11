@@ -92,7 +92,12 @@ raises a clear message (call `connection_state()` yourself to check —
   tap through the resume screen — stop and ask the user to lock/connect the
   phone (see "Connection is the user's job").
 - **`type_text` needs an iOS text field focused first** — tap the field, wait
-  for the keyboard, then type.
+  for the keyboard, then type. It fails *silently* when nothing is focused: the
+  text goes to whatever is focused instead, or nowhere. Verify with a capture,
+  and if a tap will not take focus, `press("tab")` moves between fields.
+- **`type_text` pastes; it does not type.** That is deliberate — the keystroke
+  path runs through iOS autocorrect, which rewrites words as they land ("Thu"
+  becomes "thru"). Pass `keystrokes=True` for fields that need real key events.
 - **Home-Screen labels are not tap targets.** `tap_text("Weather")` hits the
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works

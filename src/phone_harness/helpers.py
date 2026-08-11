@@ -214,10 +214,14 @@ def press(combo):
     return send("input.keys", combo=combo)
 
 
-def type_text(text, delay=0.03):
+def type_text(text, delay=0.03, keystrokes=False):
     """Type into the focused field. Tap the field and let the keyboard appear
-    first — text sent before it has focus goes nowhere."""
-    return send("input.text", s=text, delay=delay)
+    first — text sent before it has focus goes nowhere, silently, so check a
+    capture afterwards.
+
+    Pastes by default so the text arrives exactly as written; keystrokes=True
+    sends real key events for fields that need them."""
+    return send("input.text", s=text, delay=delay, keystrokes=keystrokes)
 
 
 # --- gestures relative to the screen ----------------------------------------

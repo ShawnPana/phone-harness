@@ -6,6 +6,7 @@ macOS accessibility sees nothing inside it, so input is synthesized at the
 HID level and the window must be frontmost or events are swallowed.
 """
 import subprocess, tempfile, time
+from contextlib import contextmanager
 
 import ApplicationServices as _AS
 from pathlib import Path
@@ -402,6 +403,52 @@ _MODIFIERS = {
     "option": Quartz.kCGEventFlagMaskAlternate,
     "ctrl": Quartz.kCGEventFlagMaskControl,
 }
+# The physical keys behind those flags. Left-hand only: a synthesized event has
+# no physical side, so kVK_RightShift and friends (54, 60, 61, 62) would be dead
+# weight. kVK_CapsLock (57) is left out on purpose — it is a toggle with its own
+# flag mask and synthesizes unreliably, and shift covers every case we want.
+_MOD_KEYCODES = {
+    "cmd": 55, "shift": 56, "alt": 58, "option": 58, "ctrl": 59,
+}
+
+
+def _post_key(code, down, flags=0):
+    ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
+    if flags:
+        # Only Mac-side consumers ever read these. Set them so macOS's own
+        # state machine stays consistent; iOS never sees them.
+        Quartz.CGEventSetFlags(ev, flags)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+
+
+@contextmanager
+def _holding(mods):
+    """Hold real modifier keys down around the body.
+
+    iPhone Mirroring forwards raw HID keycodes to iOS and drops the CGEvent
+    flag mask, so a flag set on the key event reaches the Mac app but never the
+    phone. That is why cmd+1 (a menu shortcut the Mac app handles) works while
+    cmd+v aimed at an iOS text field arrives as a bare 'v'. Shift is a key you
+    hold, not a bit you set.
+    """
+    acc = 0
+    for m in mods:
+        acc |= _MODIFIERS[m]
+        _post_key(_MOD_KEYCODES[m], True, acc)
+        time.sleep(0.01)
+    try:
+        yield acc
+    finally:
+        # Unconditional: a modifier left latched by an exception mid-string
+        # corrupts every later keystroke in the session, and the damage shows
+        # up somewhere else entirely.
+        for m in reversed(mods):
+            # Clear the bit *before* posting the release. A key-up still
+            # carrying its own flag reads as "still held", which latches shift
+            # on and turns the rest of the string into 1,200 -> !<@)).
+            acc &= ~_MODIFIERS[m]
+            _post_key(_MOD_KEYCODES[m], False, acc)
+            time.sleep(0.01)
 
 
 def press(combo):
@@ -411,15 +458,13 @@ def press(combo):
     key, mods = parts[-1], parts[:-1]
     if key not in _KEYCODES:
         raise ValueError(f"unknown key {key!r}")
-    flags = 0
     for m in mods:
-        flags |= _MODIFIERS[m]
-    for down in (True, False):
-        ev = Quartz.CGEventCreateKeyboardEvent(None, _KEYCODES[key], down)
-        if flags:
-            Quartz.CGEventSetFlags(ev, flags)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-        time.sleep(0.03)
+        if m not in _MOD_KEYCODES:
+            raise ValueError(f"unknown modifier {m!r}")
+    with _holding(mods) as flags:
+        for down in (True, False):
+            _post_key(_KEYCODES[key], down, flags)
+            time.sleep(0.03)
 
 
 # iPhone Mirroring forwards raw HID keycodes to iOS and ignores the unicode
@@ -448,9 +493,35 @@ def _keycode_for(ch):
     return code, shifted
 
 
-def type_text(text, delay=0.03):
-    """Type text into the focused iOS field via real keycodes (US layout).
-    \n presses return. Raises on characters with no keycode (emoji etc.)."""
+def paste_with(press_fn, text):
+    """Put text on the Mac clipboard and paste it into the phone.
+
+    Takes the press function rather than calling one, because the two input
+    paths reach the phone differently (posted to the window vs posted to the
+    pid) and only the caller knows which is in play. The clipboard round-trip
+    itself is identical, and worth having in exactly one place.
+    """
+    prior = subprocess.run(["pbpaste"], capture_output=True).stdout
+    try:
+        subprocess.run(["pbcopy"], input=text.encode())
+        # Fail here rather than pasting stale clipboard contents into the phone.
+        if subprocess.run(["pbpaste"], capture_output=True).stdout != text.encode():
+            raise RuntimeError("clipboard did not take the text; cannot paste")
+        time.sleep(0.15)   # the Mac clipboard has to reach the phone
+        press_fn("cmd+v")
+        time.sleep(0.2)    # and the paste has to land before we restore it
+    finally:
+        subprocess.run(["pbcopy"], input=prior)
+
+
+def _type_keystrokes(text, delay=0.03):
+    """Type via real keycodes (US layout). Newline presses return. Raises on
+    characters with no keycode (emoji etc.).
+
+    Subject to iOS autocorrect, which rewrites words as they are typed --
+    'Thu' becomes 'thru', 'Fri' becomes 'Friday'. Prefer type_text's paste
+    path for anything whose exact wording matters.
+    """
     _focus()
     for i, line in enumerate(text.split("\n")):
         if i:
@@ -459,10 +530,24 @@ def type_text(text, delay=0.03):
             code, shifted = _keycode_for(ch)
             if code is None:
                 raise ValueError(f"cannot type {ch!r} via keycodes")
-            for down in (True, False):
-                ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
-                if shifted:
-                    Quartz.CGEventSetFlags(ev, Quartz.kCGEventFlagMaskShift)
-                Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-                time.sleep(0.01)
+            with _holding(["shift"] if shifted else []) as flags:
+                for down in (True, False):
+                    _post_key(code, down, flags)
+                    time.sleep(0.01)
             time.sleep(delay)
+
+
+def type_text(text, delay=0.03, keystrokes=False):
+    """Type text into the focused iOS field.
+
+    Pastes by default, which is immune to both autocorrect and keyboard layout
+    -- the text arrives exactly as given. Set keystrokes=True for fields that
+    need real key events.
+
+    Either path needs a focused field. Neither can tell whether it got one:
+    text sent to an unfocused field goes nowhere, silently, so verify with a
+    capture afterwards.
+    """
+    if keystrokes or not text:
+        return _type_keystrokes(text, delay)
+    paste_with(press, text)

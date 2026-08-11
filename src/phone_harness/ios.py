@@ -98,8 +98,8 @@ class IPhone(Backend):
     def _input_keys(self, combo):
         self.mirror.press(combo)
 
-    def _input_text(self, s, delay=0.03):
-        self.mirror.type_text(s, delay=delay)
+    def _input_text(self, s, delay=0.03, keystrokes=False):
+        self.mirror.type_text(s, delay=delay, keystrokes=keystrokes)
 
     # --- navigation -----------------------------------------------------
 
@@ -117,7 +117,10 @@ class IPhone(Backend):
         """Spotlight (Cmd+3): type the name, let results populate, commit."""
         self.mirror.press("cmd+3")
         _sleep(0.9)
-        self.mirror.type_text(name)
+        # Keystrokes on purpose: Spotlight is the load-bearing path behind
+        # open_app and demonstrably works this way. Move it to paste only once
+        # that path has miles on it.
+        self.mirror.type_text(name, keystrokes=True)
         _sleep(1.2)
         self.mirror.press("return")
         return name

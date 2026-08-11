@@ -23,8 +23,14 @@ TMP.mkdir(exist_ok=True)
 
 # --- window / app state ---
 
-def find_window():
+def find_window(on_screen=True):
     """{x, y, w, h, id} of the mirroring window in screen points, or None.
+
+    on_screen=False also finds the window when it is on another Space, hidden,
+    or minimized. Only backends that address the window by id can use that:
+    SkyLight event records reach it wherever it is, while CGEvents are posted
+    at global screen coordinates and would land on whatever is actually in
+    front. This module posts CGEvents, so it keeps the on-screen default.
 
     Windows are matched by the owner PID of the com.apple.ScreenContinuity
     process, never by kCGWindowOwnerName. The owner name is localized — macOS
@@ -38,24 +44,32 @@ def find_window():
     if app is None:
         return None                     # not running, so it owns no windows
     pid = app.processIdentifier()
-    wins = Quartz.CGWindowListCopyWindowInfo(
-        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
-    for w in wins:
-        if w.get("kCGWindowOwnerPID") == pid and w.get("kCGWindowLayer", 1) == 0:
-            b = w["kCGWindowBounds"]
-            # No size filter. The old `Width < 100` guard was there to skip
-            # panels and toolbars, but PID + on-screen + layer 0 already
-            # excludes those: the app's other windows (Settings, Welcome, and
-            # four unnamed 1512x33 strips) are never in the on-screen list, so
-            # this loop sees exactly one candidate. What the guard did hit was
-            # a real mirroring window that macOS had shrunk — with Stage
-            # Manager on, an inactive window is parked in the left rail at
-            # about 38x130, which is on-screen and genuinely the phone. The
-            # guard discarded it, so every time another app took the stage the
-            # harness reported a disconnected phone (#8). Window list order is
-            # front to back, so the first match is the frontmost.
-            return {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
-                    "id": int(w["kCGWindowNumber"])}
+    opts = (Quartz.kCGWindowListOptionOnScreenOnly if on_screen
+            else Quartz.kCGWindowListOptionAll)
+    wins = Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID) or []
+    cands = [w for w in wins if w.get("kCGWindowOwnerPID") == pid
+             and w.get("kCGWindowLayer", 1) == 0]
+    if not on_screen:
+        # Off the active Space the list also carries the app's other windows:
+        # a Settings sheet, a Welcome dialog, and four unnamed 1512x33 strips.
+        # The phone window is the one whose title is the app's own name. Both
+        # strings are localized together, so this still picks it out where a
+        # comparison against the English constant would not.
+        named = [w for w in cands
+                 if w.get("kCGWindowName") == w.get("kCGWindowOwnerName")]
+        cands = named or cands
+    # No size filter. The old `Width < 100` guard was there to skip panels and
+    # toolbars, but PID + layer 0 already excludes those. What the guard did
+    # hit was a real mirroring window that macOS had shrunk — with Stage
+    # Manager on, an inactive window is parked in the left rail at about
+    # 38x130, which is on-screen and genuinely the phone. The guard discarded
+    # it, so every time another app took the stage the harness reported a
+    # disconnected phone (#8). Window list order is front to back, so the
+    # first candidate is the frontmost.
+    for w in cands:
+        b = w["kCGWindowBounds"]
+        return {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
+                "id": int(w["kCGWindowNumber"])}
     return None
 
 

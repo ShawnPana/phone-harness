@@ -7,7 +7,7 @@ Use once. For phone work, read `SKILL.md`.
 - macOS Sequoia+ with iPhone Mirroring paired to the phone (open the app once
   manually to pair — pairing prompts need the physical phone).
 - Python 3.12+ with pyobjc (`pip install pyobjc-framework-Quartz
-  pyobjc-framework-Vision pyobjc-framework-AppKit`).
+  pyobjc-framework-Vision pyobjc-framework-Cocoa`).
 - The terminal app needs two permissions in System Settings > Privacy &
   Security. **The toggles require the user:**
   - **Accessibility** — taps and keystrokes. Takes effect immediately.
@@ -36,7 +36,7 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapt
 ```bash
 git clone https://github.com/ShawnPana/phone-harness ~/.phone-harness   # canonical home
 cd ~/.phone-harness
-pip install pyobjc-framework-Quartz pyobjc-framework-Vision pyobjc-framework-AppKit
+pip install pyobjc-framework-Quartz pyobjc-framework-Vision pyobjc-framework-Cocoa
 pip install -e . --no-deps            # installs the global `phone-harness` command
 
 # register as an agent skill so Claude Code / Codex auto-use it (see below)

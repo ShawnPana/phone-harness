@@ -115,6 +115,82 @@ def running_app():
     return apps[0] if apps else None
 
 
+def window_ax_content():
+    """Native UI drawn inside the mirroring window, as [(role, text)].
+
+    A connected session returns []. The phone image is a video stream and
+    accessibility cannot see into it — that is the same property that forces
+    the harness to read the screen with OCR.
+
+    The interstitials macOS draws in that window when the session is not
+    usable (iPhone in Use, paused, ended, locked, connect) are ordinary Mac
+    views, so they come back with their labels and buttons. Detecting them by
+    the presence of real UI rather than by searching for known phrases is what
+    makes this work on a non-English system, and on whatever screen Apple adds
+    next.
+
+    Observed: 0 elements live, 4 on "iPhone in Use". Button titles are not
+    dependable — the same screen reported 'Connect' once and an empty title a
+    minute later — so callers should read AXStaticText for anything shown to
+    a user.
+    """
+    app = running_app()
+    if app is None:
+        return []
+    win = find_window()
+    if win is None:
+        return []
+    err, ax_wins = _AS.AXUIElementCopyAttributeValue(
+        _AS.AXUIElementCreateApplication(app.processIdentifier()),
+        "AXWindows", None)
+    if err or not ax_wins:
+        return []
+
+    def geom(node):
+        e1, pos = _AS.AXUIElementCopyAttributeValue(node, "AXPosition", None)
+        e2, size = _AS.AXUIElementCopyAttributeValue(node, "AXSize", None)
+        if e1 or e2 or pos is None or size is None:
+            return None
+        ok, p = _AS.AXValueGetValue(pos, _AS.kAXValueCGPointType, None)
+        ok2, sz = _AS.AXValueGetValue(size, _AS.kAXValueCGSizeType, None)
+        return (p.x, p.y, sz.width, sz.height) if ok and ok2 else None
+
+    # Match the phone window by geometry. The app also owns a Settings sheet
+    # and a Welcome dialog; counting their contents would report a healthy
+    # session as blocked.
+    target = None
+    for w in ax_wins:
+        g = geom(w)
+        if g and abs(g[0] - win["x"]) < 4 and abs(g[1] - win["y"]) < 4 \
+                and abs(g[2] - win["w"]) < 4 and abs(g[3] - win["h"]) < 4:
+            target = w
+            break
+    if target is None:
+        return []
+
+    out = []
+
+    def walk(node, depth=0):
+        if depth > 6 or len(out) > 40:
+            return
+        e, role = _AS.AXUIElementCopyAttributeValue(node, "AXRole", None)
+        role = "" if e else str(role)
+        if role in ("AXStaticText", "AXButton", "AXTextField",
+                    "AXSecureTextField", "AXImage"):
+            parts = []
+            for attr in ("AXTitle", "AXValue", "AXDescription"):
+                ea, v = _AS.AXUIElementCopyAttributeValue(node, attr, None)
+                if not ea and isinstance(v, str) and v.strip():
+                    parts.append(v.strip())
+            out.append((role, " ".join(parts)))
+        ek, kids = _AS.AXUIElementCopyAttributeValue(node, "AXChildren", None)
+        for k in (kids or []):
+            walk(k, depth + 1)
+
+    walk(target)
+    return out
+
+
 def frontmost_window():
     """The frontmost normal-layer window, or None — i.e. *which* app is in
     front. Queried live from the window list, which needs no run loop."""

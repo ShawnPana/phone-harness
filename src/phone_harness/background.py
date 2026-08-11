@@ -71,6 +71,7 @@ _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
 find_window = mirror.find_window
 running_app = mirror.running_app
+window_ax_content = mirror.window_ax_content
 
 
 # Shared with the mirror backend. Nothing here needs focus, but screen_info()

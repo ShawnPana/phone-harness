@@ -11,7 +11,7 @@ import ApplicationServices as _AS
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import NSRunningApplication
 
 APP_NAME = "iPhone Mirroring"
 BUNDLE_ID = "com.apple.ScreenContinuity"
@@ -115,21 +115,65 @@ def running_app():
     return apps[0] if apps else None
 
 
+def frontmost_window():
+    """The frontmost normal-layer window, or None — i.e. *which* app is in
+    front. Queried live from the window list, which needs no run loop."""
+    wins = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly
+        | Quartz.kCGWindowListExcludeDesktopElements,
+        Quartz.kCGNullWindowID) or []
+    for w in wins:                      # front-to-back order
+        if w.get("kCGWindowLayer", 1) == 0:
+            return w
+    return None
+
+
 def is_frontmost():
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return bool(front and front.bundleIdentifier() == BUNDLE_ID)
+    """Does iPhone Mirroring have keyboard focus.
+
+    Reads AXFrontmost through focus_probe(), not
+    NSWorkspace.frontmostApplication(): that value arrives by workspace
+    notification, and a process with no run loop never receives one, so it
+    reports whatever was true when the process first looked. Believing it is
+    how input ends up in the wrong app — activate() sees a stale "already
+    frontmost", skips focusing, and every CGEvent after that lands in
+    whatever the user actually has focused.
+
+    Focus is asked for directly rather than inferred from window order.
+    Measured on a real steal, AXFrontmost reported iPhone Mirroring while the
+    frontmost window still belonged to the user's terminal: the app had taken
+    the keyboard without moving a window. Reading z-order alone would have
+    called that no change, which is precisely the case worth catching.
+    """
+    return bool(focus_probe()[0])
 
 
-def activate():
-    """Bring iPhone Mirroring frontmost. Does NOT launch it — opening the app
-    and connecting the phone is the user's job, not the agent's."""
+def activate(timeout=2.5):
+    """Bring iPhone Mirroring frontmost and *confirm* it. Does NOT launch it —
+    opening the app and connecting the phone is the user's job, not the agent's.
+
+    Raises rather than returning unfocused: a silent failure here means every
+    subsequent tap and drag is delivered to some other app, which is both
+    confusing to debug and potentially destructive.
+    """
     app = running_app()
     if app is None:
         raise RuntimeError(
             f"{APP_NAME} isn't running — open it and connect your phone.")
-    if not is_frontmost():
-        app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
-        time.sleep(0.5)
+    if is_frontmost():
+        return
+    app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(0.05)
+        if is_frontmost():
+            return
+    win = frontmost_window() or {}
+    owner = win.get("kCGWindowOwnerName", "unknown")
+    raise RuntimeError(
+        f"could not bring {APP_NAME} frontmost after {timeout:.1f}s — "
+        f"{owner!r} still has focus. Input would be swallowed, so nothing "
+        f"was sent.")
 
 
 def ensure_window(timeout=5.0):

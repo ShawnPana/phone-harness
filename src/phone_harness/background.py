@@ -38,7 +38,7 @@ import ctypes, ctypes.util, struct, tempfile, time
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import NSRunningApplication
 
 from . import mirror
 
@@ -73,9 +73,10 @@ find_window = mirror.find_window
 running_app = mirror.running_app
 
 
-def is_frontmost():
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return bool(front and front.bundleIdentifier() == BUNDLE_ID)
+# Shared with the mirror backend. Nothing here needs focus, but screen_info()
+# reports the value and a wrong answer sends people hunting for focus bugs
+# that are not there.
+is_frontmost = mirror.is_frontmost
 
 
 def activate():

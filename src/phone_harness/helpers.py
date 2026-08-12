@@ -190,6 +190,8 @@ def _text_set(boxes):
 
 def _overlap(a, b):
     """Jaccard overlap of two text sets: ~1.0 = same screen, low = it moved."""
+    if not a and not b:
+        return 1.0      # a still screen with no readable text is the same screen
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)

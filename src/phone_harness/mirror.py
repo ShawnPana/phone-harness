@@ -22,17 +22,43 @@ TMP.mkdir(exist_ok=True)
 # --- window / app state ---
 
 def find_window():
-    """{x, y, w, h, id} of the mirroring window in screen points, or None."""
-    wins = Quartz.CGWindowListCopyWindowInfo(
-        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
-    for w in wins:
-        if w.get("kCGWindowOwnerName") == APP_NAME and w.get("kCGWindowLayer", 1) == 0:
-            b = w["kCGWindowBounds"]
-            if b["Width"] < 100:  # ignore panels/toolbars
+    """{x, y, w, h, id} of the mirroring window in screen points, or None.
+
+    Match by process (bundle id) rather than the English owner name — on
+    Chinese macOS the owner is "iPhone镜像", not "iPhone Mirroring".
+    """
+    app = running_app()
+    pids = {app.processIdentifier()} if app is not None else set()
+    # Localized owner names seen in the wild (English + Chinese).
+    owner_names = {APP_NAME, "iPhone镜像", "iPhone 镜像"}
+    def _pick(wins):
+        best = None
+        for w in wins:
+            owner = w.get("kCGWindowOwnerName") or ""
+            pid = w.get("kCGWindowOwnerPID")
+            if not ((pid in pids) or (owner in owner_names)):
                 continue
-            return {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
+            if w.get("kCGWindowLayer", 1) != 0:
+                continue
+            b = w["kCGWindowBounds"]
+            if b["Width"] < 100 or b["Height"] < 100:  # ignore panels/toolbars
+                continue
+            cand = {"x": b["X"], "y": b["Y"], "w": b["Width"], "h": b["Height"],
                     "id": int(w["kCGWindowNumber"])}
-    return None
+            # Prefer the largest window (the phone surface, not chrome).
+            if best is None or cand["w"] * cand["h"] > best["w"] * best["h"]:
+                best = cand
+        return best
+
+    onscreen = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
+    best = _pick(onscreen)
+    if best is not None:
+        return best
+    # Fallback: window exists but is on another Space / Stage Manager shelf.
+    all_wins = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionAll, Quartz.kCGNullWindowID) or []
+    return _pick(all_wins)
 
 
 def running_app():

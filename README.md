@@ -1,7 +1,9 @@
 # Phone Harness 📱
 
-Connect an LLM directly to your real iPhone with a thin, editable harness.
-No jailbreak, no Xcode, no WebDriverAgent.
+**[phone-harness.com](https://phone-harness.com)** · let your agent control your phone.
+
+Connect an AI agent — Claude Code, Codex, or any LLM — directly to your real
+iPhone with a thin, editable harness. No jailbreak, no Xcode, no WebDriverAgent.
 
 The Mac's iPhone Mirroring window is the whole transport: `screencapture` +
 Vision-framework OCR for eyes, HID-level CGEvents for hands. Nothing between the
@@ -63,7 +65,7 @@ capture silently do nothing, watch for a macOS permission prompt. See
 
 iPhone Mirroring (macOS Sequoia+) renders the phone as a Mac window and forwards
 real mouse and keyboard input as touches. That gives an agent everything it
-needs:
+needs for real-device iOS automation:
 
 - **See** — capture just the mirroring window, OCR it with Apple's Vision
   framework: every visible string with a tap-ready coordinate. The poor man's

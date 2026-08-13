@@ -27,6 +27,7 @@ import base64
 import json
 import os
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -64,6 +65,36 @@ def _service():
     return base.rstrip("/"), os.environ.get("PHONE_CLOUD_TOKEN")
 
 
+def _wait_ready(base, token, info, timeout=900):
+    """Poll a session out of "provisioning". The service answers create
+    immediately — real hardware takes minutes to arrive — so readiness is
+    a poll, not a long-held response. Info from a pre-state server has no
+    "state" and passes straight through."""
+    deadline = time.time() + timeout
+    while info.get("state") == "provisioning":
+        if time.time() > deadline:
+            # Best-effort release: an abandoned session would otherwise go
+            # ready later and bill until the reaper notices it idle.
+            try:
+                _request(base, token, "DELETE", f"/sessions/{info['id']}")
+            except RuntimeError:
+                pass
+            raise RuntimeError("phone-cloud: timed out waiting for the "
+                               "phone to provision")
+        time.sleep(3)
+        info = _request(base, token, "GET", f"/sessions/{info['id']}")
+    if info.get("state") == "error":
+        raise RuntimeError(
+            f"phone-cloud: {info.get('error', 'provisioning failed')}")
+    return info
+
+
+def _create(base, token, body):
+    return _wait_ready(base, token,
+                       _request(base, token, "POST", "/sessions", body,
+                                timeout=60))
+
+
 class CloudPhone(Backend):
     name = "cloud-phone"
 
@@ -76,16 +107,16 @@ class CloudPhone(Backend):
         # phone", and silently renting a second one would be a second bill.
         session_id = session_id or os.environ.get("PHONE_CLOUD_SESSION")
         if session_id:
-            info = self._http("GET", f"/sessions/{session_id}")
+            # Attaching mid-provision (cloud up still running) waits too.
+            info = _wait_ready(self.base, self.token,
+                               self._http("GET", f"/sessions/{session_id}"))
         else:
             body = {}
             if provider:
                 body["provider"] = provider
             if caps:
                 body["caps"] = caps
-            # Creation waits far longer than any op: real hardware can queue
-            # for minutes before the provider hands a device over.
-            info = self._http("POST", "/sessions", body, timeout=640)
+            info = _create(self.base, self.token, body)
         self.session_id = info["id"]
         self.watch_url = info.get("watch_url")
         self.device = info.get("device")
@@ -171,7 +202,7 @@ def cli(args):
         body = {"provider": args[1]} if len(args) > 1 else {}
         print("requesting a device (real hardware can queue for minutes)...",
               flush=True)
-        _banner(_request(base, token, "POST", "/sessions", body, timeout=640))
+        _banner(_create(base, token, body))
         return 0
 
     if cmd == "ls":
@@ -180,7 +211,9 @@ def cli(args):
             print("no live sessions")
             return 0
         for s in sessions:
-            print(f"{s['id']}  {s['provider']:<10} {s.get('device') or '?':<28}"
+            state = s.get("state", "ready")
+            print(f"{s['id']}  {s['provider']:<10} {state:<12}"
+                  f" {s.get('device') or '?':<28}"
                   f" age {s['age_s']}s  idle {s['idle_s']}s")
         return 0
 

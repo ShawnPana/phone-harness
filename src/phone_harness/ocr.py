@@ -23,8 +23,10 @@ def recognize(path, window):
     screen points — pass straight to tap(). Vision's normalized boxes have a
     bottom-left origin; screen points have a top-left origin, hence the flip.
     """
+    # pyobjc 12.x rejects an empty options dict here ("key does not exist");
+    # None is the correct way to pass no options.
     handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(
-        NSURL.fileURLWithPath_(path), {})
+        NSURL.fileURLWithPath_(path), None)
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
     ok, err = handler.performRequests_error_([request], None)

@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Vision",
-    "pyobjc-framework-AppKit",
+    "pyobjc-framework-Cocoa",
     "pyobjc-framework-ApplicationServices",
 ]
 

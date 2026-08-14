@@ -1,6 +1,6 @@
 # Phone Harness 📱
 
-**[phone-harness.com](https://phone-harness.com)** · let your agent control your phone.
+**[phone-harness](https://phone-harness.com)** · let your agent control your phone.
 
 Connect an AI agent — Claude Code, Codex, or any LLM — directly to your real
 iPhone with a thin, editable harness. No jailbreak, no Xcode, no WebDriverAgent.

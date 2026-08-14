@@ -41,8 +41,8 @@ def run_doctor():
            "will auto-launch on first use — not fatal")
 
     win = mirror.find_window()
-    _check("mirroring window found", win is not None,
-           "open iPhone Mirroring once manually to pair the phone")
+    ok &= _check("mirroring window found", win is not None,
+                 "open iPhone Mirroring once manually to pair the phone")
 
     if win:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:

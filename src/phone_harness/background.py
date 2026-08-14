@@ -223,18 +223,28 @@ def _make_key(pid, wid):
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
 
+def _post_key(pid, wid, code, down, flags=0):
+    _make_key(pid, wid)                 # keep the window key across the keystroke
+    ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
+    if flags:
+        Quartz.CGEventSetFlags(ev, flags)
+    Quartz.CGEventPostToPid(pid, ev)
+    time.sleep(0.03)
+
+
 def _key(pid, wid, code, flags=0):
     for down in (True, False):
-        _make_key(pid, wid)             # keep the window key across the keystroke
-        ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
-        if flags:
-            Quartz.CGEventSetFlags(ev, flags)
-        Quartz.CGEventPostToPid(pid, ev)
-        time.sleep(0.03)
+        _post_key(pid, wid, code, down, flags)
+
+
+# Shortcuts the Mirroring app handles itself (Cmd+1/2/3) work with flags alone,
+# but combos forwarded to the phone (Cmd+V paste) need real modifier keydown/
+# keyup events — iOS tracks modifier state from those, not from event flags.
+_MOD_KEYCODES = {"cmd": 55, "shift": 56, "alt": 58, "option": 58, "ctrl": 59}
 
 
 def press(combo):
-    """press('return'), press('cmd+1'), press('cmd+3') — no focus change."""
+    """press('return'), press('cmd+1'), press('cmd+v') — no focus change."""
     pid, win = _ctx()
     parts = combo.lower().split("+")
     key, mods = parts[-1], parts[:-1]
@@ -243,7 +253,12 @@ def press(combo):
     flags = 0
     for m in mods:
         flags |= mirror._MODIFIERS[m]
-    _key(pid, win["id"], mirror._KEYCODES[key], flags)
+    wid = win["id"]
+    for m in mods:
+        _post_key(pid, wid, _MOD_KEYCODES[m], True, flags)
+    _key(pid, wid, mirror._KEYCODES[key], flags)
+    for m in reversed(mods):
+        _post_key(pid, wid, _MOD_KEYCODES[m], False)
 
 
 def type_text(text, delay=0.03):

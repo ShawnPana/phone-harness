@@ -49,7 +49,10 @@ AGENT_WORKSPACE = Path(
 # these is a PHYSICAL action only the user can do (open the app, and if it says
 # "iPhone in Use", LOCK the phone). The agent must never tap through them.
 _BLOCKED_MARKERS = ("iphone in use", "lock your iphone", "mirroring ended",
-                    "to connect")
+                    "to connect",
+                    # zh-Hans localizations of the same interstitials
+                    "iphone 使用中", "iphone使用中", "锁定你的 iphone",
+                    "锁定你的iphone", "镜像已结束", "若要连接")
 
 
 def connection_state():

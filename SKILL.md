@@ -98,5 +98,15 @@ raises a clear message (call `connection_state()` yourself to check —
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works
   fine for in-app buttons and list rows.
+- **Pull-to-refresh needs a wheel overscroll, not a drag.** A synthetic
+  touch-drag does not trip the gesture: the list stays pinned, nothing
+  refreshes, and the screen then settles looking exactly as it would have on
+  success. This fails differently from a scroll that does not move — a stalled
+  scroll is visible in the next capture, whereas a refresh that never fired
+  leaves stale content that reads as current, so an out-of-date list can be
+  reported as the true state. Overscroll past the top with the wheel
+  (`scroll_screen("down")`, or `mirror.scroll_wheel` at the list center) and
+  capture *during* the gesture — seeing the spinner is what tells the two
+  apart, since by the time the screen settles both outcomes look the same.
 - Mouse taps map to touches 1:1, but there is no multi-touch: no pinch, no
   two-finger gestures.

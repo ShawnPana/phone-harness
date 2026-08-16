@@ -1,6 +1,6 @@
 ---
 name: phone-harness
-description: "Control the user's iPhone through the Mac's iPhone Mirroring window: open apps, tap, type, swipe, read the screen."
+description: "Control the user's phone — iPhone through the Mac's iPhone Mirroring window, or an Android over adb: open apps, tap, type, swipe, read the screen."
 ---
 
 # phone-harness
@@ -57,6 +57,36 @@ PY
   and bounces back).
 - Raw Quartz is the escape hatch: `import Quartz` in your script for anything
   the helpers don't cover.
+
+## Android
+
+Same helpers, different phone: prefix every invocation with
+`PHONE_HARNESS_PLATFORM=android` (or export it once). The harness finds the
+phone itself — a USB phone if plugged in, else the paired Wi-Fi phone — so
+there is nothing to select.
+
+```bash
+PHONE_HARNESS_PLATFORM=android phone-harness <<'PY'
+open_app("chrome"); wait_stable()
+tap_ui("Got it")                    # exact label from the accessibility tree
+PY
+```
+
+- Coordinates are device pixels; the screenshot is 1:1 with `tap(x, y)`.
+- `ocr()` is the accessibility tree (`source: "tree"`) — exact, no misreads.
+  Prefer `ui()` / `find_nodes()` / `tap_ui()`: they also see elements with no
+  visible text (icons with a content-description, fields by resource-id like
+  `tap_ui("url_bar")`). `ocr_pixels()` is Unsupported here.
+- `back()`, `current_app()`, `list_apps()` exist. `open_app("chrome")`
+  matches installed package ids and returns the one launched.
+- `press()` takes single keys only (`"enter"`, `"back"`, `"tab"`); chords
+  raise Unsupported. `type_text` needs a focused field, same as iOS.
+- No focus to keep: nothing on the Mac has to be frontmost, and `interruption`
+  is always nothing.
+- Connection is still the user's job (USB debugging + Allow, or Wireless
+  debugging + `phone-harness android pair IP:PORT CODE`); on `no-device` the
+  error names the missing step — relay it, don't retry-loop.
+  `phone-harness android` shows known phones and what is attached.
 
 ## Consent
 

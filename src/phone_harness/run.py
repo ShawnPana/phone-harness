@@ -10,6 +10,7 @@ USAGE = """Usage:
 Commands:
   phone-harness --doctor    diagnose permissions, app, and session state
   phone-harness skill       print the phone-harness skill text
+  phone-harness android ... pair/connect/choose an Android phone
 """
 
 
@@ -21,6 +22,9 @@ def main():
     if args and args[0] in {"--doctor", "doctor"}:
         from .admin import run_doctor
         sys.exit(run_doctor())
+    if args and args[0] == "android":
+        from .android import cli
+        sys.exit(cli(args[1:]))
     if args and args[0] == "skill":
         repo_root = Path(__file__).resolve().parent.parent.parent
         print((repo_root / "SKILL.md").read_text(encoding="utf-8"), end="")

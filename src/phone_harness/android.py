@@ -1,25 +1,30 @@
-"""Android backend: the op vocabulary over adb.
+"""Android backend: the op vocabulary over adb, and nothing else.
 
-Everything here is `adb shell` — no agent app on the phone, no Appium, no
-window to find. adb reaches the device directly, which is what makes three
-things simply better than over iPhone Mirroring:
+No agent app on the phone, no Appium, no window to find, no OCR: `screencap`
+is the capture and `uiautomator dump` is the tree, so screen.text answers
+exactly (source: "tree") where iOS has to recognise glyphs. adb reaches the
+device directly, so focus.probe/diff report nothing disturbed and
+session.refocus is a no-op. Coordinates are device pixels and screen.bounds
+is the whole display: a text box's centre is already a tap target.
 
-- Nothing needs focus. Captures and input never care what the Mac is doing,
-  so focus.probe/diff always report "nothing disturbed" and session.refocus
-  is a no-op.
-- Coordinates are device pixels and screen.bounds is the whole display, so a
-  text box's center is already a valid tap target — no scaling.
-- The device has a real accessibility tree (uiautomator), so screen.text is
-  exact where iOS has to recognise glyphs. Pixel OCR stays available as
-  screen.text_pixels for what a tree cannot see: games, canvas, WebViews
-  without accessibility.
+Connecting is the phone's own developer path, over USB or Wi-Fi:
 
-Connecting is the phone's own developer path — Settings > Developer options
-> USB debugging, plug in, tap Allow — or Wireless debugging + `adb pair`.
-`ANDROID_SERIAL` picks a device when several are attached; adb honours it.
-An emulator is indistinguishable from a phone here, which is how this was
-developed.
+    USB       Developer options > USB debugging, plug in, tap Allow.
+    Wireless  Developer options > Wireless debugging > Pair device with
+              pairing code, then:  phone-harness android pair IP:PORT CODE
+
+The agent never picks a device. session.require — which every helper passes
+through — resolves one: a USB phone if one is plugged in, else a live
+wireless link (the saved primary first), else a paired phone found on the
+LAN over mDNS and connected on the spot, else a message naming the physical
+step that is missing. Paired phones are
+remembered in ~/.config/phone-harness/android.json under a friendly name and
+matched by hardware serial, so a phone whose Wi-Fi port changed overnight is
+still "pixel-8". The first phone paired over Wi-Fi becomes the primary;
+`phone-harness android use NAME` changes that; ANDROID_SERIAL overrides
+everything.
 """
+import json
 import os
 import re
 import shlex
@@ -27,10 +32,14 @@ import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
 
 from .transport import Backend, Unsupported
 
 ADB = os.environ.get("PHONE_HARNESS_ADB", "adb")
+CONFIG = Path(os.environ.get("PHONE_HARNESS_CONFIG_DIR",
+                             Path.home() / ".config" / "phone-harness")) / "android.json"
 
 # input.keys names -> Android keycodes. Modifier chords are not a thing
 # `input keyevent` can express, so combos raise rather than half-work.
@@ -44,6 +53,85 @@ _KEYS = {
 }
 
 
+# --- adb, without a device yet -----------------------------------------------
+
+def _run(*args, binary=False, timeout=60, check=True):
+    r = subprocess.run([ADB, *args], capture_output=True, timeout=timeout)
+    if check and r.returncode != 0:
+        err = (r.stderr or r.stdout).decode(errors="replace").strip()
+        raise RuntimeError(f"adb {' '.join(args)} failed: {err}")
+    return r.stdout if binary else r.stdout.decode(errors="replace")
+
+
+def _attached():
+    """[(adb_id, state, transport)] — transport is 'usb' or 'wifi'."""
+    rows = [l.split() for l in _run("devices").splitlines()[1:] if l.strip()]
+    return [(r[0], r[1], "wifi" if ":" in r[0] or r[0].startswith("adb-")
+             else "usb") for r in rows if len(r) >= 2]
+
+
+def _prop(adb_id, name):
+    return _run("-s", adb_id, "shell", "getprop", name, timeout=15).strip()
+
+
+def _mdns():
+    """Paired phones announcing themselves on the LAN:
+    [{serial, host, port, addr}] for _adb-tls-connect services. The service
+    name carries the hardware serial: adb-<SERIAL>-<suffix>."""
+    out = _run("mdns", "services", check=False)
+    found = []
+    for line in out.splitlines():
+        parts = line.split("\t") if "\t" in line else line.split()
+        if len(parts) < 3 or "_adb-tls-connect" not in parts[1]:
+            continue
+        m = re.match(r"adb-(.+)-[^-]+$", parts[0])
+        host, _, port = parts[2].rpartition(":")
+        if m and host and port.isdigit():
+            found.append({"serial": m.group(1), "host": host,
+                          "port": int(port), "addr": parts[2]})
+    return found
+
+
+# --- the registry: phones we know, and which one is primary -----------------
+
+def _load():
+    try:
+        return json.loads(CONFIG.read_text())
+    except (OSError, ValueError):
+        return {"primary": None, "phones": {}}
+
+
+def _store(cfg):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _remember(cfg, serial, model, host=None, name=None, primary=False):
+    """Upsert a phone by serial. `primary=True` makes it the primary if there
+    is none yet — passed by wireless pairing, not by a phone that merely
+    showed up on USB: the primary is which phone to reach for over Wi-Fi."""
+    phones = cfg.setdefault("phones", {})
+    key = next((k for k, p in phones.items() if p.get("serial") == serial), None)
+    if key is None:
+        base = name or re.sub(r"[^a-z0-9]+", "-", (model or "android").lower()).strip("-")
+        key, n = base, 2
+        while key in phones:
+            key, n = f"{base}-{n}", n + 1
+        phones[key] = {"serial": serial, "model": model, "paired": _now()}
+    p = phones[key]
+    p["last_seen"] = _now()
+    if host:
+        p["last_host"] = host
+    if primary and not cfg.get("primary"):
+        cfg["primary"] = key
+    _store(cfg)
+    return key
+
+
 class Android(Backend):
     name = "android"
 
@@ -51,30 +139,77 @@ class Android(Backend):
         if serial:
             os.environ["ANDROID_SERIAL"] = serial
         self._bounds = None
+        self._resolved = False
 
     # --- adb plumbing -------------------------------------------------------
 
     def _adb(self, *args, binary=False, timeout=60):
-        r = subprocess.run([ADB, *args], capture_output=True, timeout=timeout)
-        if r.returncode != 0:
-            err = (r.stderr or r.stdout).decode(errors="replace").strip()
-            raise RuntimeError(f"adb {' '.join(args)} failed: {err}")
-        return r.stdout if binary else r.stdout.decode(errors="replace")
+        return _run(*args, binary=binary, timeout=timeout)
 
     def _sh(self, cmd, timeout=60):
         return self._adb("shell", cmd, timeout=timeout)
 
-    def _devices(self):
-        """[(serial, state)] as `adb devices` sees them."""
-        out = self._adb("devices")
-        rows = [l.split("\t") for l in out.splitlines()[1:] if "\t" in l]
-        want = os.environ.get("ANDROID_SERIAL")
-        return [(s, st) for s, st in rows if not want or s == want]
+    # --- choosing the phone -------------------------------------------------
+
+    def _resolve(self):
+        """Pin ANDROID_SERIAL to one ready device, connecting a paired phone
+        over Wi-Fi if nothing is attached. Returns the adb id or None.
+
+        Order: the user's explicit ANDROID_SERIAL; then a USB phone (wired
+        always wins — it is right there); then a live Wi-Fi link, the saved
+        primary first; then mDNS — the primary if it is on the LAN, else the
+        first known phone, else any paired phone."""
+        if os.environ.get("ANDROID_SERIAL"):
+            self._resolved = True
+            return os.environ["ANDROID_SERIAL"]
+        cfg = _load()
+        primary = (cfg.get("phones") or {}).get(cfg.get("primary") or "", {})
+        known = {p.get("serial") for p in (cfg.get("phones") or {}).values()}
+
+        def pick(ready):
+            usb = [r for r in ready if r[2] == "usb"]
+            if usb:
+                return usb[0][0]
+            wifi = [r for r in ready if r[2] == "wifi"]
+            if primary.get("serial"):
+                for adb_id, _, _ in wifi:
+                    try:
+                        if _prop(adb_id, "ro.serialno") == primary["serial"]:
+                            return adb_id
+                    except RuntimeError:
+                        pass
+            return wifi[0][0] if wifi else None
+
+        ready = [r for r in _attached() if r[1] == "device"]
+        chosen = pick(ready)
+        if chosen is None:
+            wanted = [primary.get("serial")] + sorted(known - {primary.get("serial")})
+            services = _mdns()
+            services.sort(key=lambda s: (wanted.index(s["serial"])
+                                         if s["serial"] in wanted else len(wanted)))
+            for s in services:
+                out = _run("connect", s["addr"], timeout=15, check=False)
+                if "connected" in out and "cannot" not in out:
+                    break
+            ready = [r for r in _attached() if r[1] == "device"]
+            chosen = pick(ready)
+        if chosen is not None:
+            os.environ["ANDROID_SERIAL"] = chosen
+            self._resolved = True
+            try:
+                _remember(cfg, _prop(chosen, "ro.serialno"),
+                          _prop(chosen, "ro.product.model"),
+                          host=chosen.rpartition(":")[0] if ":" in chosen else None)
+            except RuntimeError:
+                pass
+        return chosen
 
     # --- screen -------------------------------------------------------------
 
     def _screen_bounds(self):
         if self._bounds is None:
+            if self._resolve() is None:
+                return None
             try:
                 out = self._sh("wm size")
             except RuntimeError:
@@ -83,26 +218,24 @@ class Android(Backend):
                  or re.search(r"Physical size:\s*(\d+)x(\d+)", out))
             if not m:
                 return None
-            serial = next((s for s, st in self._devices() if st == "device"),
-                          None)
             self._bounds = {"x": 0, "y": 0, "w": int(m.group(1)),
-                            "h": int(m.group(2)), "id": serial}
+                            "h": int(m.group(2)),
+                            "id": os.environ.get("ANDROID_SERIAL")}
         return self._bounds
 
     def _screen_require(self):
         b = self._screen_bounds()
-        if b is None:
-            return self._session_require()
-        return b
+        return b if b is not None else self._session_require()
 
     def _screen_capture(self, path=None):
+        bounds = self._screen_require()
         png = self._adb("exec-out", "screencap", "-p", binary=True)
         if path is None:
             fd, path = tempfile.mkstemp(prefix="phone-android-", suffix=".png")
             os.close(fd)
         with open(path, "wb") as f:
             f.write(png)
-        return path, self._screen_require()
+        return path, bounds
 
     def _screen_text(self, min_confidence=0.3):
         """From the accessibility tree: exact strings, exact boxes."""
@@ -114,12 +247,9 @@ class Android(Backend):
                             "x": n["x"], "y": n["y"], "w": n["w"], "h": n["h"]})
         return out
 
-    def _screen_text_pixels(self, min_confidence=0.3):
-        from . import ocr as _vision
-        path, win = self._screen_capture()
-        return [dict(o, source="pixels")
-                for o in _vision.recognize(path, win)
-                if o["confidence"] >= min_confidence]
+    # No _screen_text_pixels: the tree is the text source here, and a caller
+    # that needs pixels can look at screen.capture. Keeps this backend free of
+    # anything but adb.
 
     # --- input --------------------------------------------------------------
 
@@ -218,12 +348,11 @@ class Android(Backend):
     def _session_state(self):
         """'ready' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
         try:
-            devs = self._devices()
+            if self._resolve() is not None:
+                return "ready"
+            states = [st for _, st, _ in _attached()]
         except (RuntimeError, FileNotFoundError):
             return "no-adb"
-        states = [st for _, st in devs]
-        if "device" in states:
-            return "ready"
         if "unauthorized" in states:
             return "unauthorized"
         if states:
@@ -232,12 +361,12 @@ class Android(Backend):
 
     def _session_detail(self):
         try:
-            return self._adb("devices", "-l").strip()
+            return _run("devices", "-l").strip()
         except Exception as e:
             return str(e)
 
     def _session_require(self):
-        """Bounds if a device is ready, else raise telling the USER what to do
+        """Bounds if a phone is ready, else raise telling the USER what to do
         — plugging in, tapping Allow, and pairing are all physical."""
         state = self._session_state()
         if state == "ready":
@@ -259,13 +388,18 @@ class Android(Backend):
         if state == "offline":
             raise RuntimeError(
                 "adb sees the Android device but it is offline. Unplug and "
-                "replug it (or re-pair over Wireless debugging), then retry.")
+                "replug it (or toggle Wireless debugging off and on), then retry.")
+        cfg = _load()
+        prim = cfg.get("primary")
+        known = (f" Your primary phone is '{prim}' — make sure Wireless "
+                 "debugging is on and it is on this Wi-Fi; if it forgot this "
+                 "Mac, pair again." if prim else "")
         raise RuntimeError(
-            "No Android device is connected. On the phone: Settings > About "
-            "phone > tap Build number 7 times, then Settings > Developer "
-            "options > USB debugging, plug it in and tap Allow — or use "
-            "Wireless debugging and `adb pair`. Then retry. "
-            f"({self._session_detail()})")
+            "No Android device is reachable." + known + " To connect one: "
+            "USB — Settings > Developer options > USB debugging, plug in, tap "
+            "Allow. Wi-Fi — Developer options > Wireless debugging > Pair "
+            "device with pairing code, then `phone-harness android pair "
+            "IP:PORT CODE`. Then retry.")
 
     def _session_refocus(self):
         return None                    # adb needs nothing in front
@@ -284,6 +418,7 @@ class Android(Backend):
         """[{text, desc, id, class, clickable, x, y, w, h}] from
         `uiautomator dump`, retried briefly: it refuses while the UI is
         settling ("could not get idle state")."""
+        self._screen_require()
         last = None
         for _ in range(4):
             try:
@@ -316,4 +451,116 @@ class Android(Backend):
 
     def _raw(self, cmd, binary=False, timeout=60):
         """`adb shell <cmd>` — the escape hatch."""
+        self._screen_require()
         return self._adb("shell", cmd, binary=binary, timeout=timeout)
+
+
+# --- CLI (phone-harness android ...) ----------------------------------------
+
+CLI_USAGE = """Usage:
+  phone-harness android                          known phones, primary, what's live
+  phone-harness android pair IP:PORT CODE [NAME] Wireless debugging: pair, connect, remember
+  phone-harness android connect [NAME|IP:PORT]   connect a paired phone (default: primary, via mDNS)
+  phone-harness android use NAME                 make NAME the primary
+  phone-harness android forget NAME
+"""
+
+
+def _connect_serial(serial, timeout=10):
+    """Find `serial` on the LAN and adb-connect it; -> adb id or None."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for s in _mdns():
+            if s["serial"] == serial:
+                out = _run("connect", s["addr"], timeout=15, check=False)
+                if "connected" in out and "cannot" not in out:
+                    return s["addr"]
+        time.sleep(1)
+    return None
+
+
+def cli(args):
+    cmd = args[0] if args else None
+    cfg = _load()
+    phones = cfg.get("phones") or {}
+
+    if cmd is None:
+        live = {a: (st, tr) for a, st, tr in _attached()}
+        print(f"primary: {cfg.get('primary') or '(none)'}   config: {CONFIG}")
+        for name, p in phones.items():
+            mark = "*" if name == cfg.get("primary") else " "
+            print(f" {mark} {name:<16} {p.get('model') or '?':<18} serial {p.get('serial')}"
+                  f"   last {p.get('last_host') or '-'} @ {p.get('last_seen', '-')[:16]}")
+        print("attached now:", ", ".join(f"{a} ({st}, {tr})" for a, (st, tr) in live.items())
+              or "nothing")
+        lan = _mdns()
+        if lan:
+            print("paired phones on this Wi-Fi:",
+                  ", ".join(f"{s['serial']}@{s['addr']}" for s in lan))
+        return 0
+
+    if cmd == "pair":
+        if len(args) < 3:
+            print(CLI_USAGE); return 2
+        addr, code = args[1], args[2]
+        name = args[3] if len(args) > 3 else None
+        out = _run("pair", addr, code, timeout=30, check=False)
+        if "Successfully paired" not in out:
+            print(out.strip() or "pairing failed"); return 1
+        host = addr.rpartition(":")[0]
+        # the connect port differs from the pairing port; find it via mDNS
+        adb_id = None
+        for _ in range(10):
+            hit = next((s for s in _mdns() if s["host"] == host), None)
+            if hit:
+                o = _run("connect", hit["addr"], timeout=15, check=False)
+                if "connected" in o and "cannot" not in o:
+                    adb_id = hit["addr"]; break
+            time.sleep(1)
+        if adb_id is None:
+            print("paired, but could not find the phone's connect port on this "
+                  "network yet. Turn Wireless debugging off and on, then: "
+                  "phone-harness android connect IP:PORT  (the port shown on "
+                  "the Wireless debugging screen)")
+            return 1
+        serial, model = _prop(adb_id, "ro.serialno"), _prop(adb_id, "ro.product.model")
+        key = _remember(cfg, serial, model, host=host, name=name, primary=True)
+        cfg = _load()
+        print(f"paired and connected: {model} as '{key}' ({adb_id})"
+              + ("  — now the primary" if cfg.get("primary") == key else ""))
+        return 0
+
+    if cmd == "connect":
+        target = args[1] if len(args) > 1 else cfg.get("primary")
+        if not target:
+            print("no primary phone yet — pair one first"); return 1
+        if ":" in target:
+            out = _run("connect", target, timeout=15, check=False); print(out.strip())
+            return 0 if "connected" in out and "cannot" not in out else 1
+        p = phones.get(target)
+        if not p:
+            print(f"unknown phone {target!r}; known: {', '.join(phones) or 'none'}"); return 1
+        adb_id = _connect_serial(p["serial"])
+        if adb_id is None:
+            print(f"'{target}' isn't announcing on this Wi-Fi. Is Wireless "
+                  "debugging on, and the phone on the same network?"); return 1
+        _remember(cfg, p["serial"], p.get("model"), host=adb_id.rpartition(":")[0],
+                  primary=True)
+        print(f"connected: {target} ({adb_id})"); return 0
+
+    if cmd == "use":
+        if len(args) < 2 or args[1] not in phones:
+            print(f"known phones: {', '.join(phones) or 'none'}"); return 2
+        cfg["primary"] = args[1]; _store(cfg)
+        print(f"primary: {args[1]}"); return 0
+
+    if cmd == "forget":
+        if len(args) < 2 or args[1] not in phones:
+            print(f"known phones: {', '.join(phones) or 'none'}"); return 2
+        phones.pop(args[1])
+        if cfg.get("primary") == args[1]:
+            cfg["primary"] = next(iter(phones), None)
+        _store(cfg); print(f"forgot {args[1]}"); return 0
+
+    print(CLI_USAGE)
+    return 2

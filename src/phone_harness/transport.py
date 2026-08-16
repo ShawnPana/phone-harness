@@ -130,4 +130,6 @@ def connect(platform=None, **kw):
                 or os.environ.get("PHONE_HARNESS_PLATFORM", "ios")).lower()
     if platform in ("ios", "iphone", "ipad"):
         return importlib.import_module(".ios", __package__).IPhone(**kw)
+    if platform == "android":
+        return importlib.import_module(".android", __package__).Android(**kw)
     raise ValueError(f"unknown platform {platform!r}")

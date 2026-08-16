@@ -7,7 +7,7 @@ Use once. For phone work, read `SKILL.md`.
 - macOS Sequoia+ with iPhone Mirroring paired to the phone (open the app once
   manually to pair — pairing prompts need the physical phone).
 - Python 3.12+ with pyobjc (`pip install pyobjc-framework-Quartz
-  pyobjc-framework-Vision pyobjc-framework-AppKit`).
+  pyobjc-framework-Vision`; AppKit is bundled with the macOS Python bridge here).
 - The terminal app needs two permissions in System Settings > Privacy &
   Security. **The toggles require the user:**
   - **Accessibility** — taps and keystrokes. Takes effect immediately.

@@ -48,19 +48,21 @@ def run_doctor():
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             path = f.name
         try:
-            subprocess.run(
+            r = subprocess.run(
                 ["screencapture", "-x", "-o", "-l", str(win["id"]), path],
-                check=True)
-            size = os.path.getsize(path)
-            ok &= _check(f"window capture works ({size} bytes)", size > 20_000,
-                         "capture is blank — Screen Recording permission "
+                capture_output=True)
+            size = os.path.getsize(path) if os.path.exists(path) else 0
+            ok &= _check(f"window capture works ({size} bytes)",
+                         r.returncode == 0 and size > 20_000,
+                         "capture failed/blank — Screen Recording permission "
                          "needs a terminal restart to take effect")
-            if size > 20_000:
+            if r.returncode == 0 and size > 20_000:
                 from . import ocr
                 n = len(ocr.recognize(path, win))
                 _check(f"Vision OCR works ({n} text boxes)", True)
         finally:
-            os.unlink(path)
+            if os.path.exists(path):
+                os.unlink(path)
 
     print("\nall clear" if ok else "\nfix the FAILs above, then re-run")
     print("\nnote: these are the permissions currently known to be required. A "

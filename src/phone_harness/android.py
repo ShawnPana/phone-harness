@@ -703,10 +703,12 @@ def cli(args):
         else:
             print("no awake session running")
         try:
-            _run("shell", "input", "keyevent", "KEYCODE_SLEEP", timeout=10)
-            print("phone put to sleep")
-        except RuntimeError:
-            pass
+            phone = Android()
+            if phone._resolve() is not None:
+                phone._sh("input keyevent KEYCODE_SLEEP", timeout=10)
+                print("phone put to sleep")
+        except RuntimeError as e:
+            print(f"(could not put the phone to sleep: {e})")
         return 0
 
     if cmd == "pair":

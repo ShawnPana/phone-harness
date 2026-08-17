@@ -22,11 +22,21 @@ TMP.mkdir(exist_ok=True)
 # --- window / app state ---
 
 def find_window():
-    """{x, y, w, h, id} of the mirroring window in screen points, or None."""
+    """{x, y, w, h, id} of the mirroring window in screen points, or None.
+
+    Windows are matched by the owner PID of the running app (bundle id), not
+    by kCGWindowOwnerName: the owner name is the app's *localized* display
+    name (e.g. "iPhone鏡像輸出" on a zh_TW system), so a name match finds
+    nothing outside English locales.
+    """
+    app = running_app()
+    if app is None:
+        return None
+    pid = int(app.processIdentifier())
     wins = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
     for w in wins:
-        if w.get("kCGWindowOwnerName") == APP_NAME and w.get("kCGWindowLayer", 1) == 0:
+        if w.get("kCGWindowOwnerPID") == pid and w.get("kCGWindowLayer", 1) == 0:
             b = w["kCGWindowBounds"]
             if b["Width"] < 100:  # ignore panels/toolbars
                 continue

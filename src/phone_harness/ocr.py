@@ -27,6 +27,12 @@ def recognize(path, window):
         NSURL.fileURLWithPath_(path), {})
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    # Vision defaults to Latin-script recognition, so a phone running in a
+    # CJK (or any non-Latin) locale OCRs to garbage. Let Vision detect the
+    # language itself where supported (macOS 13+; iPhone Mirroring itself
+    # needs macOS 15+, the guard just keeps older hosts harmless).
+    if request.respondsToSelector_("setAutomaticallyDetectsLanguage:"):
+        request.setAutomaticallyDetectsLanguage_(True)
     ok, err = handler.performRequests_error_([request], None)
     if not ok:
         raise RuntimeError(f"Vision OCR failed: {err}")

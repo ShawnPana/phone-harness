@@ -63,6 +63,13 @@ def _doctor_ios():
     _check(f"{mirror.APP_NAME} running", running,
            "will auto-launch on first use — not fatal", fatal=False)
 
+    # Activate first — the mirroring window is only listed on-screen
+    # while the app is frontmost, so a background app reads as "no window".
+    if running:
+        try:
+            mirror.activate()
+        except RuntimeError:
+            pass
     win = mirror.find_window()
     _check("mirroring window found", win is not None,
            "open iPhone Mirroring once manually to pair the phone")

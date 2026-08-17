@@ -92,8 +92,11 @@ PY
 - **The phone locks itself** after its screen timeout. `connection_state()`
   reports `locked`; taps and `ocr()` refuse with the same message. Ask the
   user to unlock — never type a PIN. `screenshot()` still works locked, so you
-  can show them what you see. Developer options > Stay awake keeps it on
-  while charging (ask before changing it).
+  can show them what you see. For a task longer than a minute, ask the user,
+  then run `phone-harness android awake --bg`: it keeps the phone awake for
+  the session (and opens a mirror window if scrcpy is installed) without
+  changing any phone setting; `phone-harness android rest` ends it and lets
+  the phone sleep. Do that at the end of the task.
 - Connection is still the user's job (USB debugging + Allow, or Wireless
   debugging + `phone-harness android pair IP:PORT CODE`); on `no-device` the
   error names the missing step — relay it, don't retry-loop.

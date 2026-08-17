@@ -28,7 +28,10 @@ import json
 import os
 import re
 import shlex
+import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
@@ -230,8 +233,8 @@ class Android(Backend):
             raise RuntimeError(
                 "The Android phone is locked. Unlock it (PIN / fingerprint), "
                 "then retry — I won't enter a PIN. It re-locks after its screen "
-                "timeout; Settings > Developer options > Stay awake keeps it on "
-                "while charging.")
+                "timeout; `phone-harness android awake` keeps it awake for the "
+                "session without changing any setting.")
         self._gate_at = time.time()
 
     # --- screen -------------------------------------------------------------
@@ -510,7 +513,108 @@ CLI_USAGE = """Usage:
   phone-harness android connect [NAME|IP:PORT]   connect a paired phone (default: primary, via mDNS)
   phone-harness android use NAME                 make NAME the primary
   phone-harness android forget NAME
+  phone-harness android awake [--bg] [--no-mirror]
+        keep the phone awake for a session (and mirror it if scrcpy is
+        installed); changes no phone settings — ends with rest, Ctrl-C, or
+        closing the mirror. --bg detaches.
+  phone-harness android rest                     end the session; the phone sleeps
 """
+
+PIDFILE = CONFIG.with_name("awake.pid")
+POKE_EVERY = 25          # seconds; a phone's shortest screen timeout is 15s
+POKE = "input keyevent KEYCODE_UNKNOWN"   # counts as user activity; no app sees it
+
+
+def _phone_label(adb_id):
+    """The registry name for the phone behind adb_id, else its model."""
+    try:
+        serial = _prop(adb_id, "ro.serialno")
+        for name, p in (_load().get("phones") or {}).items():
+            if p.get("serial") == serial:
+                return name
+        return _prop(adb_id, "ro.product.model") or adb_id
+    except RuntimeError:
+        return adb_id
+
+
+def _awake(mirror=True):
+    """The session companion. Wakes the phone; waits for the user to unlock
+    if it is locked; then every POKE_EVERY seconds sends a keypress no app
+    reacts to, which the phone counts as user activity — so it never
+    reaches its screen timeout while this runs, on USB or Wi-Fi, charging
+    or not, and reverts to normal the instant this stops. No setting is
+    written. Pokes pause while the phone is locked (a lock screen should be
+    allowed to go dark). If scrcpy is installed, mirrors the same phone in
+    a window titled with its name; closing that window ends the session."""
+    phone = Android()
+    adb_id = phone._resolve()
+    if adb_id is None:
+        phone._session_require()               # raises with the physical step
+    label = _phone_label(adb_id)
+    print(f"awake: {label} ({adb_id})", flush=True)
+    proc = None
+    if mirror and shutil.which("scrcpy"):
+        proc = subprocess.Popen(
+            ["scrcpy", "-s", adb_id, "--stay-awake", "--no-audio",
+             "--always-on-top", "--window-title", f"phone-harness: {label}",
+             "--window-width", "360"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("mirror: scrcpy window open (close it to end)", flush=True)
+    elif mirror:
+        print("mirror: scrcpy not installed (brew install scrcpy) — keeping "
+              "awake without a window", flush=True)
+
+    def stop(*_):
+        if proc and proc.poll() is None:
+            proc.terminate()
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        was_locked = None
+        while True:
+            if proc and proc.poll() is not None:
+                print("mirror closed — ending", flush=True)
+                return 0
+            try:
+                awake, locked = phone._screen_status()
+            except RuntimeError:
+                print("phone gone — ending", flush=True)
+                return 0
+            if not awake and was_locked is not False:
+                phone._sh("input keyevent KEYCODE_WAKEUP")
+                awake, locked = phone._screen_status()
+            if locked:
+                if was_locked is not True:
+                    print("locked — unlock the phone to continue (pokes paused)",
+                          flush=True)
+                was_locked = True
+            else:
+                if was_locked is not False:
+                    print("unlocked — keeping awake", flush=True)
+                was_locked = False
+                phone._sh(POKE)
+            time.sleep(POKE_EVERY if not locked else 3)
+    finally:
+        if proc and proc.poll() is None:
+            proc.terminate()
+        try:
+            PIDFILE.unlink()
+        except OSError:
+            pass
+
+
+def _awake_pid():
+    """pid of a running awake session (not ourselves), else None."""
+    try:
+        pid = int(PIDFILE.read_text().strip())
+        if pid == os.getpid():
+            return None
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
+
 
 
 def _connect_serial(serial, timeout=10):
@@ -544,6 +648,47 @@ def cli(args):
         if lan:
             print("paired phones on this Wi-Fi:",
                   ", ".join(f"{s['serial']}@{s['addr']}" for s in lan))
+        pid = _awake_pid()
+        print(f"awake session: {'running (pid %d) — phone-harness android rest to end' % pid if pid else 'off'}")
+        return 0
+
+    if cmd == "awake":
+        if _awake_pid():
+            print(f"already awake (pid {_awake_pid()}); phone-harness android rest to end")
+            return 0
+        mirror = "--no-mirror" not in args
+        if "--bg" in args:
+            child = subprocess.Popen(
+                [sys.executable, "-m", "phone_harness.run", "android", "awake",
+                 "--fg"] + (["--no-mirror"] if not mirror else []),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            CONFIG.parent.mkdir(parents=True, exist_ok=True)
+            PIDFILE.write_text(str(child.pid))
+            time.sleep(2)
+            print(f"awake in background (pid {child.pid}); phone-harness android rest to end"
+                  if child.poll() is None else "awake exited at once — is a phone connected? try without --bg")
+            return 0 if child.poll() is None else 1
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        PIDFILE.write_text(str(os.getpid()))
+        return _awake(mirror=mirror)
+
+    if cmd == "rest":
+        pid = _awake_pid()
+        if pid:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(20):
+                if _awake_pid() is None:
+                    break
+                time.sleep(0.2)
+            print("awake session ended")
+        else:
+            print("no awake session running")
+        try:
+            _run("shell", "input", "keyevent", "KEYCODE_SLEEP", timeout=10)
+            print("phone put to sleep")
+        except RuntimeError:
+            pass
         return 0
 
     if cmd == "pair":

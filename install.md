@@ -89,5 +89,8 @@ Common cases:
   hasn't restarted since.
 - **Window not found**: the phone isn't paired, isn't in range, or iPhone
   Mirroring shows a connect screen — open the app manually once.
-- **Taps do nothing**: Accessibility missing, or another window stole focus —
-  events land only when the mirroring window is frontmost.
+- **Taps do nothing**: Accessibility missing. With the default **background**
+  backend (`PHONE_HARNESS_BACKGROUND=1`), the window does **not** need to be
+  frontmost — if you forced classic mode (`PHONE_HARNESS_BACKGROUND=0`),
+  events only land when iPhone Mirroring is frontmost. Also check the phone
+  session is `ready` (not "iPhone in Use").

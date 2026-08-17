@@ -1,4 +1,7 @@
 #!/bin/sh
-# Dev launcher: run the working tree without installing.
+# Dev launcher: run the working tree. Prefer the project venv when present.
 DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$DIR/.venv/bin/python" ]; then
+  PYTHONPATH="$DIR/src" exec "$DIR/.venv/bin/python" -m phone_harness.run "$@"
+fi
 PYTHONPATH="$DIR/src" exec python3 -m phone_harness.run "$@"

@@ -60,10 +60,11 @@ PY
 
 ## Android
 
-Same helpers, different phone: prefix every invocation with
-`PHONE_HARNESS_PLATFORM=android` (or export it once). The harness finds the
-phone itself — a USB phone if plugged in, else the paired Wi-Fi phone — so
-there is nothing to select.
+Same helpers, different phone. `phone-harness use android` makes Android the
+default (`phone-harness use` shows the current one); until then, or to
+override per call, prefix with `PHONE_HARNESS_PLATFORM=android`. The harness
+finds the phone itself — a USB phone if plugged in, else the paired Wi-Fi
+phone — so there is nothing to select.
 
 ```bash
 PHONE_HARNESS_PLATFORM=android phone-harness <<'PY'

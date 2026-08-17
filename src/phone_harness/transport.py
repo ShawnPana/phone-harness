@@ -67,7 +67,9 @@ Anything a backend genuinely cannot do raises Unsupported. Callers gate on
 supports(op) rather than guessing.
 """
 import importlib
+import json
 import os
+from pathlib import Path
 
 
 class Unsupported(RuntimeError):
@@ -119,15 +121,42 @@ class Backend:
         return [op for op in OP_NAMES if self.supports(op)]
 
 
+CONFIG_DIR = Path(os.environ.get("PHONE_HARNESS_CONFIG_DIR",
+                                 Path.home() / ".config" / "phone-harness"))
+
+
+def default_platform():
+    """The platform to use when nothing says otherwise: the one saved by
+    `phone-harness use <platform>`, else ios."""
+    try:
+        return json.loads((CONFIG_DIR / "config.json").read_text()).get(
+            "platform") or "ios"
+    except (OSError, ValueError):
+        return "ios"
+
+
+def set_default_platform(platform):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    path = CONFIG_DIR / "config.json"
+    try:
+        cfg = json.loads(path.read_text())
+    except (OSError, ValueError):
+        cfg = {}
+    cfg["platform"] = platform
+    path.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
 def connect(platform=None, **kw):
-    """Build a backend. PHONE_HARNESS_PLATFORM selects one; default is ios.
+    """Build a backend. Explicit argument, else PHONE_HARNESS_PLATFORM, else
+    the default saved by `phone-harness use <platform>`, else ios.
 
     Returns an object rather than installing a module global, so a script can
     hold two devices at once instead of being limited to one per process.
     helpers.py binds one of these as its default.
     """
     platform = (platform
-                or os.environ.get("PHONE_HARNESS_PLATFORM", "ios")).lower()
+                or os.environ.get("PHONE_HARNESS_PLATFORM")
+                or default_platform()).lower()
     if platform in ("ios", "iphone", "ipad"):
         return importlib.import_module(".ios", __package__).IPhone(**kw)
     if platform == "android":

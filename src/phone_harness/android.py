@@ -765,6 +765,10 @@ def cli(args):
         cfg = _load()
         print(f"paired and connected: {model} as '{key}' ({adb_id})"
               + ("  — now the primary" if cfg.get("primary") == key else ""))
+        from . import transport
+        if transport.default_platform() != "android":
+            print("tip: `phone-harness use android` makes Android the default, "
+                  "so nothing needs PHONE_HARNESS_PLATFORM=android")
         return 0
 
     if cmd == "connect":

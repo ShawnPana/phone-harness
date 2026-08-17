@@ -13,6 +13,20 @@ Commands:
 """
 
 
+def _skill_text():
+    """SKILL.md: packaged alongside the code in a wheel; at the repo root in
+    a checkout (where the launcher runs the working tree)."""
+    from importlib import resources
+    try:
+        packaged = resources.files("phone_harness") / "SKILL.md"
+        if packaged.is_file():
+            return packaged.read_text(encoding="utf-8")
+    except (ImportError, OSError, TypeError):
+        pass
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    return (repo_root / "SKILL.md").read_text(encoding="utf-8")
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] in {"-h", "--help"}:
@@ -22,8 +36,7 @@ def main():
         from .admin import run_doctor
         sys.exit(run_doctor())
     if args and args[0] == "skill":
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        print((repo_root / "SKILL.md").read_text(encoding="utf-8"), end="")
+        print(_skill_text(), end="")
         return
     if args or sys.stdin.isatty():
         sys.exit(USAGE)

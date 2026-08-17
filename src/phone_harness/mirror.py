@@ -25,8 +25,14 @@ def find_window():
     """{x, y, w, h, id} of the mirroring window in screen points, or None."""
     wins = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
+    # The owner name is localized ("Espelhamento do iPhone" on pt-BR), so match
+    # the running process by bundle id and fall back to the English name.
+    app = running_app()
+    pid = app.processIdentifier() if app else None
     for w in wins:
-        if w.get("kCGWindowOwnerName") == APP_NAME and w.get("kCGWindowLayer", 1) == 0:
+        owned = (w.get("kCGWindowOwnerPID") == pid if pid is not None
+                 else w.get("kCGWindowOwnerName") == APP_NAME)
+        if owned and w.get("kCGWindowLayer", 1) == 0:
             b = w["kCGWindowBounds"]
             if b["Width"] < 100:  # ignore panels/toolbars
                 continue

@@ -11,7 +11,7 @@ Connecting is the phone's own developer path, over USB or Wi-Fi:
 
     USB       Developer options > USB debugging, plug in, tap Allow.
     Wireless  Developer options > Wireless debugging > Pair device with
-              pairing code, then:  phone-harness android pair IP:PORT CODE
+              pairing code, then:  phone-harness android pair CODE
 
 The agent never picks a device. session.require — which every helper passes
 through — resolves one: a USB phone if one is plugged in, else a live
@@ -77,15 +77,17 @@ def _prop(adb_id, name):
     return _run("-s", adb_id, "shell", "getprop", name, timeout=15).strip()
 
 
-def _mdns():
-    """Paired phones announcing themselves on the LAN:
-    [{serial, host, port, addr}] for _adb-tls-connect services. The service
-    name carries the hardware serial: adb-<SERIAL>-<suffix>."""
+def _mdns(kind="connect"):
+    """Phones announcing themselves on the LAN: [{serial, host, port, addr}]
+    for _adb-tls-connect services (paired phones with Wireless debugging on)
+    or, with kind="pairing", _adb-tls-pairing services (a phone showing its
+    "Pair device with pairing code" dialog right now). The service name
+    carries the hardware serial: adb-<SERIAL>-<suffix>."""
     out = _run("mdns", "services", check=False)
     found = []
     for line in out.splitlines():
         parts = line.split("\t") if "\t" in line else line.split()
-        if len(parts) < 3 or "_adb-tls-connect" not in parts[1]:
+        if len(parts) < 3 or f"_adb-tls-{kind}" not in parts[1]:
             continue
         m = re.match(r"adb-(.+)-[^-]+$", parts[0])
         host, _, port = parts[2].rpartition(":")
@@ -448,7 +450,7 @@ class Android(Backend):
             "USB — Settings > Developer options > USB debugging, plug in, tap "
             "Allow. Wi-Fi — Developer options > Wireless debugging > Pair "
             "device with pairing code, then `phone-harness android pair "
-            "IP:PORT CODE`. Then retry.")
+            "CODE`. Then retry.")
 
     def _session_refocus(self):
         return None                    # adb needs nothing in front
@@ -509,7 +511,9 @@ class Android(Backend):
 
 CLI_USAGE = """Usage:
   phone-harness android                          known phones, primary, what's live
-  phone-harness android pair IP:PORT CODE [NAME] Wireless debugging: pair, connect, remember
+  phone-harness android pair [CODE] [NAME]       Wireless debugging: pair with the 6-digit
+                                                 code (phone found over mDNS), connect, remember
+  phone-harness android pair IP:PORT CODE [NAME] the same, if mDNS is blocked on your network
   phone-harness android connect [NAME|IP:PORT]   connect a paired phone (default: primary, via mDNS)
   phone-harness android use NAME                 make NAME the primary
   phone-harness android forget NAME
@@ -692,10 +696,35 @@ def cli(args):
         return 0
 
     if cmd == "pair":
-        if len(args) < 3:
-            print(CLI_USAGE); return 2
-        addr, code = args[1], args[2]
-        name = args[3] if len(args) > 3 else None
+        # Forms: pair | pair CODE [NAME] | pair IP:PORT CODE [NAME]
+        rest_ = args[1:]
+        if rest_ and ":" in rest_[0]:
+            if len(rest_) < 2:
+                print(CLI_USAGE); return 2
+            addr, code, name = rest_[0], rest_[1], (rest_[2] if len(rest_) > 2 else None)
+        else:
+            code = rest_[0] if rest_ else None
+            name = rest_[1] if len(rest_) > 1 else None
+            print("On the phone: Settings > Developer options > Wireless debugging "
+                  "(on) > 'Pair device with pairing code'. Keep that dialog open.")
+            if not code:
+                try:
+                    code = input("6-digit pairing code shown on the phone: ").strip()
+                except EOFError:
+                    print(CLI_USAGE); return 2
+            print("looking for the phone on this Wi-Fi...", flush=True)
+            addr = None
+            for _ in range(45):                       # the dialog advertises itself
+                hits = _mdns("pairing")
+                if hits:
+                    addr = hits[0]["addr"]; break
+                time.sleep(1)
+            if addr is None:
+                print("no phone is offering to pair on this network. Is Wireless "
+                      "debugging on, the pairing dialog open, and the phone on the "
+                      "same Wi-Fi as this Mac? If your network blocks mDNS, use: "
+                      "phone-harness android pair IP:PORT CODE (both shown in the dialog)")
+                return 1
         out = _run("pair", addr, code, timeout=30, check=False)
         if "Successfully paired" not in out:
             print(out.strip() or "pairing failed"); return 1

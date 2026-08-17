@@ -98,7 +98,7 @@ PY
   changing any phone setting; `phone-harness android rest` ends it and lets
   the phone sleep. Do that at the end of the task.
 - Connection is still the user's job (USB debugging + Allow, or Wireless
-  debugging + `phone-harness android pair IP:PORT CODE`); on `no-device` the
+  debugging + `phone-harness android pair CODE`); on `no-device` the
   error names the missing step — relay it, don't retry-loop.
   `phone-harness android` shows known phones and what is attached.
 

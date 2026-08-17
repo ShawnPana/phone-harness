@@ -18,13 +18,12 @@ through — resolves one: a USB phone if one is plugged in, else a live
 wireless link (the saved primary first), else a paired phone found on the
 LAN over mDNS and connected on the spot, else a message naming the physical
 step that is missing. Paired phones are
-remembered in ~/.config/phone-harness/android.json under a friendly name and
+remembered (see config.py: the devices state file) under a friendly name and
 matched by hardware serial, so a phone whose Wi-Fi port changed overnight is
 still "pixel-8". The first phone paired over Wi-Fi becomes the primary;
 `phone-harness android use NAME` changes that; ANDROID_SERIAL overrides
 everything.
 """
-import json
 import os
 import re
 import shlex
@@ -36,13 +35,13 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from pathlib import Path
 
+from . import config
 from .transport import Backend, Unsupported
 
-ADB = os.environ.get("PHONE_HARNESS_ADB", "adb")
-CONFIG = Path(os.environ.get("PHONE_HARNESS_CONFIG_DIR",
-                             Path.home() / ".config" / "phone-harness")) / "android.json"
+
+def _adb_bin():
+    return str(config.get("android.adb"))
 
 # input.keys names -> Android keycodes. Modifier chords are not a thing
 # `input keyevent` can express, so combos raise rather than half-work.
@@ -59,7 +58,7 @@ _KEYS = {
 # --- adb, without a device yet -----------------------------------------------
 
 def _run(*args, binary=False, timeout=60, check=True):
-    r = subprocess.run([ADB, *args], capture_output=True, timeout=timeout)
+    r = subprocess.run([_adb_bin(), *args], capture_output=True, timeout=timeout)
     if check and r.returncode != 0:
         err = (r.stderr or r.stdout).decode(errors="replace").strip()
         raise RuntimeError(f"adb {' '.join(args)} failed: {err}")
@@ -100,15 +99,11 @@ def _mdns(kind="connect"):
 # --- the registry: phones we know, and which one is primary -----------------
 
 def _load():
-    try:
-        return json.loads(CONFIG.read_text())
-    except (OSError, ValueError):
-        return {"primary": None, "phones": {}}
+    return config.devices_of("android")
 
 
 def _store(cfg):
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(cfg, indent=2) + "\n")
+    config.save_devices_of("android", cfg)
 
 
 def _now():
@@ -538,8 +533,12 @@ CLI_USAGE = """Usage:
   phone-harness android rest                     end the session; the phone sleeps
 """
 
-PIDFILE = CONFIG.with_name("awake.pid")
-POKE_EVERY = 25          # seconds; a phone's shortest screen timeout is 15s
+def _pidfile():
+    return config.run_dir() / "awake.pid"
+
+
+def _poke_every():
+    return max(5, int(config.get("android.poke_every")))   # shortest phone timeout is 15s
 POKE = "input keyevent KEYCODE_UNKNOWN"   # counts as user activity; no app sees it
 
 
@@ -557,7 +556,7 @@ def _phone_label(adb_id):
 
 def _awake(mirror=True):
     """The session companion. Wakes the phone; waits for the user to unlock
-    if it is locked; then every POKE_EVERY seconds sends a keypress no app
+    if it is locked; then every android.poke_every seconds sends a keypress no app
     reacts to, which the phone counts as user activity — so it never
     reaches its screen timeout while this runs, on USB or Wi-Fi, charging
     or not, and reverts to normal the instant this stops. No setting is
@@ -612,12 +611,12 @@ def _awake(mirror=True):
                     print("unlocked — keeping awake", flush=True)
                 was_locked = False
                 phone._sh(POKE)
-            time.sleep(POKE_EVERY if not locked else 3)
+            time.sleep(_poke_every() if not locked else 3)
     finally:
         if proc and proc.poll() is None:
             proc.terminate()
         try:
-            PIDFILE.unlink()
+            _pidfile().unlink()
         except OSError:
             pass
 
@@ -625,7 +624,7 @@ def _awake(mirror=True):
 def _awake_pid():
     """pid of a running awake session (not ourselves), else None."""
     try:
-        pid = int(PIDFILE.read_text().strip())
+        pid = int(_pidfile().read_text().strip())
         if pid == os.getpid():
             return None
         os.kill(pid, 0)
@@ -655,7 +654,7 @@ def cli(args):
 
     if cmd is None:
         live = {a: (st, tr) for a, st, tr in _attached()}
-        print(f"primary: {cfg.get('primary') or '(none)'}   config: {CONFIG}")
+        print(f"primary: {cfg.get('primary') or '(none)'}   devices: {config.paths()['devices']}")
         for name, p in phones.items():
             mark = "*" if name == cfg.get("primary") else " "
             print(f" {mark} {name:<16} {p.get('model') or '?':<18} serial {p.get('serial')}"
@@ -674,21 +673,21 @@ def cli(args):
         if _awake_pid():
             print(f"already awake (pid {_awake_pid()}); phone-harness android rest to end")
             return 0
-        mirror = "--no-mirror" not in args
+        mirror = "--no-mirror" not in args and bool(config.get("android.mirror"))
         if "--bg" in args:
             child = subprocess.Popen(
                 [sys.executable, "-m", "phone_harness.run", "android", "awake",
                  "--fg"] + (["--no-mirror"] if not mirror else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True)
-            CONFIG.parent.mkdir(parents=True, exist_ok=True)
-            PIDFILE.write_text(str(child.pid))
+            _pidfile().parent.mkdir(parents=True, exist_ok=True)
+            _pidfile().write_text(str(child.pid))
             time.sleep(2)
             print(f"awake in background (pid {child.pid}); phone-harness android rest to end"
                   if child.poll() is None else "awake exited at once — is a phone connected? try without --bg")
             return 0 if child.poll() is None else 1
-        CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        PIDFILE.write_text(str(os.getpid()))
+        _pidfile().parent.mkdir(parents=True, exist_ok=True)
+        _pidfile().write_text(str(os.getpid()))
         return _awake(mirror=mirror)
 
     if cmd == "rest":
@@ -765,10 +764,9 @@ def cli(args):
         cfg = _load()
         print(f"paired and connected: {model} as '{key}' ({adb_id})"
               + ("  — now the primary" if cfg.get("primary") == key else ""))
-        from . import transport
-        if transport.default_platform() != "android":
-            print("tip: `phone-harness use android` makes Android the default, "
-                  "so nothing needs PHONE_HARNESS_PLATFORM=android")
+        if config.get("platform") != "android":
+            print("tip: `phone-harness config set platform android` makes Android "
+                  "the default, so nothing needs PHONE_HARNESS_PLATFORM=android")
         return 0
 
     if cmd == "connect":

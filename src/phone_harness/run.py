@@ -11,7 +11,7 @@ Commands:
   phone-harness --doctor    diagnose permissions, app, and session state
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
-  phone-harness use ios|android   which phone helpers drive by default
+  phone-harness config ...  settings: `config set platform android`
 """
 
 
@@ -26,15 +26,9 @@ def main():
     if args and args[0] == "android":
         from .android import cli
         sys.exit(cli(args[1:]))
-    if args and args[0] == "use":
-        from . import transport
-        if len(args) < 2 or args[1] not in ("ios", "android"):
-            print(f"default platform: {transport.default_platform()}\n"
-                  "usage: phone-harness use ios|android")
-            sys.exit(0 if len(args) < 2 else 2)
-        transport.set_default_platform(args[1])
-        print(f"default platform: {args[1]}")
-        return
+    if args and args[0] == "config":
+        from .config import cli
+        sys.exit(cli(args[1:]))
     if args and args[0] == "skill":
         repo_root = Path(__file__).resolve().parent.parent.parent
         print((repo_root / "SKILL.md").read_text(encoding="utf-8"), end="")

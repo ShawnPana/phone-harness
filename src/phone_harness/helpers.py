@@ -437,6 +437,33 @@ def wait(seconds=1.0):
     time.sleep(seconds)
 
 
+def wait_for_text(query, timeout=10.0, exact=False, interval=0.5):
+    """Poll until `query` is visible; -> its box or None. The verify step
+    after an action: wait for the thing you expect to appear rather than
+    sleeping and hoping. Cheap where the device has a tree, a capture+OCR
+    per poll where it doesn't."""
+    deadline = time.time() + timeout
+    while True:
+        hits = find_text(query, exact=exact)
+        if hits:
+            return hits[0]
+        if time.time() >= deadline:
+            return None
+        time.sleep(interval)
+
+
+def wait_for_app(app_id, timeout=10.0, interval=0.3):
+    """Poll until `app_id` is the foreground app; -> True/False. A ~0.1s check
+    on Android; Unsupported where the device exposes no foreground app."""
+    deadline = time.time() + timeout
+    while True:
+        if send("apps.current") == app_id:
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(interval)
+
+
 def wait_stable(timeout=6.0, interval=0.5, settle=2):
     """Wait until `settle` consecutive captures are identical (animation done).
     The status-bar clock ticks once a minute, so near-misses are rare."""

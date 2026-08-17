@@ -140,6 +140,7 @@ class Android(Backend):
             os.environ["ANDROID_SERIAL"] = serial
         self._bounds = None
         self._resolved = False
+        self._gate_at = 0.0
 
     # --- adb plumbing -------------------------------------------------------
 
@@ -204,6 +205,35 @@ class Android(Backend):
                 pass
         return chosen
 
+    # --- awake and unlocked? -----------------------------------------------
+
+    def _screen_status(self):
+        """(awake, locked) from two dumpsys reads, ~0.2s. adb happily taps a
+        lock screen and dumps its PIN pad; nothing errors — so we ask."""
+        awake = "Awake" in self._sh("dumpsys power | grep -m1 mWakefulness=")
+        locked = "isKeyguardShowing=true" in self._sh(
+            "dumpsys window | grep -m1 isKeyguardShowing")
+        return awake, locked
+
+    def _gate(self):
+        """Refuse to drive a phone that is asleep or locked. Waking it is
+        harmless and done here; unlocking is the user's — a PIN is never
+        typed for them. Cached for 2s so a burst of taps checks once."""
+        if time.time() - self._gate_at < 2.0:
+            return
+        awake, locked = self._screen_status()
+        if not awake:
+            self._sh("input keyevent KEYCODE_WAKEUP")
+            time.sleep(0.5)
+            awake, locked = self._screen_status()
+        if locked:
+            raise RuntimeError(
+                "The Android phone is locked. Unlock it (PIN / fingerprint), "
+                "then retry — I won't enter a PIN. It re-locks after its screen "
+                "timeout; Settings > Developer options > Stay awake keeps it on "
+                "while charging.")
+        self._gate_at = time.time()
+
     # --- screen -------------------------------------------------------------
 
     def _screen_bounds(self):
@@ -254,13 +284,16 @@ class Android(Backend):
     # --- input --------------------------------------------------------------
 
     def _input_tap(self, x, y):
+        self._gate()
         self._sh(f"input tap {int(x)} {int(y)}")
 
     def _input_press(self, x, y, duration=0.8):
+        self._gate()
         x, y = int(x), int(y)
         self._sh(f"input swipe {x} {y} {x} {y} {int(duration * 1000)}")
 
     def _input_drag(self, x1, y1, x2, y2, duration=0.35, steps=14):
+        self._gate()
         self._sh(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} "
                  f"{int(duration * 1000)}")
 
@@ -268,10 +301,12 @@ class Android(Backend):
         """A finger drag standing in for a wheel: +dy moves content up the
         way wheel-up does (revealing what is above), so the finger travels
         +dy pixels downward. Slow enough not to fling."""
+        self._gate()
         self._sh(f"input swipe {int(x)} {int(y)} {int(x)} {int(y + dy)} "
                  f"{max(150, int(steps) * 50)}")
 
     def _input_keys(self, combo):
+        self._gate()
         parts = [p.strip().lower() for p in combo.split("+")]
         if len(parts) > 1:
             raise Unsupported(f"android cannot press chords ({combo!r}); "
@@ -284,6 +319,7 @@ class Android(Backend):
         self._sh(f"input keyevent KEYCODE_{code}")
 
     def _input_text(self, s, delay=0.03):
+        self._gate()
         """`input text` takes one ASCII token; newlines and backspaces become
         keyevents, spaces become %s, and the rest is shell-quoted."""
         for i, line in enumerate(s.split("\n")):
@@ -314,6 +350,7 @@ class Android(Backend):
     def _apps_launch(self, name):
         """A package id, or a name matched against installed package ids
         ('chrome' -> com.android.chrome). Returns the package launched."""
+        self._gate()
         pkg = name if "." in name else None
         if pkg is None:
             pkgs = self._apps_list(include_system=True)
@@ -346,9 +383,15 @@ class Android(Backend):
     # --- session ------------------------------------------------------------
 
     def _session_state(self):
-        """'ready' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
+        """'ready' | 'locked' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
         try:
             if self._resolve() is not None:
+                try:
+                    self._gate()
+                except RuntimeError as e:
+                    if "locked" in str(e):
+                        return "locked"
+                    raise
                 return "ready"
             states = [st for _, st, _ in _attached()]
         except (RuntimeError, FileNotFoundError):
@@ -375,6 +418,9 @@ class Android(Backend):
                 return b
             raise RuntimeError("an Android device is attached but `wm size` "
                                "gave no screen size; is it still booting?")
+        if state == "locked":
+            self._gate_at = 0.0
+            self._gate()                       # raises with the unlock message
         if state == "no-adb":
             raise RuntimeError(
                 "adb isn't available. Install Android platform-tools "
@@ -419,8 +465,9 @@ class Android(Backend):
         `uiautomator dump`, retried briefly: it refuses while the UI is
         settling ("could not get idle state")."""
         self._screen_require()
+        self._gate()
         last = None
-        for _ in range(4):
+        for i in range(5):
             try:
                 raw = self._adb("exec-out", "uiautomator", "dump", "/dev/tty",
                                 binary=True, timeout=30)
@@ -430,7 +477,7 @@ class Android(Backend):
                 break
             except (RuntimeError, ET.ParseError) as e:
                 last = e
-                time.sleep(0.5)
+                time.sleep(0.5 * (i + 1))          # 0.5, 1, 1.5, 2s: transitions settle
         else:
             raise RuntimeError(f"uiautomator dump failed: {last}")
         nodes = []

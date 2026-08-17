@@ -83,6 +83,17 @@ PY
   raise Unsupported. `type_text` needs a focused field, same as iOS.
 - No focus to keep: nothing on the Mac has to be frontmost, and `interruption`
   is always nothing.
+- **Verify cheaply, then read.** adb reports nothing about outcomes — a tap on
+  empty space "succeeds". After an action: `wait_for_app("com.android.chrome")`
+  (~0.1s per poll) or `wait_for_text("Got it")` (returns the box or None),
+  then `ui()`/`ocr()` once for contents. The tree costs ~2-3s a call on a slow
+  phone and a screenshot ~0.5s, so batch a whole sub-task in one invocation
+  and filter in Python rather than one call per turn.
+- **The phone locks itself** after its screen timeout. `connection_state()`
+  reports `locked`; taps and `ocr()` refuse with the same message. Ask the
+  user to unlock — never type a PIN. `screenshot()` still works locked, so you
+  can show them what you see. Developer options > Stay awake keeps it on
+  while charging (ask before changing it).
 - Connection is still the user's job (USB debugging + Allow, or Wireless
   debugging + `phone-harness android pair IP:PORT CODE`); on `no-device` the
   error names the missing step — relay it, don't retry-loop.

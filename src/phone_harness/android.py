@@ -150,6 +150,11 @@ class Android(Backend):
     # --- adb plumbing -------------------------------------------------------
 
     def _adb(self, *args, binary=False, timeout=60):
+        """Every device-side command pins the device first: adb may list one
+        phone twice over Wi-Fi (by ip:port and by its mDNS name), and an
+        unpinned command then fails with "more than one device"."""
+        if not self._resolved and self._resolve() is None:
+            self._session_require()               # raises with the physical step
         return _run(*args, binary=binary, timeout=timeout)
 
     def _sh(self, cmd, timeout=60):
@@ -476,14 +481,23 @@ class Android(Backend):
             try:
                 raw = self._adb("exec-out", "uiautomator", "dump", "/dev/tty",
                                 binary=True, timeout=30)
-                xml = raw[raw.find(b"<?xml"):]
-                xml = xml[:xml.rfind(b">") + 1]
+                start = raw.find(b"<?xml")
+                if start < 0:                        # uiautomator printed an error, not a tree
+                    last = raw.decode(errors="replace").strip() or "empty dump"
+                    raise ValueError(last)
+                xml = raw[start:raw.rfind(b">") + 1]
                 root = ET.fromstring(xml)
                 break
-            except (RuntimeError, ET.ParseError) as e:
-                last = e
+            except (RuntimeError, ValueError, ET.ParseError) as e:
+                last = str(e)
                 time.sleep(0.5 * (i + 1))          # 0.5, 1, 1.5, 2s: transitions settle
         else:
+            if "idle" in (last or ""):
+                raise RuntimeError(
+                    "the accessibility tree is unavailable on this screen: it "
+                    "never goes idle (something animates or auto-refreshes), so "
+                    "uiautomator will not dump it. Read it from screenshot() "
+                    "instead, or navigate to a screen that settles.")
             raise RuntimeError(f"uiautomator dump failed: {last}")
         nodes = []
         for el in root.iter("node"):

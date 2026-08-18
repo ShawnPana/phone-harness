@@ -10,7 +10,6 @@ USAGE = """Usage:
 Commands:
   phone-harness --doctor    diagnose permissions, app, and session state
   phone-harness skill       print the phone-harness skill text
-  phone-harness cloud ...   rent/list/release cloud phone sessions
 """
 
 
@@ -36,9 +35,6 @@ def main():
     if args and args[0] in {"--doctor", "doctor"}:
         from .admin import run_doctor
         sys.exit(run_doctor())
-    if args and args[0] == "cloud":
-        from .cloud import cli
-        sys.exit(cli(args[1:]))
     if args and args[0] == "skill":
         print(_skill_text(), end="")
         return

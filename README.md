@@ -57,7 +57,10 @@ everything it needs for real-device iOS automation:
   DOM.
 - **Act** — CGEvents posted at the HID tap: taps, long-presses, drags/flicks,
   scroll gestures, unicode typing, and the app's own shortcuts (Cmd+1 Home,
-  Cmd+2 App Switcher, Cmd+3 Spotlight).
+  Cmd+2 App Switcher, Cmd+3 Spotlight). For icon-only controls found in a
+  screenshot, use `tap_image_point(x, y, image_size=...)`: screenshot coordinates
+  are image pixels, while `tap(x, y)` expects global Mac screen points.
+  `image_point()` performs the conversion when a raw `tap()` is needed.
 - **Verify** — screenshot again. No DOM means the capture is the ground truth.
 
 Things that do NOT work, learned the hard way: AppleScript `click at` (silently

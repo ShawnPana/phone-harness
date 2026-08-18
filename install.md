@@ -64,9 +64,12 @@ the agent's copy matches the code.
 - `phone-harness config set platform android` to make it the default, then
   `phone-harness --doctor android`.
 - `phone-harness android` shows known phones and what is attached; a plugged-in
-  phone always wins over Wi‑Fi. Long task? `phone-harness android awake --bg`
-  keeps the phone unlocked for the session without changing any setting;
-  `phone-harness android rest` ends it.
+  phone always wins over Wi‑Fi. `phone-harness android connect` connects the
+  primary phone over Wi‑Fi and starts the awake session — a scrcpy mirror
+  window plus keep-awake, no phone setting changed (`--no-awake` to skip,
+  `--no-mirror` for no window). `phone-harness android awake --bg` starts the
+  same session by hand (e.g. for a USB phone); `phone-harness android rest`
+  ends it.
 
 ## Both
 

@@ -30,7 +30,13 @@ nothing in common — so the shared layer is this vocabulary instead.
     input.drag          x1, y1, x2, y2, duration, steps
     input.scroll        x, y, dy, steps             +dy scrolls content up
     input.keys          combo
-    input.text          s, delay
+    input.text          s, delay, keystrokes
+
+        input.text pastes by default, which is exact; keystrokes=True asks for
+        real key events instead. The distinction is in the vocabulary because
+        it changes what arrives: a keystroke path runs through the device's own
+        autocorrect and keyboard layout, a paste does not. Backends without a
+        shared clipboard may only support keystrokes.
 
         duration and steps stay in the vocabulary rather than being hidden. On
         iOS a fast short drag is a momentum flick and a slow one barely

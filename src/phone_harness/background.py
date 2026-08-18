@@ -35,6 +35,7 @@ event-record layout isn't implemented yet, so those fall back to the mirror
 path. Mouse actions are fully background.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
+from contextlib import contextmanager
 from pathlib import Path
 
 import Quartz
@@ -259,14 +260,41 @@ def _make_key(pid, wid):
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
 
+def _key_edge(pid, wid, code, down, flags=0):
+    _make_key(pid, wid)                 # keep the window key across the keystroke
+    ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
+    if flags:
+        # Mac-side consumers only. iPhone Mirroring forwards raw HID keycodes
+        # to iOS and drops the flag mask, so a modifier expressed as a flag
+        # never reaches the phone — it has to be a key that is held.
+        Quartz.CGEventSetFlags(ev, flags)
+    Quartz.CGEventPostToPid(pid, ev)
+    time.sleep(0.03)
+
+
 def _key(pid, wid, code, flags=0):
     for down in (True, False):
-        _make_key(pid, wid)             # keep the window key across the keystroke
-        ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
-        if flags:
-            Quartz.CGEventSetFlags(ev, flags)
-        Quartz.CGEventPostToPid(pid, ev)
-        time.sleep(0.03)
+        _key_edge(pid, wid, code, down, flags)
+
+
+@contextmanager
+def _holding(pid, wid, mods):
+    """Hold real modifier keys down around the body. See mirror._holding."""
+    acc = 0
+    for m in mods:
+        acc |= mirror._MODIFIERS[m]
+        _key_edge(pid, wid, mirror._MOD_KEYCODES[m], True, acc)
+    try:
+        yield acc
+    finally:
+        # Unconditional: a latched modifier corrupts every later keystroke, and
+        # the damage surfaces somewhere else entirely.
+        for m in reversed(mods):
+            # Clear the bit *before* posting the release. A key-up still
+            # carrying its own flag reads as "still held", which latches shift
+            # on and turns the rest of the string into 1,200 -> !<@)).
+            acc &= ~mirror._MODIFIERS[m]
+            _key_edge(pid, wid, mirror._MOD_KEYCODES[m], False, acc)
 
 
 def press(combo):
@@ -276,14 +304,16 @@ def press(combo):
     key, mods = parts[-1], parts[:-1]
     if key not in mirror._KEYCODES:
         raise ValueError(f"unknown key {key!r}")
-    flags = 0
     for m in mods:
-        flags |= mirror._MODIFIERS[m]
-    _key(pid, win["id"], mirror._KEYCODES[key], flags)
+        if m not in mirror._MOD_KEYCODES:
+            raise ValueError(f"unknown modifier {m!r}")
+    with _holding(pid, win["id"], mods) as flags:
+        _key(pid, win["id"], mirror._KEYCODES[key], flags)
 
 
-def type_text(text, delay=0.03):
-    """Type into the focused iOS field via real keycodes, no focus change."""
+def _type_keystrokes(text, delay=0.03):
+    """Type via real keycodes, no focus change. Subject to iOS autocorrect,
+    which rewrites words as they are typed."""
     pid, win = _ctx()
     for i, line in enumerate(text.split("\n")):
         if i:
@@ -292,6 +322,17 @@ def type_text(text, delay=0.03):
             code, shifted = mirror._keycode_for(ch)
             if code is None:
                 raise ValueError(f"cannot type {ch!r} via keycodes")
-            _key(pid, win["id"], code,
-                 Quartz.kCGEventFlagMaskShift if shifted else 0)
+            with _holding(pid, win["id"], ["shift"] if shifted else []) as flags:
+                _key(pid, win["id"], code, flags)
             time.sleep(delay)
+
+
+def type_text(text, delay=0.03, keystrokes=False):
+    """Type into the focused iOS field, no focus change.
+
+    Pastes by default so the text arrives exactly as written, past autocorrect
+    and keyboard layout both. keystrokes=True sends real key events instead.
+    """
+    if keystrokes or not text:
+        return _type_keystrokes(text, delay)
+    mirror.paste_with(press, text)

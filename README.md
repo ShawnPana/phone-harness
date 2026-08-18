@@ -3,12 +3,15 @@
 **[phone-harness](https://phone-harness.com)** · let your agent control your phone.
 
 Connect an AI agent — Claude Code, Codex, or any LLM — directly to your real
-iPhone with a thin, editable harness. No jailbreak, no Xcode, no WebDriverAgent.
+phone with a thin, editable harness. **iPhone** through the Mac's iPhone
+Mirroring window, or **Android** over adb (USB or Wi‑Fi). No jailbreak, no
+Xcode, no WebDriverAgent, no app on the phone.
 
-The Mac's iPhone Mirroring window is the whole transport: `screencapture` +
-Vision-framework OCR for eyes, HID-level CGEvents for hands. Nothing between the
-agent and the phone. The agent writes what's missing during execution in
-`agent-workspace/agent_helpers.py`.
+The Mac is the whole transport. iPhone: `screencapture` + Vision-framework OCR
+for eyes, HID-level CGEvents for hands. Android: `screencap` for eyes plus the
+phone's own accessibility tree — exact text, exact boxes — and `input` for
+hands. Nothing between the agent and the phone. The agent writes what's
+missing during execution in `agent-workspace/agent_helpers.py`.
 
 ```
   ● agent: wants to open Weather
@@ -26,47 +29,28 @@ agent and the phone. The agent writes what's missing during execution in
 Paste into Claude Code or Codex:
 
 ```text
-Set up phone-harness for me. Clone https://github.com/ShawnPana/phone-harness
-into ~/.phone-harness (its canonical home) and read `install.md` first to install
-it and connect it to my real iPhone
-through the macOS iPhone Mirroring app — install it so `phone-harness` is a
-command on my PATH, and register it as an agent skill named phone-harness using
-`phone-harness skill` as the body, so you reach for it automatically. Then read
-`SKILL.md` for normal usage, and always read `src/phone_harness/helpers.py`
-because that is where the functions are. Whenever you capture or verify the
-screen, activate the iPhone Mirroring window so I can see what you're doing on
-the phone.
-
-Setup needs two things only I can do: pairing iPhone Mirroring with my phone
-once, and granting the terminal Accessibility + Screen Recording in System
-Settings — walk me through those and wait for me. Verify with
-`./phone-harness --doctor`.
-
-After it's installed, as a quick demo that interaction works, go to my Home
-Screen and — if the phone is connected and unlocked — ask me whether you should
-open github.com/ShawnPana/phone-harness on the phone and star the repo for me;
-only do it if I say yes. If the session is paused or the phone is locked, just
-tell me the doctor status instead.
+Set up phone-harness for me. Clone https://github.com/ShawnPana/phone-harness into ~/.phone-harness (its canonical home), read `install.md` first, install it so `phone-harness` is a command on my PATH, and register it as an agent skill named phone-harness using `phone-harness skill` as the body, so you reach for it automatically. Then read `SKILL.md` for normal usage, and always read `src/phone_harness/helpers.py` because that is where the functions are. Then read `onboarding.md` and walk me through it.
 ```
 
-The agent will walk you through the two things only you can do: **pairing**
-iPhone Mirroring with your phone once (the pairing prompts need the physical
-phone), and granting the terminal **Accessibility** (taps & keystrokes) and
-**Screen Recording** (seeing the phone) in System Settings → Privacy &
-Security. Screen Recording takes effect after the terminal restarts;
-Accessibility is immediate. Then `./phone-harness --doctor` verifies the whole
-chain.
+The agent then follows [onboarding.md](onboarding.md): it asks one thing —
+which phone is your default, iPhone or Android — and walks you through only
+what needs your hands. **iPhone:** pairing iPhone Mirroring once, and granting
+the terminal **Accessibility** and **Screen Recording** in System Settings →
+Privacy & Security (Screen Recording takes effect after the terminal restarts).
+**Android:** turning on Developer options, then either plugging in and tapping
+Allow, or Wireless debugging + one 6‑digit pairing code. Then
+`phone-harness --doctor` verifies the chain, and `phone-harness config set
+platform ios|android` sets the default (both can be set up).
 
-These are the permissions currently known to be required. A fresh machine may
-prompt for more the first time an action runs — if `--doctor` passes but taps or
-capture silently do nothing, watch for a macOS permission prompt. See
-[install.md](install.md) for details.
+A fresh machine may prompt for more permissions the first time an action runs
+— if `--doctor` passes but taps or capture silently do nothing, watch for a
+macOS prompt. See [install.md](install.md) for details.
 
 ## Why this works
 
-iPhone Mirroring (macOS Sequoia+) renders the phone as a Mac window and forwards
-real mouse and keyboard input as touches. That gives an agent everything it
-needs for real-device iOS automation:
+**iPhone.** iPhone Mirroring (macOS Sequoia+) renders the phone as a Mac window
+and forwards real mouse and keyboard input as touches. That gives an agent
+everything it needs for real-device iOS automation:
 
 - **See** — capture just the mirroring window, OCR it with Apple's Vision
   framework: every visible string with a tap-ready coordinate. The poor man's
@@ -81,6 +65,16 @@ ignored — the window is a video stream with no accessibility tree), unicode ke
 payloads (mirroring forwards raw HID keycodes, so typing must use keycodes), a
 slow touch-drag (barely moves an iOS list — use wheel scroll for lists, a fast
 flick for pages), and input while the window isn't frontmost (swallowed).
+
+**Android.** adb reaches the phone directly, over USB or Wi‑Fi — no window, no
+focus, nothing on the Mac has to be in front. `screencap` is the capture; the
+phone's own accessibility tree (`uiautomator`) is the text source, so `ocr()`
+returns exact strings and boxes and `tap_ui("url_bar")` finds elements OCR
+never could; `input tap/swipe/text` are the hands; Back exists. Coordinates
+are device pixels, so a screenshot is 1:1 with `tap(x, y)`. The harness finds
+the phone itself (a plugged-in one first, else the paired Wi‑Fi phone),
+refuses to drive a locked one, and can keep it awake for a session without
+touching a setting. Same helpers, same agent code.
 
 ## Usage
 
@@ -100,18 +94,25 @@ reaches for it on its own.
 ## Architecture
 
 - `SKILL.md` — day-to-day usage (the agent-facing product surface)
-- `install.md` — permissions bootstrap and troubleshooting
-- `src/phone_harness/` — protected core (~500 lines):
-  - `mirror.py` — window discovery, focus, capture, CGEvent input
-  - `ocr.py` — Vision-framework text recognition → screen-point boxes
-  - `helpers.py` — the primitives pre-imported into scripts
-  - `admin.py` — `--doctor`
-  - `run.py` — the CLI (`exec` stdin with helpers in scope)
+- `onboarding.md` — the first-run flow the agent walks the user through
+- `install.md` — setup reference and troubleshooting
+- `src/phone_harness/` — protected core:
+  - `transport.py` — the one seam: the op vocabulary every device sits behind,
+    and `connect("ios"|"android")`
+  - `helpers.py` — the primitives pre-imported into scripts (platform-agnostic)
+  - `ios.py`, `mirror.py`, `background.py`, `ocr.py` — the iPhone: window
+    discovery, focus, capture, CGEvent input, Vision OCR
+  - `android.py` — the Android: adb, the accessibility tree, USB/Wi‑Fi
+    resolution and pairing, awake sessions, the `android` CLI
+  - `config.py` — settings (`phone-harness config`) and remembered devices
+  - `admin.py` — `--doctor`; `run.py` — the CLI (`exec` stdin with helpers in scope)
 - `agent-workspace/agent_helpers.py` — helper code the agent edits; auto-loaded
   into every script's namespace
 
-The mirror transport is stateless (window bounds and captures are re-queried per
-call), so there is no daemon — every invocation is self-contained.
+Both transports are stateless per call (window bounds and captures are
+re-queried; adb has its own server), so there is no daemon — every invocation
+is self-contained. State that must persist (the default platform, paired
+Android phones) lives in `~/.config/phone-harness` and `~/.local/state/phone-harness`.
 
 ## Development
 
@@ -125,7 +126,11 @@ PY
 
 ## Limits
 
-- One phone, one session; unlocking the physical phone pauses mirroring.
-- No multi-touch (no pinch), no camera/Face ID flows, DRM video renders black.
-- OCR sees text, not semantics — unlabeled icons need a screenshot + a
+- iPhone: one phone, one session; unlocking the physical phone pauses mirroring.
+  OCR sees text, not semantics — unlabeled icons need a screenshot + a
   vision-capable model.
+- Android: the tree costs seconds on a slow phone and is unavailable on screens
+  that never go idle (read the screenshot instead); `input text` is ASCII;
+  key chords are not a thing over adb; a PIN-locked phone needs the user.
+- Both: no multi-touch (no pinch), no camera/Face ID flows, DRM video renders
+  black. Connecting the phone is always the user's job.

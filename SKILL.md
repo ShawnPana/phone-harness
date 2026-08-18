@@ -5,8 +5,11 @@ description: "Control the user's phone — iPhone through the Mac's iPhone Mirro
 
 # phone-harness
 
-Direct iPhone control via the iPhone Mirroring app — screenshots + Vision OCR
-for eyes, HID-level CGEvents for hands. For task-specific edits, use
+Direct control of the user's phone. iPhone: through the iPhone Mirroring app —
+screenshots + Vision OCR for eyes, HID-level CGEvents for hands. Android: over
+adb — screenshots + the phone's accessibility tree for eyes, `input` for hands
+(see the Android section; the helpers are the same). `phone-harness config`
+shows which is the default. For task-specific edits, use
 `agent-workspace/agent_helpers.py`. For setup or permission problems, read
 `install.md`.
 

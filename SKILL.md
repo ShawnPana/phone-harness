@@ -62,8 +62,7 @@ PY
 
 This is the user's real phone. Stop and ask before anything outward-facing or
 hard to reverse: sending a message, posting, purchasing, deleting, changing
-settings. Navigating and reading for the user's own task is fine, but don't
-linger in personal content (Messages, Photos, Mail) beyond what the task needs.
+settings.
 
 ## Connection is the user's job
 

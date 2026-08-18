@@ -48,19 +48,39 @@ AGENT_WORKSPACE = Path(
 # Distinctive text on the not-connected interstitials. Reconnecting past any of
 # these is a PHYSICAL action only the user can do (open the app, and if it says
 # "iPhone in Use", LOCK the phone). The agent must never tap through them.
+# Fallback only. The primary check is structural (see connection_state), and
+# a phrase list cannot be complete: it missed "Connection Paused" and the Mac
+# login screen in English, and misses every interstitial on a non-English
+# system.
 _BLOCKED_MARKERS = ("iphone in use", "lock your iphone", "mirroring ended",
-                    "to connect")
+                    "to connect", "connection paused", "connection interrupted",
+                    "is locked", "enter the mac login", "try again")
 
 
 def connection_state():
     """'ready' | 'blocked' | 'no-window' | 'not-running'.
 
-    'blocked' means a connect / 'iPhone in Use' / paused interstitial is on
-    screen. Cheap to call; use it to decide whether to proceed."""
+    'blocked' means an interstitial is up — iPhone in Use, paused, ended,
+    connect, or the Mac login screen — and nothing should be tapped or typed
+    until the user clears it.
+
+    Detected structurally: the live phone image is a video stream that
+    accessibility cannot see into, so a working session exposes no UI inside
+    the window, while every interstitial is an ordinary Mac view with labels
+    and a button. That holds in any language and for screens Apple has not
+    shipped yet, where matching known phrases does neither — the old list
+    missed both "Connection Paused" and the Mac login prompt, and reported
+    'ready' for a password field.
+
+    The phrase list is kept as a fallback in case an interstitial exposes no
+    accessibility content.
+    """
     if mirror.running_app() is None:
         return "not-running"
     if mirror.find_window() is None:
         return "no-window"
+    if mirror.window_ax_content():
+        return "blocked"
     path, win = mirror.capture()  # window exists, so this won't launch anything
     texts = " ".join(o["text"] for o in _ocr.recognize(path, win)).lower()
     return "blocked" if any(m in texts for m in _BLOCKED_MARKERS) else "ready"
@@ -87,11 +107,18 @@ def ensure_mirroring():
         raise RuntimeError(
             "iPhone Mirroring is open but no phone is connected. Please connect "
             "your phone in the app, then retry.")
+    # Quote the interstitial itself rather than guessing which one it is.
+    # Button titles are unreliable — the same screen reported 'Connect' once
+    # and an empty title a minute later — so only static text is used.
+    said = " ".join(t for role, t in mirror.window_ax_content()
+                    if role == "AXStaticText" and t)
+    detail = f" It says: {said}" if said else ""
     raise RuntimeError(
-        "iPhone Mirroring is not connected — it's showing a connect / 'iPhone "
-        "in Use' screen. This needs you: open iPhone Mirroring and connect the "
-        "phone, and if it says 'iPhone in Use', LOCK your iPhone so mirroring "
-        "can resume. Then retry. I will not tap Connect for you.")
+        "iPhone Mirroring is not connected — an interstitial is on screen."
+        + detail
+        + " This needs you: clear it on the Mac, and if it says 'iPhone in "
+        "Use', LOCK your iPhone so mirroring can resume. Then retry. I will "
+        "not tap Connect for you.")
 
 
 def screen_info():

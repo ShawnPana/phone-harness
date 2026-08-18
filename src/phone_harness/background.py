@@ -34,11 +34,11 @@ Keyboard (type_text/press) still briefly activates the window: the keyboard
 event-record layout isn't implemented yet, so those fall back to the mirror
 path. Mouse actions are fully background.
 """
-import ctypes, ctypes.util, struct, tempfile, time
+import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication, NSWorkspace
+from AppKit import NSRunningApplication
 
 from . import mirror
 
@@ -69,13 +69,29 @@ _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
 # --- window / app state (reused from mirror; none of these activate) ---
 
-find_window = mirror.find_window
+def find_window():
+    """The phone window, on the active Space or not.
+
+    SkyLight event records are addressed to a process and a window id, so this
+    backend reaches the window wherever it is. mirror.py keeps the on-screen
+    default because it posts CGEvents at global screen coordinates, which land
+    on whatever is actually in front.
+
+    Inheriting mirror's default is why a terminal on a different Space from the
+    phone made the harness report a disconnected phone (#8) — the window was
+    there the whole time, just not on the Space being asked about.
+    """
+    return mirror.find_window(on_screen=False)
+
+
 running_app = mirror.running_app
+window_ax_content = mirror.window_ax_content
 
 
-def is_frontmost():
-    front = NSWorkspace.sharedWorkspace().frontmostApplication()
-    return bool(front and front.bundleIdentifier() == BUNDLE_ID)
+# Shared with the mirror backend. Nothing here needs focus, but screen_info()
+# reports the value and a wrong answer sends people hunting for focus bugs
+# that are not there.
+is_frontmost = mirror.is_frontmost
 
 
 def activate():
@@ -117,10 +133,27 @@ def capture(path=None, retries=2):
             if Quartz.CGImageDestinationFinalize(dest):
                 return path, win
             last = "could not encode PNG"
+        elif _screencapture(win, path):
+            # CGWindowListCreateImage renders nothing for a window that is not
+            # on the active Space. `screencapture -l` still reaches it, with
+            # live frames rather than a stale backing store. It costs a
+            # subprocess, so it stays the fallback. Its image is Retina where
+            # the fast path is point-resolution; ocr.recognize derives the
+            # scale from the window, so both work.
+            return path, win
         else:
-            last = "CGWindowListCreateImage returned nothing"
+            last = "CGWindowListCreateImage returned nothing, screencapture failed"
         time.sleep(0.3)
     raise RuntimeError(f"background capture failed: {last}")
+
+
+def _screencapture(win, path):
+    """Window capture via the screencapture binary. True if it wrote a PNG."""
+    if os.path.exists(path):
+        os.remove(path)
+    subprocess.run(["screencapture", "-x", "-o", "-l", str(win["id"]), path],
+                   capture_output=True)
+    return os.path.exists(path) and os.path.getsize(path) > 1000
 
 
 # --- input (hands), no focus ---

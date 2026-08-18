@@ -1,14 +1,30 @@
 [project]
 name = "phone-harness"
-version = "0.1.0"
+version = "0.1.1"
 description = "Control a real iPhone through macOS iPhone Mirroring: OCR eyes, CGEvent hands"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
+keywords = ["iphone", "automation", "agent", "iphone-mirroring", "macos"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: MacOS X",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "pyobjc-framework-Quartz",
     "pyobjc-framework-Vision",
-    "pyobjc-framework-AppKit",
+    "pyobjc-framework-Cocoa",
     "pyobjc-framework-ApplicationServices",
 ]
+
+[project.urls]
+Homepage = "https://phone-harness.com"
+Repository = "https://github.com/ShawnPana/phone-harness"
+Issues = "https://github.com/ShawnPana/phone-harness/issues"
 
 [project.scripts]
 phone-harness = "phone_harness.run:main"
@@ -19,3 +35,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/phone_harness"]
+
+# The skill text ships inside the package so `phone-harness skill` works
+# from an installed wheel, not only from a checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"SKILL.md" = "phone_harness/SKILL.md"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/phone_harness", "SKILL.md", "README.md", "LICENSE", "install.md"]

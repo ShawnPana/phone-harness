@@ -97,6 +97,33 @@ def screenshot(path=None):
     return p
 
 
+def image_point(x, y, image_size=None):
+    """Convert a screenshot pixel point to a global screen point.
+
+    Pass the pixel coordinates observed in the most recent screenshot. The
+    current window and capture size are queried every call so window movement,
+    resizing, and Retina/non-Retina captures are handled correctly.
+    """
+    info = screen_info()
+    iw, ih = image_size or info["img_px"]
+    win = info["window"]
+    if iw <= 0 or ih <= 0:
+        raise ValueError("image dimensions must be positive")
+    return (win["x"] + x * win["w"] / iw,
+            win["y"] + y * win["h"] / ih)
+
+
+def tap_image_point(x, y, image_size=None):
+    """Tap a point identified in screenshot pixel coordinates.
+
+    This is for icon-only controls that OCR cannot locate. It converts the
+    point using the current window geometry, then sends the normal tap event.
+    """
+    gx, gy = image_point(x, y, image_size=image_size)
+    tap(gx, gy)
+    return {"image": {"x": x, "y": y}, "screen": {"x": gx, "y": gy}}
+
+
 # --- did we interrupt the user ----------------------------------------------
 
 def focus_probe():
@@ -214,10 +241,14 @@ def press(combo):
     return send("input.keys", combo=combo)
 
 
-def type_text(text, delay=0.03):
+def type_text(text, delay=0.03, keystrokes=False):
     """Type into the focused field. Tap the field and let the keyboard appear
-    first — text sent before it has focus goes nowhere."""
-    return send("input.text", s=text, delay=delay)
+    first — text sent before it has focus goes nowhere, silently, so check a
+    capture afterwards.
+
+    Pastes by default so the text arrives exactly as written; keystrokes=True
+    sends real key events for fields that need them."""
+    return send("input.text", s=text, delay=delay, keystrokes=keystrokes)
 
 
 # --- gestures relative to the screen ----------------------------------------

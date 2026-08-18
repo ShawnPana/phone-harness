@@ -27,8 +27,11 @@ PY
 
 - Invoke as `phone-harness`. Use heredocs for multi-line commands.
 - Helpers are pre-imported. All coordinates are global screen points.
-- `ensure_mirroring()` launches and focuses the window; input helpers focus it
-  automatically before posting events.
+- `ensure_mirroring()` launches the window and gates on connection. The
+  default build then works the phone **without focusing it**: capture is by
+  window id and input is an event record delivered straight to the app, so a
+  task never steals the user's screen. `PHONE_HARNESS_BACKGROUND=0` forces the
+  classic path, which must focus before every action.
 
 ## Screen Workflow
 
@@ -53,10 +56,14 @@ PY
   new rows — a dense screen or a missed OCR line will not end the scroll
   early. Each step settles first so lazy-loaded content arrives before the
   movement check. `scroll_screen()` is the single-step primitive if you need
-  it. These use wheel scrolling (a slow touch-drag barely moves an iOS list
-  and bounces back).
+  it. In the background build these scroll with momentum flicks — wheel
+  events only route to a *focused* window, and a slow touch-drag barely moves
+  an iOS list before bouncing back; only a fast flick carries it.
 - Raw Quartz is the escape hatch: `import Quartz` in your script for anything
-  the helpers don't cover.
+  the helpers don't cover — but raw CGEvents don't ride the helpers' delivery
+  path. They land only while the window is frontmost and are swallowed
+  silently otherwise, scroll-wheel events included: `activate()` first, then
+  verify the screen actually changed.
 
 ## Android
 
@@ -128,8 +135,13 @@ raises a clear message (call `connection_state()` yourself to check —
 
 ## Gotchas
 
-- **Unfocused input is swallowed silently.** The window must be frontmost;
-  helpers call `activate()` but if a click steals focus mid-task, re-activate.
+- **Unfocused input is swallowed silently — for events you post yourself.**
+  The helpers are immune in the background build (input goes straight to the
+  app), but raw CGEvents and the `PHONE_HARNESS_BACKGROUND=0` path need the
+  window frontmost: `activate()` before posting, and re-activate if a click
+  steals focus mid-task. The failure looks exactly like "scrolling is broken"
+  or "the list already ended" — when a gesture changes nothing on screen,
+  check focus before inventing another theory.
 - **The window is a video stream.** macOS accessibility sees nothing inside
   it; AppleScript `click at` fails silently. Only HID-level CGEvents work.
 - **The window moves.** Never cache coordinates across calls; `ocr()` and
@@ -138,7 +150,12 @@ raises a clear message (call `connection_state()` yourself to check —
   tap through the resume screen — stop and ask the user to lock/connect the
   phone (see "Connection is the user's job").
 - **`type_text` needs an iOS text field focused first** — tap the field, wait
-  for the keyboard, then type.
+  for the keyboard, then type. It fails *silently* when nothing is focused: the
+  text goes to whatever is focused instead, or nowhere. Verify with a capture,
+  and if a tap will not take focus, `press("tab")` moves between fields.
+- **`type_text` pastes; it does not type.** That is deliberate — the keystroke
+  path runs through iOS autocorrect, which rewrites words as they land ("Thu"
+  becomes "thru"). Pass `keystrokes=True` for fields that need real key events.
 - **Home-Screen labels are not tap targets.** `tap_text("Weather")` hits the
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works

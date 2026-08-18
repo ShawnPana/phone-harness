@@ -500,17 +500,26 @@ def paste_with(press_fn, text):
     paths reach the phone differently (posted to the window vs posted to the
     pid) and only the caller knows which is in play. The clipboard round-trip
     itself is identical, and worth having in exactly one place.
+
+    The typed text stays on the Mac clipboard afterwards. Restoring the
+    previous contents was a race: the phone pulls the clipboard through the
+    Mirroring session some unknown time after cmd+v, and nothing reports
+    when it has — restore too early and the phone pastes what was on the
+    clipboard BEFORE (a URL, a token, a password) into the field. A
+    deterministic "your clipboard now holds what was typed" beats a
+    sometimes-leak. Set ios.restore_clipboard=true in config to restore
+    after a generous settle anyway (ios.paste_settle seconds).
     """
+    from . import config
     prior = subprocess.run(["pbpaste"], capture_output=True).stdout
-    try:
-        subprocess.run(["pbcopy"], input=text.encode())
-        # Fail here rather than pasting stale clipboard contents into the phone.
-        if subprocess.run(["pbpaste"], capture_output=True).stdout != text.encode():
-            raise RuntimeError("clipboard did not take the text; cannot paste")
-        time.sleep(0.15)   # the Mac clipboard has to reach the phone
-        press_fn("cmd+v")
-        time.sleep(0.2)    # and the paste has to land before we restore it
-    finally:
+    subprocess.run(["pbcopy"], input=text.encode())
+    # Fail here rather than pasting stale clipboard contents into the phone.
+    if subprocess.run(["pbpaste"], capture_output=True).stdout != text.encode():
+        raise RuntimeError("clipboard did not take the text; cannot paste")
+    time.sleep(0.15)   # the Mac clipboard has to reach the phone
+    press_fn("cmd+v")
+    if config.get("ios.restore_clipboard"):
+        time.sleep(float(config.get("ios.paste_settle")))
         subprocess.run(["pbcopy"], input=prior)
 
 

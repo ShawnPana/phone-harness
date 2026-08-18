@@ -43,9 +43,12 @@ PY
   in Python before printing.
 - Tap by label: `tap_text("Weather")`. On failure it raises with what IS
   visible, so read the exception before retrying.
-- Icons without labels: `screenshot()`, view the image, compute the point
-  (image px ÷ scale + window origin — `screen_info()` has both sizes), then
-  `tap(x, y)`.
+- Icons without labels: `screenshot()`, view the image, and use
+  `tap_image_point(x, y, image_size=...)` with coordinates measured in the
+  screenshot. Do **not** pass screenshot pixel coordinates directly to `tap()`:
+  `tap()` expects global macOS screen points. If using `tap()` instead, first
+  convert with `image_point()` using the current `screen_info()`; never estimate
+  the window offset manually.
 - **Verify after every action**: `wait_stable()` then `ocr()`/`screenshot()`.
   There is no DOM to assert against; the capture is the ground truth.
 - Navigation: `home()`, `app_switcher()`, `open_app("Notes")` (Spotlight),

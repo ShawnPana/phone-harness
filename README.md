@@ -44,8 +44,9 @@ Settings — walk me through those and wait for me. Verify with
 
 After it's installed, as a quick demo that interaction works, go to my Home
 Screen and — if the phone is connected and unlocked — ask me whether you should
-open the Weather app as a harmless test; only open it if I say yes. If the
-session is paused or the phone is locked, just tell me the doctor status instead.
+open github.com/ShawnPana/phone-harness on the phone and star the repo for me;
+only do it if I say yes. If the session is paused or the phone is locked, just
+tell me the doctor status instead.
 ```
 
 The agent will walk you through the two things only you can do: **pairing**

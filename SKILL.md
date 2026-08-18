@@ -90,8 +90,8 @@ PY
   matches installed package ids and returns the one launched.
 - `press()` takes single keys only (`"enter"`, `"back"`, `"tab"`); chords
   raise Unsupported. `type_text` needs a focused field, same as iOS.
-- No focus to keep: nothing on the Mac has to be frontmost, and `interruption`
-  is always nothing.
+- No focus to keep: nothing on the Mac has to be frontmost, and
+  `interruption(before, after)` always reports nothing disturbed.
 - **Verify cheaply, then read.** adb reports nothing about outcomes — a tap on
   empty space "succeeds". After an action: `wait_for_app("com.android.chrome")`
   (~0.1s per poll) or `wait_for_text("Got it")` (returns the box or None),
@@ -156,6 +156,8 @@ raises a clear message (call `connection_state()` yourself to check —
 - **`type_text` pastes; it does not type.** That is deliberate — the keystroke
   path runs through iOS autocorrect, which rewrites words as they land ("Thu"
   becomes "thru"). Pass `keystrokes=True` for fields that need real key events.
+  The typed text stays on the Mac clipboard afterwards (restoring the old
+  clipboard raced the phone and could paste it instead).
 - **Home-Screen labels are not tap targets.** `tap_text("Weather")` hits the
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works

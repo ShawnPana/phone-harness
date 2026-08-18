@@ -38,6 +38,10 @@ DEFAULTS = {
         "poke_every": 25,      # seconds between keep-awake pokes
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
+    "ios": {
+        "restore_clipboard": False,   # put the old clipboard back after a paste
+        "paste_settle": 2.0,          # ...after this many seconds, if so
+    },
 }
 
 # Settings that historically had their own environment variable.
@@ -124,9 +128,9 @@ def _coerce(text, like):
     """An env-var string, shaped like the default it overrides."""
     if isinstance(like, bool):
         return text.strip().lower() in ("1", "true", "yes", "on")
-    if isinstance(like, int):
+    if isinstance(like, (int, float)):
         try:
-            return int(text)
+            return type(like)(text)
         except ValueError:
             return like
     return text

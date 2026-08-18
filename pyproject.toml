@@ -42,4 +42,4 @@ packages = ["src/phone_harness"]
 "SKILL.md" = "phone_harness/SKILL.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/phone_harness", "SKILL.md", "README.md", "LICENSE", "install.md"]
+include = ["src/phone_harness", "SKILL.md", "onboarding.md", "README.md", "LICENSE", "install.md"]

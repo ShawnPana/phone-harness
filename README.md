@@ -29,24 +29,18 @@ missing during execution in `agent-workspace/agent_helpers.py`.
 Paste into Claude Code or Codex:
 
 ```text
-Set up phone-harness for me. Clone https://github.com/ShawnPana/phone-harness into ~/.phone-harness (its canonical home), read `install.md` first, install it so `phone-harness` is a command on my PATH, and register it as an agent skill named phone-harness using `phone-harness skill` as the body, so you reach for it automatically. Then read `SKILL.md` for normal usage, and always read `src/phone_harness/helpers.py` because that is where the functions are.
-
-Ask me one question first: which phone should be my default — iPhone or Android? (I can set up both; then ask which is default.) Then do the setup for that phone, detecting what is already in place instead of asking me things you can check yourself; only stop for the steps that need my hands, and tell me exactly what to do on the phone or in System Settings.
-
-- iPhone: it works through the macOS iPhone Mirroring app. Two things only I can do: pair iPhone Mirroring with my phone once, and grant the terminal Accessibility + Screen Recording in System Settings — walk me through those and wait for me. Whenever you capture or verify the screen, bring the iPhone Mirroring window forward so I can see what you're doing.
-- Android: install Android platform-tools (adb) and scrcpy (optional live mirror). Ask whether I have a USB cable handy: with a cable, tell me how to turn on Developer options and USB debugging, then plug in and tap Allow; without one, Wireless debugging — I turn it on, open "Pair device with pairing code", and give you the 6-digit code for `phone-harness android pair CODE`. Then `phone-harness config set platform android` so it is my default.
-
-Verify with `phone-harness --doctor` (add `android` or `ios` to check the other phone). Then, as a quick read-only proof, take a screenshot and read the screen back to me. After that, ask me whether you should open phone-harness.com on the phone (Safari on iPhone, Chrome on Android), tap "Star on GitHub" and star the repo for me — only do it if I say yes. If the phone is locked or the session is paused, just tell me the doctor status instead.
+Set up phone-harness for me. Clone https://github.com/ShawnPana/phone-harness into ~/.phone-harness (its canonical home), read `install.md` first, install it so `phone-harness` is a command on my PATH, and register it as an agent skill named phone-harness using `phone-harness skill` as the body, so you reach for it automatically. Then read `SKILL.md` for normal usage, and always read `src/phone_harness/helpers.py` because that is where the functions are. Then read `onboarding.md` and walk me through it.
 ```
 
-The agent asks one thing — which phone is your default — and then walks you
-through only what needs your hands. **iPhone:** pairing iPhone Mirroring once,
-and granting the terminal **Accessibility** and **Screen Recording** in System
-Settings → Privacy & Security (Screen Recording takes effect after the terminal
-restarts). **Android:** turning on Developer options, then either plugging in
-and tapping Allow, or Wireless debugging + one 6‑digit pairing code. Then
+The agent then follows [onboarding.md](onboarding.md): it asks one thing —
+which phone is your default, iPhone or Android — and walks you through only
+what needs your hands. **iPhone:** pairing iPhone Mirroring once, and granting
+the terminal **Accessibility** and **Screen Recording** in System Settings →
+Privacy & Security (Screen Recording takes effect after the terminal restarts).
+**Android:** turning on Developer options, then either plugging in and tapping
+Allow, or Wireless debugging + one 6‑digit pairing code. Then
 `phone-harness --doctor` verifies the chain, and `phone-harness config set
-platform ios|android` is how the default is set (both can be set up).
+platform ios|android` sets the default (both can be set up).
 
 A fresh machine may prompt for more permissions the first time an action runs
 — if `--doctor` passes but taps or capture silently do nothing, watch for a
@@ -100,7 +94,8 @@ reaches for it on its own.
 ## Architecture
 
 - `SKILL.md` — day-to-day usage (the agent-facing product surface)
-- `install.md` — permissions bootstrap and troubleshooting
+- `onboarding.md` — the first-run flow the agent walks the user through
+- `install.md` — setup reference and troubleshooting
 - `src/phone_harness/` — protected core:
   - `transport.py` — the one seam: the op vocabulary every device sits behind,
     and `connect("ios"|"android")`

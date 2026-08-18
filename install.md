@@ -1,6 +1,7 @@
 # phone-harness install
 
-phone-harness drives a real phone from a Mac: an **iPhone** through the macOS
+phone-harness drives a real phone from a Mac (first-run flow for agents:
+`onboarding.md`; day-to-day usage: `SKILL.md`). It works with an **iPhone** through the macOS
 iPhone Mirroring app, or an **Android** over adb (USB or Wi‑Fi). Same helpers
 either way; you choose a default and can switch per call.
 

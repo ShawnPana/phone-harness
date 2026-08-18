@@ -1,6 +1,6 @@
 ---
 name: phone-harness
-description: "Control the user's iPhone through the Mac's iPhone Mirroring window: open apps, tap, type, swipe, read the screen."
+description: "Control the user's phone — iPhone through the Mac's iPhone Mirroring window, or an Android over adb: open apps, tap, type, swipe, read the screen."
 ---
 
 # phone-harness
@@ -64,6 +64,52 @@ PY
   path. They land only while the window is frontmost and are swallowed
   silently otherwise, scroll-wheel events included: `activate()` first, then
   verify the screen actually changed.
+
+## Android
+
+Same helpers, different phone. `phone-harness config set platform android`
+makes Android the default (`phone-harness config` shows every setting and
+where it came from); until then, or to override per call, prefix with
+`PHONE_HARNESS_PLATFORM=android`. The harness
+finds the phone itself — a USB phone if plugged in, else the paired Wi-Fi
+phone — so there is nothing to select.
+
+```bash
+PHONE_HARNESS_PLATFORM=android phone-harness <<'PY'
+open_app("chrome"); wait_stable()
+tap_ui("Got it")                    # exact label from the accessibility tree
+PY
+```
+
+- Coordinates are device pixels; the screenshot is 1:1 with `tap(x, y)`.
+- `ocr()` is the accessibility tree (`source: "tree"`) — exact, no misreads.
+  Prefer `ui()` / `find_nodes()` / `tap_ui()`: they also see elements with no
+  visible text (icons with a content-description, fields by resource-id like
+  `tap_ui("url_bar")`). `ocr_pixels()` is Unsupported here.
+- `back()`, `current_app()`, `list_apps()` exist. `open_app("chrome")`
+  matches installed package ids and returns the one launched.
+- `press()` takes single keys only (`"enter"`, `"back"`, `"tab"`); chords
+  raise Unsupported. `type_text` needs a focused field, same as iOS.
+- No focus to keep: nothing on the Mac has to be frontmost, and `interruption`
+  is always nothing.
+- **Verify cheaply, then read.** adb reports nothing about outcomes — a tap on
+  empty space "succeeds". After an action: `wait_for_app("com.android.chrome")`
+  (~0.1s per poll) or `wait_for_text("Got it")` (returns the box or None),
+  then `ui()`/`ocr()` once for contents. The tree costs ~2-3s a call on a slow
+  phone and a screenshot ~0.5s, so batch a whole sub-task in one invocation
+  and filter in Python rather than one call per turn.
+- **The phone locks itself** after its screen timeout. `connection_state()`
+  reports `locked`; taps and `ocr()` refuse with the same message. Ask the
+  user to unlock — never type a PIN. `screenshot()` still works locked, so you
+  can show them what you see. For a task longer than a minute, ask the user,
+  then run `phone-harness android awake --bg`: it keeps the phone awake for
+  the session (and opens a mirror window if scrcpy is installed) without
+  changing any phone setting; `phone-harness android rest` ends it and lets
+  the phone sleep. Do that at the end of the task.
+- Connection is still the user's job (USB debugging + Allow, or Wireless
+  debugging + `phone-harness android pair CODE`); on `no-device` the
+  error names the missing step — relay it, don't retry-loop.
+  `phone-harness android` shows known phones and what is attached.
 
 ## Consent
 

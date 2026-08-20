@@ -45,6 +45,14 @@ from . import mirror
 
 APP_NAME = "iPhone Mirroring"
 BUNDLE_ID = "com.apple.ScreenContinuity"
+
+
+def set_target(bundle_id, app_name, app_path, window_title=None):
+    """Forward retargeting to mirror (the single source of window truth) and
+    keep this module's own messages naming the right app."""
+    global APP_NAME, BUNDLE_ID
+    mirror.set_target(bundle_id, app_name, app_path, window_title)
+    APP_NAME, BUNDLE_ID = app_name, bundle_id
 TMP = Path(tempfile.gettempdir()) / "phone-harness"
 TMP.mkdir(exist_ok=True)
 

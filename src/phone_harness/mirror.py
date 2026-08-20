@@ -17,6 +17,21 @@ from AppKit import NSRunningApplication
 APP_NAME = "iPhone Mirroring"
 BUNDLE_ID = "com.apple.ScreenContinuity"
 APP_PATH = "/System/Applications/iPhone Mirroring.app"
+WINDOW_TITLE_FILTER = None      # substring match; None = any window
+
+
+def set_target(bundle_id, app_name, app_path, window_title=None):
+    """Retarget this transport at a different phone-shaped window.
+
+    The eyes and hands here — window capture, Vision OCR, HID events — work
+    on ANY window that shows a phone. iPhone Mirroring is merely the default
+    target. The iOS Simulator is the other one: same control modality, a
+    different window. `window_title` narrows to one window when the target
+    app can own several (each booted simulator is its own titled window).
+    """
+    global APP_NAME, BUNDLE_ID, APP_PATH, WINDOW_TITLE_FILTER
+    APP_NAME, BUNDLE_ID, APP_PATH = app_name, bundle_id, app_path
+    WINDOW_TITLE_FILTER = window_title
 
 TMP = Path(tempfile.gettempdir()) / "phone-harness"
 TMP.mkdir(exist_ok=True)
@@ -50,6 +65,9 @@ def find_window(on_screen=True):
     wins = Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID) or []
     cands = [w for w in wins if w.get("kCGWindowOwnerPID") == pid
              and w.get("kCGWindowLayer", 1) == 0]
+    if WINDOW_TITLE_FILTER:
+        cands = [w for w in cands
+                 if WINDOW_TITLE_FILTER in (w.get("kCGWindowName") or "")]
     if not on_screen:
         # Off the active Space the list also carries the app's other windows:
         # a Settings sheet, a Welcome dialog, and four unnamed 1512x33 strips.

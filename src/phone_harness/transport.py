@@ -138,6 +138,8 @@ def connect(platform=None, **kw):
     platform = (platform or config.get("platform")).lower()
     if platform in ("ios", "iphone", "ipad"):
         return importlib.import_module(".ios", __package__).IPhone(**kw)
+    if platform in ("sim", "simulator", "ios-sim"):
+        return importlib.import_module(".sim", __package__).Simulator(**kw)
     if platform == "android":
         return importlib.import_module(".android", __package__).Android(**kw)
     raise ValueError(f"unknown platform {platform!r}")

@@ -3,9 +3,30 @@
 This is the mirror backend's element tree: OCR gives every visible string a
 bounding box, converted here into global screen points ready for tap().
 """
+import functools
+import os
+
 import Quartz
 import Vision
-from Foundation import NSURL
+from Foundation import NSURL, NSLocale
+
+
+@functools.lru_cache(maxsize=1)
+def _languages():
+    """Recognition languages: the Mac's preferred languages, English last.
+
+    Vision defaults to Latin-script recognition, so a phone showing Chinese
+    (or any non-Latin script) OCRs to garbage. The Mac's own language list is
+    the best available guess at what the phone shows; English stays in the
+    list so a bilingual screen keeps working. PHONE_HARNESS_OCR_LANGS
+    overrides it outright ("zh-Hans,en-US") for phones whose language the
+    Mac does not share.
+    """
+    override = os.environ.get("PHONE_HARNESS_OCR_LANGS")
+    if override:
+        return [l.strip() for l in override.split(",") if l.strip()]
+    langs = [str(t) for t in NSLocale.preferredLanguages() or []]
+    return [*[l for l in langs if not l.startswith("en")], "en-US"]
 
 
 def image_size(path):
@@ -27,6 +48,12 @@ def recognize(path, window):
         NSURL.fileURLWithPath_(path), {})
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request.setRecognitionLanguages_(_languages())
+    # And let Vision spot a language the Mac's list missed (macOS 13+): the
+    # explicit list above acts as hints, detection covers the rest — a phone
+    # is not obliged to speak the same language as the Mac driving it.
+    if request.respondsToSelector_("setAutomaticallyDetectsLanguage:"):
+        request.setAutomaticallyDetectsLanguage_(True)
     ok, err = handler.performRequests_error_([request], None)
     if not ok:
         raise RuntimeError(f"Vision OCR failed: {err}")

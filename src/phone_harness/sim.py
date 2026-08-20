@@ -73,8 +73,20 @@ class Simulator(IPhone):
         self.mirror.drag(cx, cy, cx, cy + win["h"] * 0.25, duration=0.25)
         _sleep(0.9)
         self.mirror.type_text(name, keystrokes=True)
-        _sleep(1.2)
-        self.mirror.press("return")
+        _sleep(1.4)
+        # Return does not reliably commit the Simulator's Spotlight; tap the
+        # matching result instead (skip the query echo in the search field —
+        # results render below it).
+        from . import ocr as _ocr_mod
+        path, win2 = self.mirror.capture()
+        hits = [o for o in _ocr_mod.recognize(path, win2)
+                if o["text"].strip().lower() == name.strip().lower()
+                and o["y"] > win2["y"] + win2["h"] * 0.18]
+        if hits:
+            self.mirror.tap(hits[0]["x"], hits[0]["y"])
+        else:
+            self.mirror.press("return")
+        _sleep(1.0)
         return name
 
     # --- session: no interstitials, just booted-or-not ------------------

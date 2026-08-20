@@ -119,11 +119,10 @@ def booted_devices():
     out = subprocess.run(
         ["xcrun", "simctl", "list", "devices", "booted"],
         capture_output=True, text=True).stdout
+    import re
     devices = []
     for line in out.splitlines():
-        line = line.strip()
-        if "(Booted)" in line:
-            name = line.split(" (")[0]
-            udid = line.split("(")[1].rstrip(")").strip()
-            devices.append((name, udid))
+        m = re.match(r"\s*(.+?) \(([0-9A-Fa-f-]{36})\) \(Booted\)", line)
+        if m:
+            devices.append((m.group(1), m.group(2)))
     return devices

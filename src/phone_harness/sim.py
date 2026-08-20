@@ -39,9 +39,17 @@ class Simulator(IPhone):
 
     def __init__(self):
         super().__init__()
-        self.mirror.set_target(
-            BUNDLE_ID, APP_NAME, APP_PATH,
-            window_title=os.environ.get("PHONE_HARNESS_SIM_DEVICE"))
+        # Always title-filter: Simulator.app owns toolbar strips and other
+        # layer-0 windows besides the device, and the front-most candidate
+        # is not reliably the phone. The device window is titled with the
+        # device's name, so default to the booted device when the caller
+        # did not pin one.
+        title = os.environ.get("PHONE_HARNESS_SIM_DEVICE")
+        if not title:
+            booted = booted_devices()
+            title = booted[0][0] if booted else None
+        self.mirror.set_target(BUNDLE_ID, APP_NAME, APP_PATH,
+                               window_title=title)
 
     # --- navigation: same ops, Simulator's accelerators -----------------
 

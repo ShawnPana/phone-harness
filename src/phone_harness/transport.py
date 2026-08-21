@@ -114,7 +114,42 @@ class Backend:
         fn = getattr(self, self._slot(op), None)
         if fn is None:
             raise Unsupported(f"{self.name} cannot {op!r}")
-        return fn(**kw)
+        result = fn(**kw)
+        self._trace(op, kw)
+        return result
+
+    def _trace(self, op, kw):
+        """PHONE_HARNESS_TRACE=<dir>: append every op to trace.jsonl and,
+        after each op that ACTS on the phone, save a numbered screenshot.
+        The trace records what happened to the DEVICE — one honest,
+        agent-independent timeline per run, whatever is driving."""
+        import json as _json
+        import os as _os
+        import time as _time
+        tdir = _os.environ.get("PHONE_HARNESS_TRACE")
+        if not tdir or getattr(self, "_tracing", False):
+            return
+        try:
+            self._tracing = True          # screenshots must not re-trace
+            _os.makedirs(tdir, exist_ok=True)
+            entry = {"ts": round(_time.time(), 3), "op": op,
+                     "args": {k: v for k, v in kw.items()
+                              if isinstance(v, (int, float, str, bool))}}
+            if op.split(".")[0] in ("input", "nav", "apps"):
+                n = len([f for f in _os.listdir(tdir) if f.endswith(".png")])
+                shot = _os.path.join(
+                    tdir, f"{n:04d}-{op.replace('.', '-')}.png")
+                try:
+                    self.send("screen.capture", path=shot)
+                    entry["screenshot"] = _os.path.basename(shot)
+                except Exception:
+                    pass                   # a lost frame never fails the op
+            with open(_os.path.join(tdir, "trace.jsonl"), "a") as f:
+                f.write(_json.dumps(entry) + "\n")
+        except Exception:
+            pass                           # tracing is never load-bearing
+        finally:
+            self._tracing = False
 
     def supports(self, op):
         return getattr(self, self._slot(op), None) is not None

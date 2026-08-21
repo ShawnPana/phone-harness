@@ -1,4 +1,5 @@
 """The phone-harness CLI: exec Python from stdin with helpers pre-imported."""
+import os
 import sys
 from pathlib import Path
 
@@ -46,11 +47,22 @@ def main():
     if args and args[0] == "skill":
         print(_skill_text(), end="")
         return
+    if args and args[0] == "--serve":
+        from .daemon import serve
+        serve()
+        return
     if args or sys.stdin.isatty():
         sys.exit(USAGE)
     code = sys.stdin.read()
     if not code.strip():
         sys.exit(USAGE)
+    if os.environ.get("PHONE_HARNESS_DAEMON") == "1":
+        # ~0.1s hot path: no pyobjc imports in this process at all
+        try:
+            from .daemon import client_run
+            sys.exit(client_run(code))
+        except (ConnectionError, OSError):
+            pass                      # no daemon listening: run cold below
     from . import helpers
     g = {k: v for k, v in vars(helpers).items() if not k.startswith("_")}
     g["__name__"] = "__main__"

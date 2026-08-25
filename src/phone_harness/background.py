@@ -11,13 +11,10 @@ unfocused and another app frontmost:
   EYES  - CGWindowListCreateImage captures a specific window by id even when it
           is not the active app (and even when occluded).
 
-  HANDS - the input path macOS actually gates on is the app being *active*, not
-          merely its window being key. A normal CGEvent can't cross that. But
-          the window server accepts a synthesized event record delivered
-          straight to a process via SkyLight's SLPSPostEventRecordTo (the same
-          mechanism yabai uses to focus windows without raising them). Written
-          with a real location, it lands a positioned tap/drag in iPhone
-          Mirroring while your frontmost app never changes.
+  HANDS - a normal CGEvent cannot target an inactive app. The window server can
+          instead deliver a synthesized event record straight to a process via
+          SkyLight's SLPSPostEventRecordTo. The record names both the process and
+          window, so delivery no longer requests front-process activation.
 
 The event-record layout is yabai's (window_manager_make_key_window): a 0xf8
 buffer, length at 0x04, CGSEventType at 0x08 (1=down, 2=up, 6=dragged),
@@ -30,16 +27,14 @@ Select with PHONE_HARNESS_BACKGROUND=1. Coordinates use the same global
 screen-point convention as the mirror backend and ocr(), so every helper on
 top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
 
-Keyboard (type_text/press) still briefly activates the window: the keyboard
-event-record layout isn't implemented yet, so those fall back to the mirror
-path. Mouse actions are fully background.
+Keyboard makes the mirroring window key inside its own process, then posts the
+key event directly to that process without requesting front-process activation.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
 from contextlib import contextmanager
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication
 
 from . import mirror
 
@@ -59,11 +54,9 @@ class _PSN(ctypes.Structure):
 
 _appserv.GetProcessForPID.argtypes = [ctypes.c_int, ctypes.POINTER(_PSN)]
 _appserv.GetProcessForPID.restype = ctypes.c_int
-_sky._SLPSSetFrontProcessWithOptions.argtypes = [
-    ctypes.POINTER(_PSN), ctypes.c_uint32, ctypes.c_uint32]
 _sky.SLPSPostEventRecordTo.argtypes = [ctypes.POINTER(_PSN), ctypes.c_void_p]
+_sky.SLPSPostEventRecordTo.restype = ctypes.c_int
 
-_KCPS_USER_GENERATED = 0x200
 # CGSEventType values (share the CGEventType numbering)
 _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
@@ -162,6 +155,23 @@ def _screencapture(win, path):
 
 # --- input (hands), no focus ---
 
+def _process_serial_number(pid):
+    psn = _PSN()
+    status = _appserv.GetProcessForPID(pid, ctypes.byref(psn))
+    if status != 0:
+        raise RuntimeError(
+            f"could not resolve iPhone Mirroring process {pid} "
+            f"to a process serial number (status {status})")
+    return psn
+
+
+def _post_record(psn, buf):
+    status = _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    if status != 0:
+        raise RuntimeError(
+            f"could not deliver an event to iPhone Mirroring (status {status})")
+
+
 def _post(pid, wid, etype, gx, gy, lx, ly):
     """Deliver one synthesized mouse event record to the process by pid."""
     buf = (ctypes.c_uint8 * 0xf8)()
@@ -171,10 +181,7 @@ def _post(pid, wid, etype, gx, gy, lx, ly):
     struct.pack_into("<dd", buf, 0x10, gx, gy)      # location (global points)
     struct.pack_into("<dd", buf, 0x20, lx, ly)      # windowLocation (local)
     buf[0x08] = etype
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    _post_record(_process_serial_number(pid), buf)
 
 
 def _ctx():
@@ -251,13 +258,11 @@ def _make_key(pid, wid):
     struct.pack_into("<I", buf, 0x3c, wid)
     for i in range(0x10):
         buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
+    psn = _process_serial_number(pid)
     buf[0x08] = _LMOUSE_DOWN
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    _post_record(psn, buf)
     buf[0x08] = _LMOUSE_UP
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    _post_record(psn, buf)
 
 
 def _key_edge(pid, wid, code, down, flags=0):

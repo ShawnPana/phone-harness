@@ -38,17 +38,20 @@ _BLOCKED_MARKERS = ("iphone in use", "lock your iphone", "mirroring ended",
 
 def _load_transport():
     """background drives iPhone Mirroring without ever taking the window to the
-    front (SkyLight event records) and is the default: not covering the user's
-    screen is what you want unless something is broken. Its private SkyLight
-    symbols are not guaranteed across macOS builds, so fall back rather than
-    leaving the harness unusable."""
+    front (SkyLight event records) and is the default. Its private SkyLight
+    symbols are not guaranteed across macOS builds, so an unavailable background
+    backend fails visibly. Falling back would silently select the classic backend,
+    whose contract requires taking focus."""
     want_bg = os.environ.get("PHONE_HARNESS_BACKGROUND", "1").lower() not in (
         "0", "false", "no")
     if want_bg:
         try:
             return importlib.import_module(".background", __package__), True
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(
+                "focus-free iPhone input is unavailable on this Mac. "
+                "Set PHONE_HARNESS_BACKGROUND=0 only if bringing iPhone "
+                "Mirroring to the front is acceptable.") from exc
     return importlib.import_module(".mirror", __package__), False
 
 

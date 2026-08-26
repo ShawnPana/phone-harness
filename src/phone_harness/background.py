@@ -27,8 +27,9 @@ Select with PHONE_HARNESS_BACKGROUND=1. Coordinates use the same global
 screen-point convention as the mirror backend and ocr(), so every helper on
 top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
 
-Keyboard makes the mirroring window key inside its own process, then posts the
-key event directly to that process without requesting front-process activation.
+macOS drops iPhone Mirroring keyboard events while the app is inactive. This
+backend delivers them only when the user has already made Mirroring frontmost;
+it never activates the app on the user's behalf.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
 from contextlib import contextmanager
@@ -243,13 +244,18 @@ def scroll_wheel(dy, x, y, steps=6):
     _emit(_LMOUSE_UP, x, y1, pid, win)
 
 
-# --- keyboard (background), via make-key + CGEventPostToPid ---
+# --- keyboard, only when Mirroring is already frontmost ---
 #
-# Keyboard is delivered differently from mouse: the keystroke goes to the key
-# window's text responder. Making the window key (yabai's focus record: a
-# down/up pair with a blanked location) and then posting the key event to the
-# process by pid lands the text with no activation — verified by typing into
-# Spotlight while another app stayed frontmost.
+# Unlike pointer records, keyboard events do not cross iPhone Mirroring's
+# remote-HID active-app gate. Refuse instead of silently dropping input or
+# taking focus from the user's current Mac app.
+
+def _require_keyboard_focus():
+    if not is_frontmost():
+        raise RuntimeError(
+            "iPhone Mirroring must already be frontmost for keyboard input; "
+            "phone-harness will not take focus from the current Mac app")
+
 
 def _make_key(pid, wid):
     buf = (ctypes.c_uint8 * 0xf8)()
@@ -303,7 +309,8 @@ def _holding(pid, wid, mods):
 
 
 def press(combo):
-    """press('return'), press('cmd+1'), press('cmd+3') — no focus change."""
+    """Press a key without changing which Mac app is frontmost."""
+    _require_keyboard_focus()
     pid, win = _ctx()
     parts = combo.lower().split("+")
     key, mods = parts[-1], parts[:-1]
@@ -333,11 +340,12 @@ def _type_keystrokes(text, delay=0.03):
 
 
 def type_text(text, delay=0.03, keystrokes=False):
-    """Type into the focused iOS field, no focus change.
+    """Type when Mirroring is already frontmost; never take Mac focus.
 
     Pastes by default so the text arrives exactly as written, past autocorrect
     and keyboard layout both. keystrokes=True sends real key events instead.
     """
+    _require_keyboard_focus()           # before paste_with changes the clipboard
     if keystrokes or not text:
         return _type_keystrokes(text, delay)
     mirror.paste_with(press, text)

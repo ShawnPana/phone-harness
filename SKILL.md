@@ -31,10 +31,11 @@ PY
 - Invoke as `phone-harness`. Use heredocs for multi-line commands.
 - Helpers are pre-imported. All coordinates are global screen points.
 - `ensure_mirroring()` launches the window and gates on connection. The
-  default build then works the phone **without focusing it**: capture is by
-  window id and input is an event record delivered straight to the app, so a
-  task never steals the user's screen. Focus-taking input is disabled; never
-  bypass the background transport or activate iPhone Mirroring.
+  default build reads and touches the phone **without focusing it**: capture is
+  by window id and pointer input is delivered straight to the app. macOS does
+  not forward keyboard input to inactive iPhone Mirroring sessions, so
+  `type_text`, `press`, and keyboard-backed navigation refuse unless the user
+  has already made Mirroring frontmost. Never activate it on the user's behalf.
 
 ## Screen Workflow
 
@@ -51,9 +52,9 @@ PY
   the window offset manually.
 - **Verify after every action**: `wait_stable()` then `ocr()`/`screenshot()`.
   There is no DOM to assert against; the capture is the ground truth.
-- Navigation: `home()`, `app_switcher()`, `open_app("Notes")` (Spotlight),
-  `swipe("up")`, `scroll()`, `type_text("...")`, `press("return")`,
-  `long_press(x, y)`.
+- Touch navigation: `swipe("up")`, `scroll()`, `long_press(x, y)`. Keyboard
+  helpers (`home()`, `app_switcher()`, `open_app()`, `type_text()`, `press()`)
+  require iPhone Mirroring to already be frontmost and otherwise fail visibly.
 - **Scrolling a list**: use `scroll_collect(extract, key=...)` to walk a list
   to its true end, de-duping as it goes — it returns `{items, stop, scrolls}`
   where `stop` is `'reached-end'` or `'max-scrolls'`. Use `scroll_until(done)`
@@ -139,10 +140,10 @@ raises a clear message (call `connection_state()` yourself to check —
 
 ## Gotchas
 
-- **Unfocused input is swallowed silently — for events you post yourself.**
-  The helpers are immune because input goes straight to the app. Raw CGEvents
-  require the window frontmost, so do not use them as a fallback; when a
-  gesture changes nothing, stop and report the unsupported operation.
+- **Unfocused keyboard input is swallowed by iPhone Mirroring.** Pointer
+  helpers work in the background, but keyboard helpers refuse unless the user
+  already focused Mirroring. Do not activate it or use raw CGEvents as a
+  fallback; ask the user to focus it when keyboard input is required.
 - **The window is a video stream.** macOS accessibility sees nothing inside
   it; AppleScript `click at` fails silently. Only HID-level CGEvents work.
 - **The window moves.** Never cache coordinates across calls; `ocr()` and

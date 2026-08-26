@@ -56,6 +56,13 @@ class BackgroundDeliveryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "status -600"):
                 background._process_serial_number(123)
 
+    def test_background_keyboard_refuses_before_mutating_input(self):
+        with mock.patch.object(background, "is_frontmost", return_value=False), \
+                mock.patch.object(background.mirror, "paste_with") as paste:
+            with self.assertRaisesRegex(RuntimeError, "must already be frontmost"):
+                background.type_text("hello")
+        paste.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

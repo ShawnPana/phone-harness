@@ -33,8 +33,8 @@ PY
 - `ensure_mirroring()` launches the window and gates on connection. The
   default build then works the phone **without focusing it**: capture is by
   window id and input is an event record delivered straight to the app, so a
-  task never steals the user's screen. `PHONE_HARNESS_BACKGROUND=0` forces the
-  classic path, which must focus before every action.
+  task never steals the user's screen. Focus-taking input is disabled; never
+  bypass the background transport or activate iPhone Mirroring.
 
 ## Screen Workflow
 
@@ -65,11 +65,9 @@ PY
   it. In the background build these scroll with momentum flicks — wheel
   events only route to a *focused* window, and a slow touch-drag barely moves
   an iOS list before bouncing back; only a fast flick carries it.
-- Raw Quartz is the escape hatch: `import Quartz` in your script for anything
-  the helpers don't cover — but raw CGEvents don't ride the helpers' delivery
-  path. They land only while the window is frontmost and are swallowed
-  silently otherwise, scroll-wheel events included: `activate()` first, then
-  verify the screen actually changed.
+- Raw Quartz events do not ride the helpers' background delivery path. If an
+  operation would require activating iPhone Mirroring, stop instead of posting
+  it; taking over the user's Mac is not an available fallback.
 
 ## Android
 
@@ -142,12 +140,9 @@ raises a clear message (call `connection_state()` yourself to check —
 ## Gotchas
 
 - **Unfocused input is swallowed silently — for events you post yourself.**
-  The helpers are immune in the background build (input goes straight to the
-  app), but raw CGEvents and the `PHONE_HARNESS_BACKGROUND=0` path need the
-  window frontmost: `activate()` before posting, and re-activate if a click
-  steals focus mid-task. The failure looks exactly like "scrolling is broken"
-  or "the list already ended" — when a gesture changes nothing on screen,
-  check focus before inventing another theory.
+  The helpers are immune because input goes straight to the app. Raw CGEvents
+  require the window frontmost, so do not use them as a fallback; when a
+  gesture changes nothing, stop and report the unsupported operation.
 - **The window is a video stream.** macOS accessibility sees nothing inside
   it; AppleScript `click at` fails silently. Only HID-level CGEvents work.
 - **The window moves.** Never cache coordinates across calls; `ocr()` and

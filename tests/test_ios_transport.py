@@ -15,14 +15,13 @@ class IOSTransportSelectionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "focus-free iPhone input"):
                 ios._load_transport()
 
-    def test_classic_backend_remains_an_explicit_opt_in(self):
-        classic = object()
-
+    def test_classic_backend_is_rejected(self):
         with mock.patch.dict(os.environ, {"PHONE_HARNESS_BACKGROUND": "0"}), \
-                mock.patch.object(importlib, "import_module", return_value=classic) as load:
-            self.assertEqual((classic, False), ios._load_transport())
+                mock.patch.object(importlib, "import_module") as load:
+            with self.assertRaisesRegex(RuntimeError, "focus-taking.*disabled"):
+                ios._load_transport()
 
-        load.assert_called_once_with(".mirror", ios.__package__)
+        load.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -32,7 +32,13 @@ top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
 
 Keyboard (type_text/press) still briefly activates the window: the keyboard
 event-record layout isn't implemented yet, so those fall back to the mirror
-path. Mouse actions are fully background.
+path. Scroll joins them, for a different reason: iPhone Mirroring only reads
+scroll-wheel events when the app is active (verified: 0% movement while
+unfocused), and there is no SkyLight event-record layout for a scroll wheel
+the way there is for a click/drag above — yabai's format this backend borrows
+only covers mouse buttons. So scroll_wheel() below briefly focuses and calls
+mirror.scroll_wheel() directly rather than reimplementing the gesture. Every
+other mouse action (tap, long_press, drag) is fully background.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
 from contextlib import contextmanager
@@ -213,27 +219,20 @@ def drag(x1, y1, x2, y2, duration=0.35, steps=14):
 
 
 def scroll_wheel(dy, x, y, steps=6):
-    """Scroll with a fast momentum FLICK, not a wheel event.
+    """Scroll via the phased scroll-wheel gesture in mirror.py, briefly
+    focusing the window first.
 
-    iPhone Mirroring scrolls by translating Mac scroll-wheel events, but those
-    only reach the app when it is active — so in the background they do nothing
-    (verified: 0% movement). A slow touch-drag also barely moves an iOS list.
-    A *fast* flick does: it hands the scroll view enough release velocity to
-    carry the list (verified ~29% frame change per flick, new rows each time).
-
-    Sign matches the wheel path it replaces: dy < 0 flicks the finger up so
-    content scrolls up and reveals what's below (scroll_screen's "up")."""
-    pid, win = _ctx()
-    if dy < 0:                                   # reveal content below
-        y0, y1 = win["y"] + win["h"] * 0.72, win["y"] + win["h"] * 0.28
-    else:                                        # reveal content above
-        y0, y1 = win["y"] + win["h"] * 0.28, win["y"] + win["h"] * 0.72
-    _emit(_LMOUSE_DOWN, x, y0, pid, win)
-    for i in range(1, steps + 1):
-        t = i / steps
-        _emit(_LMOUSE_DRAGGED, x, y0 + (y1 - y0) * t, pid, win)
-        time.sleep(0.006)                        # fast — velocity is what carries it
-    _emit(_LMOUSE_UP, x, y1, pid, win)
+    This used to be a fast momentum flick (a touch-drag with enough release
+    velocity to carry an iOS list) because scroll-wheel events only reach the
+    app when it's active, and there was no way to fake one in the background.
+    That flick is gone now: the macOS 26 investigation found the actual
+    scroll-wheel shape iPhone Mirroring wants (mirror.scroll_wheel), and a
+    real gesture beats a drag standing in for one — even at the cost of a
+    brief focus, the same trade-off type_text/press already make below.
+    Nothing here restores focus afterwards, for the same reason they don't:
+    whatever the caller does next re-focuses if it needs to.
+    """
+    mirror.scroll_wheel(dy, x, y, steps=steps)
 
 
 # --- keyboard (background), via make-key + CGEventPostToPid ---

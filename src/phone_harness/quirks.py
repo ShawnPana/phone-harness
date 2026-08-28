@@ -20,36 +20,44 @@ def _env_override(name):
     return os.environ.get(name, "").lower() in ("1", "true", "yes")
 
 
-#: macOS 26 is where iPhone Mirroring began discarding synthetic scroll.
-SCROLL_BROKEN_FROM = 26
+#: macOS 26 is where iPhone Mirroring began reading a vertical touch-drag as a
+#: TAP at the point the finger went down, rather than as a scroll — the same
+#: regression that once looked like scrolling itself was dead (issue #51).
+#: It turned out to be specific to *drags*: a scroll-wheel event shaped like a
+#: real trackpad gesture (continuous + phase began/changed/ended, nonzero
+#: delta on every phase, see mirror.scroll_wheel) is still honoured on macOS
+#: 26, so scroll()/scroll_screen()/scroll_collect() need no gate here at all
+#: any more — they always go through that gesture. This flag is what is left
+#: of the regression: it tells swipe('up'|'down') to route through the same
+#: scroll-wheel gesture instead of firing a raw drag that would land as a tap.
+VERTICAL_DRAG_BROKEN_FROM = 26
 
-SCROLL_DEAD_HINT = (
-    "iPhone Mirroring on macOS {ver} discards synthetic scroll and vertical "
-    "drag, so this gesture cannot move the screen — and would land as a TAP "
-    "at the point the finger went down, opening whatever is under it.\n"
-    "Navigate by taps instead: a search field, or tap_index_letter() on the "
-    "A-Z index bar of a sectioned list.\n"
+VERTICAL_DRAG_HINT = (
+    "iPhone Mirroring on macOS {ver} reads a vertical touch-drag as a TAP at "
+    "the point the finger went down, not a scroll — so swipe('up'|'down') "
+    "sends the phased scroll-wheel gesture mirror.scroll_wheel() uses "
+    "instead of a raw drag. Horizontal drags are unaffected.\n"
     "See https://github.com/ShawnPana/phone-harness/issues/51 — set "
-    "PHONE_HARNESS_FORCE_SCROLL=1 to send it anyway."
+    "PHONE_HARNESS_FORCE_SCROLL=1 to send the raw drag anyway."
 )
 
 
-def touch_scroll_is_delivered():
-    """False when a synthetic scroll gesture is known to be dropped by the host.
+def vertical_drag_is_delivered():
+    """False when a raw vertical touch-drag is known to land as a tap rather
+    than a scroll on this host.
 
     The block is by macOS version rather than by probing, because the probe
-    would have to be the very gesture that misfires: a flick whose motion is
-    discarded arrives as a tap, so a "does scrolling work?" experiment opens a
-    random row on the phone every time the answer is no.
+    would have to be the very drag that misfires: one whose motion is read as
+    a tap opens a random row on the phone every time the answer is no.
 
-    PHONE_HARNESS_FORCE_SCROLL=1 sends it regardless, for a build where it
-    works again.
+    PHONE_HARNESS_FORCE_SCROLL=1 sends the raw drag regardless, for a build
+    where this is fixed.
     """
     if _env_override("PHONE_HARNESS_FORCE_SCROLL"):
         return True
-    return macos_version()[0] < SCROLL_BROKEN_FROM
+    return macos_version()[0] < VERTICAL_DRAG_BROKEN_FROM
 
 
-def scroll_dead_hint():
+def vertical_drag_hint():
     major, minor = macos_version()
-    return SCROLL_DEAD_HINT.format(ver=f"{major}.{minor}")
+    return VERTICAL_DRAG_HINT.format(ver=f"{major}.{minor}")

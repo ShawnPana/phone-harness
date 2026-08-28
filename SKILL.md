@@ -141,6 +141,21 @@ raises a clear message (call `connection_state()` yourself to check —
 
 ## Gotchas
 
+- **macOS 26: scrolling is gone.** iPhone Mirroring there discards every
+  synthetic scroll and vertical drag, so `scroll()`, `scroll_screen()`,
+  `scroll_collect()` and `swipe('up'|'down')` raise `Unsupported` rather than
+  fire a gesture that cannot work. They have to refuse: a flick whose motion
+  is dropped still delivers the touch-down and touch-up, which iOS reads as a
+  **tap where the finger landed** — so "nothing happened" actually means a row
+  was opened. Traverse lists by tapping instead: a search field, or
+  `tap_index_letter('S')` on the A-Z index bar (`index_bar_rows()` measures the
+  bar; a Japanese-locale list has 37 rows, not 27). Taps, keystrokes, pastes
+  and *horizontal* swipes are unaffected. `PHONE_HARNESS_FORCE_SCROLL=1` sends
+  it anyway. Tracked in issue #51.
+- **The first paste into an app raises iOS's "allow paste?" alert**, which
+  swallows the text and reports nothing — the field just stays empty.
+  `type_text` clears the alert and re-sends by default (`allow_paste=False` to
+  skip the check and its one capture).
 - **Unfocused input is swallowed silently — for events you post yourself.**
   The helpers are immune in the background build (input goes straight to the
   app), but raw CGEvents and the `PHONE_HARNESS_BACKGROUND=0` path need the

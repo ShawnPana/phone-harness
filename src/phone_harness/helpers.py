@@ -16,7 +16,7 @@ iPhone answers them with a Cmd+1 keystroke and Vision OCR.
 import hashlib, importlib.util, os, time
 from pathlib import Path
 
-from . import transport
+from . import quirks, transport
 from .transport import Unsupported          # re-exported for agent scripts
 
 CORE_DIR = Path(__file__).resolve().parent
@@ -241,14 +241,47 @@ def press(combo):
     return send("input.keys", combo=combo)
 
 
-def type_text(text, delay=0.03, keystrokes=False):
+#: The affirmative button on iOS's paste-permission alert, in the languages we
+#: have seen it in. Matched exactly, never as a substring: a loose match on
+#: "Paste" would tap any screen that merely contains the word.
+_PASTE_ALLOW_LABELS = ("ペーストを許可", "Allow Paste")
+
+
+def dismiss_paste_alert():
+    """Clear iOS's "allow paste?" alert if it is up. True if one was cleared.
+
+    Worth knowing about even when calling type_text directly: the alert
+    intercepts the paste, so the text never reaches the field and nothing
+    reports an error — the field simply stays empty.
+    """
+    for label in _PASTE_ALLOW_LABELS:
+        hits = find_text(label, exact=True)
+        if hits:
+            tap(hits[0]["x"], hits[0]["y"])
+            time.sleep(1.2)
+            return True
+    return False
+
+
+def type_text(text, delay=0.03, keystrokes=False, allow_paste=True):
     """Type into the focused field. Tap the field and let the keyboard appear
     first — text sent before it has focus goes nowhere, silently, so check a
     capture afterwards.
 
     Pastes by default so the text arrives exactly as written; keystrokes=True
-    sends real key events for fields that need them."""
-    return send("input.text", s=text, delay=delay, keystrokes=keystrokes)
+    sends real key events for fields that need them.
+
+    Because it pastes, the first call into a given app raises iOS's
+    "allow paste?" alert, which swallows the text. allow_paste clears that
+    alert and re-sends, at the cost of one capture per paste; pass False to
+    skip the check when the app has already been granted paste access.
+    """
+    res = send("input.text", s=text, delay=delay, keystrokes=keystrokes)
+    if allow_paste and not keystrokes and phone.name == "iphone-mirroring":
+        time.sleep(0.6)
+        if dismiss_paste_alert():
+            res = send("input.text", s=text, delay=delay, keystrokes=keystrokes)
+    return res
 
 
 # --- gestures relative to the screen ----------------------------------------
@@ -259,9 +292,32 @@ def _win():
     return send("screen.require")
 
 
+def _require_scroll_delivery(what):
+    """Refuse a scroll gesture the host is known to discard.
+
+    Raising is the safe outcome, not the cautious one. When the motion of a
+    flick is dropped, iOS still sees the touch-down and the touch-up, and reads
+    the pair as a TAP where the finger landed — so the gesture that "did
+    nothing" has in fact opened whatever row it started on, and scroll_screen()
+    then reports moved=True because the screen did change. Failing loudly is
+    the only way the caller learns that before acting on the wrong page.
+    """
+    if quirks.touch_scroll_is_delivered():
+        return
+    if phone.name != "iphone-mirroring":
+        return
+    raise Unsupported(f"{what}: " + quirks.scroll_dead_hint())
+
+
 def swipe(direction, distance=0.4):
     """swipe('up'|'down'|'left'|'right') — a touch-drag centered on screen.
-    Direction is finger motion: swipe('up') moves content up (scrolls down)."""
+    Direction is finger motion: swipe('up') moves content up (scrolls down).
+
+    Horizontal swipes still work on macOS 26 (a Home-Screen page flip moves
+    29% of the frame); vertical ones are refused there — see
+    _require_scroll_delivery."""
+    if direction in ("up", "down"):
+        _require_scroll_delivery(f"swipe({direction!r})")
     w = _win()
     cx, cy = w["x"] + w["w"] / 2, w["y"] + w["h"] / 2
     dx = {"left": -1, "right": 1}.get(direction, 0) * w["w"] * distance
@@ -278,6 +334,7 @@ def swipe(direction, distance=0.4):
 def scroll(amount=300):
     """Scroll at screen center. Positive scrolls content down the way a
     trackpad two-finger-up does; use swipe() when momentum matters."""
+    _require_scroll_delivery("scroll()")
     w = _win()
     send("input.scroll", x=w["x"] + w["w"] / 2, y=w["y"] + w["h"] / 2,
          dy=-amount)
@@ -323,6 +380,7 @@ def scroll_screen(direction="up", amount=0.6, settle=2.5, moved_thresh=0.6):
     boundary (overlap > ~0.7), which springs the content and would otherwise
     read as movement and defeat end-detection.
     """
+    _require_scroll_delivery("scroll_screen()")
     w = _win()
     sign = {"up": -1, "down": 1}.get(direction)  # 'up' reveals content below
     if sign is None:
@@ -371,6 +429,113 @@ def scroll_until(done, direction="up", amount=0.6, max_scrolls=60, settle=2.5):
             time.sleep(0.8)
             activate()
     return None
+
+
+# --- traversing a list without scrolling ------------------------------------
+#
+# On a host where scroll gestures are dropped, an alphabetised iOS list is
+# still fully reachable: its A-Z index bar responds to taps, and a tap on a
+# letter jumps to that section. Measured 15-26% frame change per jump.
+
+def index_bar_rows():
+    """Locate the A-Z index bar of a sectioned iOS list, by pixel.
+
+    Returns {"x": <x to tap>, "ys": [<y per row>]} in global screen points, or
+    None when no bar is on screen.
+
+    Found by colour rather than by OCR: the glyphs are ~6 points tall and
+    Vision returns zero boxes for that column, but they are the only saturated
+    pixels in the right-hand strip. Blobs are clustered by row and the longest
+    evenly-spaced run is kept, which drops the status bar above the bar and the
+    search pill below it.
+
+    The row count is measured, not assumed: it is 27 for A-Z plus "#", but a
+    Japanese-locale list appends あ..わ for 37. Hard-coding 27 aims a tap on
+    "S" at "た".
+    """
+    import Quartz
+
+    path, win = send("screen.capture")
+    url = Quartz.CFURLCreateWithFileSystemPath(
+        None, path, Quartz.kCFURLPOSIXPathStyle, False)
+    src = Quartz.CGImageSourceCreateWithURL(url, None)
+    img = Quartz.CGImageSourceCreateImageAtIndex(src, 0, None)
+    iw, ih = Quartz.CGImageGetWidth(img), Quartz.CGImageGetHeight(img)
+    bpr = Quartz.CGImageGetBytesPerRow(img)
+    bpp = Quartz.CGImageGetBitsPerPixel(img) // 8
+    buf = bytes(Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(img)))
+
+    x0 = int(iw * 0.92)
+    rows = []
+    for y in range(ih):
+        base = y * bpr
+        for x in range(x0, iw):
+            o = base + x * bpp
+            b, g, r = buf[o], buf[o + 1], buf[o + 2]
+            if max(r, g, b) - min(r, g, b) > 25 and max(r, g, b) > 60:
+                rows.append(y)
+                break
+
+    clusters = []
+    for y in rows:
+        if clusters and y - clusters[-1][-1] <= 2:
+            clusters[-1].append(y)
+        else:
+            clusters.append([y])
+    centers = [(c[0] + c[-1]) / 2 for c in clusters]
+    if len(centers) < 10:
+        return None
+
+    gaps = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+    pitch = sorted(gaps)[len(gaps) // 2]
+    best, run = [0], [0]
+    for i, g in enumerate(gaps):
+        if abs(g - pitch) <= max(3.0, pitch * 0.35):
+            run.append(i + 1)
+        else:
+            if len(run) > len(best):
+                best = run
+            run = [i + 1]
+    if len(run) > len(best):
+        best = run
+    if len(best) < 10:
+        return None
+
+    sy = win["h"] / ih
+    return {"x": win["x"] + win["w"] * 0.958,
+            "ys": [win["y"] + centers[i] * sy for i in best]}
+
+
+INDEX_BAR_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+INDEX_BAR_KANA = "あかさたなはまやらわ"
+
+
+def tap_index_letter(letter):
+    """Jump an alphabetised iOS list by tapping its A-Z index bar.
+
+    The way to traverse a long list on a host where scrolling is dropped.
+    Letters index from the top, because the first 26 rows are A-Z in every
+    list; pass a kana character for the rows a Japanese-locale list appends
+    below "Z", or "#" for the last row.
+    """
+    rows = index_bar_rows()
+    if rows is None:
+        raise RuntimeError("no A-Z index bar visible on this screen")
+    ys = rows["ys"]
+    letter = letter.upper()
+    if letter in INDEX_BAR_LETTERS:
+        i = INDEX_BAR_LETTERS.index(letter)
+    elif letter in INDEX_BAR_KANA:
+        i = len(INDEX_BAR_LETTERS) + INDEX_BAR_KANA.index(letter)
+    elif letter == "#":
+        i = len(ys) - 1
+    else:
+        raise ValueError(f"{letter!r} is not on the index bar")
+    if i >= len(ys):
+        raise RuntimeError(
+            f"index bar has {len(ys)} rows; {letter!r} is not one of them")
+    tap(rows["x"], ys[i])
+    return {"letter": letter, "row": i, "of": len(ys), "y": ys[i]}
 
 
 def scroll_collect(extract=None, key=None, direction="up", amount=0.6,

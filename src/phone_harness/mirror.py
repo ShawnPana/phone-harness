@@ -253,10 +253,14 @@ def activate(timeout=2.5):
             f"{APP_NAME} isn't running — open it and connect your phone.")
     if is_frontmost():
         return
-    app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+    # Re-assert, don't just wait. A single activateWithOptions_ loses to any
+    # app that grabs focus back — a full-screen menu-bar app can reclaim it
+    # within a second — and then this timed out against a Mac where simply
+    # asking again would have won on the second try.
     deadline = time.time() + timeout
     while time.time() < deadline:
-        time.sleep(0.05)
+        app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        time.sleep(0.08)
         if is_frontmost():
             return
     win = frontmost_window() or {}

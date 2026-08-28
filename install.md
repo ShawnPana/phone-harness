@@ -81,6 +81,12 @@ iPhone is driven through the mirroring window, the Android over adb.
 - **iPhone — capture is blank/black**: Screen Recording granted but the
   terminal wasn't restarted; or Mirroring shows an interstitial (iPhone in Use /
   Connect / Mac Locked) — clear it on the Mac, lock the iPhone if it says in use.
+- **iPhone — scrolling does nothing (macOS 26)**: expected, not a setup
+  problem. iPhone Mirroring on macOS 26 discards synthetic scroll and vertical
+  drag; the scroll helpers now raise `Unsupported` and point at the tap-based
+  route (a search field, or `tap_index_letter()` on a list's A-Z index bar).
+  Taps, keystrokes and horizontal swipes still work, which is why `--doctor`
+  reports all clear. Issue #51.
 - **iPhone — taps do nothing**: Accessibility missing, or another window stole
   focus (helpers re-activate the window; check for a macOS prompt).
 - **iPhone — `--doctor` says pyobjc missing on an install that works**: it is

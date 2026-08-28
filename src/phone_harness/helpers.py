@@ -292,34 +292,24 @@ def _win():
     return send("screen.require")
 
 
-def _require_scroll_delivery(what):
-    """Refuse a scroll gesture the host is known to discard.
-
-    Raising is the safe outcome, not the cautious one. When the motion of a
-    flick is dropped, iOS still sees the touch-down and the touch-up, and reads
-    the pair as a TAP where the finger landed — so the gesture that "did
-    nothing" has in fact opened whatever row it started on, and scroll_screen()
-    then reports moved=True because the screen did change. Failing loudly is
-    the only way the caller learns that before acting on the wrong page.
-    """
-    if quirks.touch_scroll_is_delivered():
-        return
-    if phone.name != "iphone-mirroring":
-        return
-    raise Unsupported(f"{what}: " + quirks.scroll_dead_hint())
-
-
 def swipe(direction, distance=0.4):
-    """swipe('up'|'down'|'left'|'right') — a touch-drag centered on screen.
+    """swipe('up'|'down'|'left'|'right') — a gesture centered on screen.
     Direction is finger motion: swipe('up') moves content up (scrolls down).
 
-    Horizontal swipes still work on macOS 26 (a Home-Screen page flip moves
-    29% of the frame); vertical ones are refused there — see
-    _require_scroll_delivery."""
-    if direction in ("up", "down"):
-        _require_scroll_delivery(f"swipe({direction!r})")
+    Horizontal swipes are a real touch-drag (fast and short — a Home-Screen
+    page flip moves ~29% of the frame; a slow drag barely registers). Vertical
+    swipes route through the same phased scroll-wheel gesture scroll() uses
+    instead of a drag, wherever quirks.vertical_drag_is_delivered() says a raw
+    drag would land as a tap — macOS 26's iPhone Mirroring, currently always.
+    Distance means the same fraction of window height either way.
+    """
     w = _win()
     cx, cy = w["x"] + w["w"] / 2, w["y"] + w["h"] / 2
+    if (direction in ("up", "down") and phone.name == "iphone-mirroring"
+            and not quirks.vertical_drag_is_delivered()):
+        dy = {"up": -1, "down": 1}[direction] * w["h"] * distance
+        send("input.scroll", x=cx, y=cy, dy=dy)
+        return
     dx = {"left": -1, "right": 1}.get(direction, 0) * w["w"] * distance
     dy = {"up": -1, "down": 1}.get(direction, 0) * w["h"] * distance
     if not dx and not dy:
@@ -332,9 +322,17 @@ def swipe(direction, distance=0.4):
 
 
 def scroll(amount=300):
-    """Scroll at screen center. Positive scrolls content down the way a
-    trackpad two-finger-up does; use swipe() when momentum matters."""
-    _require_scroll_delivery("scroll()")
+    """Scroll at screen center via a phased scroll-wheel gesture. Positive
+    scrolls content down the way a trackpad two-finger-up does; use swipe()
+    when momentum matters.
+
+    iPhone Mirroring on macOS 26 only honours a scroll-wheel event shaped
+    like a real trackpad gesture (continuous, phased began/changed/ended,
+    nonzero delta throughout) — see mirror.scroll_wheel for the recipe and
+    its calibration. That needs the window frontmost for the moment it's
+    sent, same as every other gesture; the background backend focuses
+    briefly for this one call and does not restore focus afterwards.
+    """
     w = _win()
     send("input.scroll", x=w["x"] + w["w"] / 2, y=w["y"] + w["h"] / 2,
          dy=-amount)
@@ -380,7 +378,6 @@ def scroll_screen(direction="up", amount=0.6, settle=2.5, moved_thresh=0.6):
     boundary (overlap > ~0.7), which springs the content and would otherwise
     read as movement and defeat end-detection.
     """
-    _require_scroll_delivery("scroll_screen()")
     w = _win()
     sign = {"up": -1, "down": 1}.get(direction)  # 'up' reveals content below
     if sign is None:
@@ -433,9 +430,12 @@ def scroll_until(done, direction="up", amount=0.6, max_scrolls=60, settle=2.5):
 
 # --- traversing a list without scrolling ------------------------------------
 #
-# On a host where scroll gestures are dropped, an alphabetised iOS list is
-# still fully reachable: its A-Z index bar responds to taps, and a tap on a
-# letter jumps to that section. Measured 15-26% frame change per jump.
+# scroll_collect() gets through a list a screen at a time; an alphabetised
+# iOS list also has a faster route for a known target — its A-Z index bar
+# responds to taps, and a tap on a letter jumps straight to that section.
+# Measured 15-26% frame change per jump. Kept from when scrolling itself was
+# dropped on macOS 26 (issue #51): it's still the quicker way to reach a named
+# section, scroll just isn't the only way there any more.
 
 def index_bar_rows():
     """Locate the A-Z index bar of a sectioned iOS list, by pixel.
@@ -513,10 +513,10 @@ INDEX_BAR_KANA = "あかさたなはまやらわ"
 def tap_index_letter(letter):
     """Jump an alphabetised iOS list by tapping its A-Z index bar.
 
-    The way to traverse a long list on a host where scrolling is dropped.
-    Letters index from the top, because the first 26 rows are A-Z in every
-    list; pass a kana character for the rows a Japanese-locale list appends
-    below "Z", or "#" for the last row.
+    The fast way to reach a known section of a long list — one tap instead of
+    several scrolls. Letters index from the top, because the first 26 rows
+    are A-Z in every list; pass a kana character for the rows a
+    Japanese-locale list appends below "Z", or "#" for the last row.
     """
     rows = index_bar_rows()
     if rows is None:

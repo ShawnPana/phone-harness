@@ -376,17 +376,99 @@ def drag(x1, y1, x2, y2, duration=0.35, steps=14):
     _post_mouse(Quartz.kCGEventLeftMouseUp, x2, y2)
 
 
+# A plain CGEventCreateScrollWheelEvent (the old implementation below this
+# comment used to be) is what iPhone Mirroring stopped honouring on macOS 26,
+# along with every shape tried in 404e923's "ruled out" list. What it still
+# accepts is an event sequence shaped like an actual trackpad two-finger
+# scroll: IsContinuous set, a ScrollPhase field walking began -> changed* ->
+# ended, and — the single most important detail, found the hard way — a
+# NONZERO delta on the 'began' event too. A began event carrying 0 does
+# nothing at all, even though the changed events that follow carry the real
+# motion.
+#
+# Distance is controlled by the NUMBER of 'changed' events, not by the size of
+# each one's delta: pt=-1 and pt=-30 both moved a test list ~95-105 screen
+# points over 14 events at 16ms spacing, and 28/56 events moved ~192/~384
+# points — linear in count, flat in magnitude. So _SCROLL_PT_PER_EVENT below
+# is points-per-event, and the delta field is just held at a fixed nonzero
+# value.
+#
+# Measured on macOS 26.2 (25C56) with the window frontmost and is_frontmost()
+# verified true; see the calibration method in issue #51.
+_SCROLL_PT_PER_EVENT = 7        # screen points moved per 'changed' event
+_SCROLL_EVENT_DELTA = 9         # per-event delta magnitude; any nonzero value
+                                 # measured the same distance — this is the one
+                                 # that was actually measured
+_SCROLL_STEP_INTERVAL = 0.016   # seconds between posted events (~60Hz, a real
+                                 # trackpad's rate)
+_SCROLL_PHASE_BEGAN, _SCROLL_PHASE_CHANGED, _SCROLL_PHASE_ENDED = 1, 2, 4
+
+_libc = None
+
+
+def _mach_absolute_time():
+    # A real trackpad gesture's events carry a live host timestamp; the
+    # working recipe was measured with one attached to every event, so it
+    # stays rather than risk finding out CGEventSetTimestamp(0) matters too.
+    global _libc
+    if _libc is None:
+        import ctypes
+        _libc = ctypes.CDLL(None)
+        _libc.mach_absolute_time.restype = ctypes.c_uint64
+    return _libc.mach_absolute_time()
+
+
+def _scroll_event(x, y, phase, pt):
+    """One event in a phased trackpad-scroll gesture at (x, y).
+
+    Every field here is load-bearing, found by exhaustive trial against a
+    device (see 404e923's "ruled out" list): IsContinuous plus a ScrollPhase
+    walking began/changed/ended is what makes this read as a gesture instead
+    of a plain wheel click; PointDeltaAxis2 is set to a small cross-axis value
+    because a real two-finger scroll always carries one. MomentumPhase (field
+    123) and fields 137/45/101/87 are deliberately NOT set — setting any of
+    those makes iPhone Mirroring silently ignore the whole event.
+    """
+    ev = Quartz.CGEventCreateScrollWheelEvent(
+        None, Quartz.kCGScrollEventUnitPixel, 2, 0, 0)
+    set_field = lambda f, v: Quartz.CGEventSetIntegerValueField(ev, f, v)
+    set_field(88, 1)                                    # IsContinuous
+    set_field(99, phase)                                # ScrollPhase
+    set_field(96, pt)                                   # PointDeltaAxis1
+    set_field(93, int(pt * 65536 / 10))                 # FixedPtDeltaAxis1
+    set_field(11, -1 if pt < 0 else (1 if pt > 0 else 0))  # DeltaAxis1
+    set_field(97, -1 if pt else 0)                      # PointDeltaAxis2
+    Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
+    Quartz.CGEventSetTimestamp(ev, _mach_absolute_time())
+    return ev
+
+
 def scroll_wheel(dy, x, y, steps=6):
-    """Scroll-gesture at (x, y). Positive dy scrolls content up (finger down)."""
+    """Phased scroll-wheel gesture at (x, y). dy is screen points; positive
+    scrolls content up (finger down) — matches the sign scroll()/
+    scroll_screen() already assume. `steps` is accepted for call-signature
+    compatibility with older callers and ignored: distance is now controlled
+    by event count (see _SCROLL_PT_PER_EVENT), not by dividing dy across a
+    fixed number of posts.
+
+    Needs the window frontmost, same as every other gesture in this module —
+    _focus() below asserts it. background.py's scroll_wheel calls this
+    directly rather than reimplementing it, because this is the one gesture
+    that backend cannot deliver without briefly focusing.
+    """
     _focus()
     _post_mouse(Quartz.kCGEventMouseMoved, x, y)
     time.sleep(0.1)
-    for _ in range(steps):
-        ev = Quartz.CGEventCreateScrollWheelEvent(
-            None, Quartz.kCGScrollEventUnitPixel, 1, int(dy / steps))
-        Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-        time.sleep(0.03)
+    if dy == 0:
+        return
+    n = max(1, round(abs(dy) / _SCROLL_PT_PER_EVENT))
+    pt = _SCROLL_EVENT_DELTA if dy > 0 else -_SCROLL_EVENT_DELTA
+    sequence = ([(_SCROLL_PHASE_BEGAN, pt)]
+                + [(_SCROLL_PHASE_CHANGED, pt)] * n
+                + [(_SCROLL_PHASE_ENDED, 0)])
+    for phase, p in sequence:
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, _scroll_event(x, y, phase, p))
+        time.sleep(_SCROLL_STEP_INTERVAL)
 
 
 _KEYCODES = {

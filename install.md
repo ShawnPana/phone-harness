@@ -81,6 +81,17 @@ iPhone is driven through the mirroring window, the Android over adb.
 - **iPhone — capture is blank/black**: Screen Recording granted but the
   terminal wasn't restarted; or Mirroring shows an interstitial (iPhone in Use /
   Connect / Mac Locked) — clear it on the Mac, lock the iPhone if it says in use.
+- **iPhone — scrolling seems to do nothing (macOS 26)**: check focus first.
+  iPhone Mirroring there only accepts a scroll-wheel gesture shaped like a
+  real trackpad scroll (continuous, phased, nonzero delta throughout — see
+  `mirror.scroll_wheel`), and only while the window is frontmost; the
+  background backend focuses briefly for scroll specifically and does not
+  restore focus afterward. If another app grabbed focus back mid-gesture the
+  scroll is silently dropped. A raw vertical *touch-drag* is a separate,
+  still-broken case: it lands as a **tap** where the finger went down rather
+  than a scroll, which is why `swipe('up'|'down')` routes through the same
+  scroll-wheel gesture instead of a drag. Taps, keystrokes and horizontal
+  swipes are unaffected either way. Issue #51.
 - **iPhone — taps do nothing**: Accessibility missing, or another window stole
   focus (helpers re-activate the window; check for a macOS prompt).
 - **iPhone — `--doctor` says pyobjc missing on an install that works**: it is

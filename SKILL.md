@@ -62,9 +62,10 @@ PY
   new rows — a dense screen or a missed OCR line will not end the scroll
   early. Each step settles first so lazy-loaded content arrives before the
   movement check. `scroll_screen()` is the single-step primitive if you need
-  it. In the background build these scroll with momentum flicks — wheel
-  events only route to a *focused* window, and a slow touch-drag barely moves
-  an iOS list before bouncing back; only a fast flick carries it.
+  it. Scroll is the one gesture the background build can't deliver fully
+  headless — it briefly focuses the window to send the real scroll-wheel
+  gesture, then leaves focus wherever it lands (see the macOS 26 gotcha
+  below).
 - Raw Quartz is the escape hatch: `import Quartz` in your script for anything
   the helpers don't cover — but raw CGEvents don't ride the helpers' delivery
   path. They land only while the window is frontmost and are swallowed
@@ -141,6 +142,31 @@ raises a clear message (call `connection_state()` yourself to check —
 
 ## Gotchas
 
+- **macOS 26: scrolling needs the window frontmost, and only works if it looks
+  like a real trackpad gesture.** iPhone Mirroring there discards a plain
+  scroll-wheel event and reads a vertical touch-drag as a **tap where the
+  finger landed** — that's what made scrolling look completely dead. It turns
+  out to still accept synthetic scroll, just not that shape: a sequence of
+  scroll-wheel events with `IsContinuous` set and a `ScrollPhase` walking
+  began→changed→ended, where the *began* event also carries a nonzero delta
+  (zero there makes the whole gesture a no-op). Distance is controlled by how
+  many `changed` events are sent (~7 screen points each at 16ms spacing),
+  basically independent of each one's delta size. `scroll()`, `scroll_screen()`,
+  `scroll_collect()` and `swipe('up'|'down')` all use this now and no longer
+  raise. The one thing it still needs is the window frontmost for the moment
+  the gesture is sent — the background backend focuses briefly for scroll only
+  and does not restore focus afterward, the same trade-off it already makes
+  for keyboard input. A raw vertical *touch-drag* is still dropped as a tap;
+  `swipe('up'|'down')` routes around that automatically
+  (`quirks.vertical_drag_is_delivered()`). Horizontal swipes, taps, keystrokes
+  and pastes are unaffected either way. `tap_index_letter('S')` on a list's A-Z
+  index bar (`index_bar_rows()` measures the bar; a Japanese-locale list has 37
+  rows, not 27) is still the quicker way to reach a known section. Tracked in
+  issue #51.
+- **The first paste into an app raises iOS's "allow paste?" alert**, which
+  swallows the text and reports nothing — the field just stays empty.
+  `type_text` clears the alert and re-sends by default (`allow_paste=False` to
+  skip the check and its one capture).
 - **Unfocused input is swallowed silently — for events you post yourself.**
   The helpers are immune in the background build (input goes straight to the
   app), but raw CGEvents and the `PHONE_HARNESS_BACKGROUND=0` path need the

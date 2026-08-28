@@ -220,7 +220,7 @@ def frontmost_window():
 
 
 def is_frontmost():
-    """Does iPhone Mirroring have keyboard focus.
+    """Does iPhone Mirroring have both keyboard focus AND the frontmost window.
 
     Reads AXFrontmost through focus_probe(), not
     NSWorkspace.frontmostApplication(): that value arrives by workspace
@@ -230,13 +230,54 @@ def is_frontmost():
     frontmost", skips focusing, and every CGEvent after that lands in
     whatever the user actually has focused.
 
-    Focus is asked for directly rather than inferred from window order.
-    Measured on a real steal, AXFrontmost reported iPhone Mirroring while the
-    frontmost window still belonged to the user's terminal: the app had taken
-    the keyboard without moving a window. Reading z-order alone would have
-    called that no change, which is precisely the case worth catching.
+    But AXFrontmost alone is not enough either, and requiring z-order too is
+    not optional the way it might look. Measured on a real steal, AXFrontmost
+    reported iPhone Mirroring true while the frontmost window still belonged
+    to the user's terminal — that used to read here as "no change, still
+    focused". It is not: the background backend's SkyLight path
+    (_SLPSSetFrontProcessWithOptions in background._post/_make_key) makes
+    iPhone Mirroring the front *process* without raising its *window*, and
+    once that happens AXFrontmost reports true indefinitely even while the
+    terminal's window stays on top and keeps receiving keyboard and scroll
+    events — those are routed by window z-order, not by AX. So a steal that
+    only moves the window (AX stays true, z-order changes) is exactly the
+    case this has to catch, and it is caught by requiring both signals to
+    agree: AXFrontmost true AND the window list's frontmost normal-layer
+    window owned by this process's PID. A window lookup that finds nothing
+    (app not running, or genuinely no window) counts as not frontmost too.
     """
-    return bool(focus_probe()[0])
+    front, _ = focus_probe()
+    if not front:
+        return False
+    app = running_app()
+    if app is None:
+        return False
+    win = frontmost_window()
+    return bool(win) and win.get("kCGWindowOwnerPID") == app.processIdentifier()
+
+
+def _ax_window_element(app, win):
+    """The AXUIElement for `win`, matched by geometry against the app's
+    AXWindows the way window_ax_content() does, or None.
+
+    Used to AXRaise the phone window directly when activateWithOptions_
+    alone can't move it — see activate().
+    """
+    err, ax_wins = _AS.AXUIElementCopyAttributeValue(
+        _AS.AXUIElementCreateApplication(app.processIdentifier()),
+        "AXWindows", None)
+    if err or not ax_wins or win is None:
+        return None
+    for w in ax_wins:
+        e1, pos = _AS.AXUIElementCopyAttributeValue(w, "AXPosition", None)
+        e2, size = _AS.AXUIElementCopyAttributeValue(w, "AXSize", None)
+        if e1 or e2 or pos is None or size is None:
+            continue
+        ok, p = _AS.AXValueGetValue(pos, _AS.kAXValueCGPointType, None)
+        ok2, _sz = _AS.AXValueGetValue(size, _AS.kAXValueCGSizeType, None)
+        if ok and ok2 and abs(p.x - win["x"]) < 4 and abs(p.y - win["y"]) < 4:
+            return w
+    return None
 
 
 def activate(timeout=2.5):
@@ -253,18 +294,48 @@ def activate(timeout=2.5):
             f"{APP_NAME} isn't running — open it and connect your phone.")
     if is_frontmost():
         return
-    app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+    # Re-assert, don't just wait. A single activateWithOptions_ loses to any
+    # app that grabs focus back — a full-screen menu-bar app can reclaim it
+    # within a second — and then this timed out against a Mac where simply
+    # asking again would have won on the second try.
+    #
+    # activateWithOptions_ alone is not enough any more, now that is_frontmost
+    # checks z-order too. Measured directly: once background.py's SkyLight
+    # calls (_SLPSSetFrontProcessWithOptions, used by every background tap and
+    # keystroke to target events at the process without raising its window)
+    # have left AXFrontmost true for this app, activateWithOptions_ becomes a
+    # no-op — Cocoa sees an app that already reports itself frontmost and
+    # skips the raise, so the window never moves and the loop above would spin
+    # for the full timeout doing nothing. AXRaise on the window's own
+    # AXUIElement works even in that stuck state, so it runs alongside
+    # activateWithOptions_ on every iteration rather than only as a fallback.
+    win = find_window()
     deadline = time.time() + timeout
     while time.time() < deadline:
-        time.sleep(0.05)
+        app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        el = _ax_window_element(app, win) if win else None
+        if el is not None:
+            _AS.AXUIElementPerformAction(el, "AXRaise")
+        time.sleep(0.08)
         if is_frontmost():
             return
+    # is_frontmost() now requires both AXFrontmost and z-order to agree, so a
+    # failure can be either signal (or both) — name the one that's actually
+    # missing rather than a generic "still has focus", since the two failure
+    # modes need different things from the user (bring the window forward vs.
+    # give it keyboard focus).
+    front, _ = focus_probe()
     win = frontmost_window() or {}
     owner = win.get("kCGWindowOwnerName", "unknown")
+    if front and owner != APP_NAME:
+        detail = (f"AXFrontmost is true but {owner!r} still owns the "
+                  f"frontmost window — {APP_NAME} has focus without being "
+                  f"raised")
+    else:
+        detail = f"{owner!r} still has focus"
     raise RuntimeError(
         f"could not bring {APP_NAME} frontmost after {timeout:.1f}s — "
-        f"{owner!r} still has focus. Input would be swallowed, so nothing "
-        f"was sent.")
+        f"{detail}. Input would be swallowed, so nothing was sent.")
 
 
 def ensure_window(timeout=5.0):
@@ -372,17 +443,103 @@ def drag(x1, y1, x2, y2, duration=0.35, steps=14):
     _post_mouse(Quartz.kCGEventLeftMouseUp, x2, y2)
 
 
+# A plain CGEventCreateScrollWheelEvent (the old implementation below this
+# comment used to be) is what iPhone Mirroring stopped honouring on macOS 26,
+# along with every shape tried in 404e923's "ruled out" list. What it still
+# accepts is an event sequence shaped like an actual trackpad two-finger
+# scroll: IsContinuous set, a ScrollPhase field walking began -> changed* ->
+# ended, and — the single most important detail, found the hard way — a
+# NONZERO delta on the 'began' event too. A began event carrying 0 does
+# nothing at all, even though the changed events that follow carry the real
+# motion.
+#
+# Distance is controlled by the NUMBER of 'changed' events, not by the size of
+# each one's delta: pt=-1 and pt=-30 both moved a test list ~95-105 screen
+# points over 14 events at 16ms spacing, and 28/56 events moved ~192/~384
+# points — linear in count, flat in magnitude. So _SCROLL_PT_PER_EVENT below
+# is points-per-event, and the delta field is just held at a fixed nonzero
+# value.
+#
+# Measured on macOS 26.2 (25C56) with the window frontmost and is_frontmost()
+# verified true; see the calibration method in issue #51.
+_SCROLL_PT_PER_EVENT = 7        # screen points moved per 'changed' event
+_SCROLL_EVENT_DELTA = 9         # per-event delta magnitude; any nonzero value
+                                 # measured the same distance — this is the one
+                                 # that was actually measured
+_SCROLL_STEP_INTERVAL = 0.016   # seconds between posted events (~60Hz, a real
+                                 # trackpad's rate)
+_SCROLL_PHASE_BEGAN, _SCROLL_PHASE_CHANGED, _SCROLL_PHASE_ENDED = 1, 2, 4
+
+_libc = None
+
+
+def _mach_absolute_time():
+    # A real trackpad gesture's events carry a live host timestamp; the
+    # working recipe was measured with one attached to every event, so it
+    # stays rather than risk finding out CGEventSetTimestamp(0) matters too.
+    global _libc
+    if _libc is None:
+        import ctypes
+        _libc = ctypes.CDLL(None)
+        _libc.mach_absolute_time.restype = ctypes.c_uint64
+    return _libc.mach_absolute_time()
+
+
+def _scroll_event(x, y, phase, pt):
+    """One event in a phased trackpad-scroll gesture at (x, y).
+
+    Most fields here are load-bearing, found by exhaustive trial against a
+    device (see 404e923's "ruled out" list): IsContinuous plus a ScrollPhase
+    walking began/changed/ended is what makes this read as a gesture instead
+    of a plain wheel click, and a nonzero delta has to be on every phase (see
+    scroll_wheel). PointDeltaAxis2 is the one exception — it is set to a small
+    cross-axis value because a real two-finger scroll always carries one, not
+    because it changes anything: the identical recipe with it left at 0
+    measured the same shift (-150px for dy=-140). It stays for fidelity to a
+    real event, not necessity. MomentumPhase (field 123) and fields
+    137/45/101/87 are deliberately NOT set — setting any of those makes
+    iPhone Mirroring silently ignore the whole event.
+    """
+    ev = Quartz.CGEventCreateScrollWheelEvent(
+        None, Quartz.kCGScrollEventUnitPixel, 2, 0, 0)
+    set_field = lambda f, v: Quartz.CGEventSetIntegerValueField(ev, f, v)
+    set_field(88, 1)                                    # IsContinuous
+    set_field(99, phase)                                # ScrollPhase
+    set_field(96, pt)                                   # PointDeltaAxis1
+    set_field(93, int(pt * 65536 / 10))                 # FixedPtDeltaAxis1
+    set_field(11, -1 if pt < 0 else (1 if pt > 0 else 0))  # DeltaAxis1
+    set_field(97, -1 if pt else 0)                      # PointDeltaAxis2
+    Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
+    Quartz.CGEventSetTimestamp(ev, _mach_absolute_time())
+    return ev
+
+
 def scroll_wheel(dy, x, y, steps=6):
-    """Scroll-gesture at (x, y). Positive dy scrolls content up (finger down)."""
+    """Phased scroll-wheel gesture at (x, y). dy is screen points; positive
+    scrolls content up (finger down) — matches the sign scroll()/
+    scroll_screen() already assume. `steps` is accepted for call-signature
+    compatibility with older callers and ignored: distance is now controlled
+    by event count (see _SCROLL_PT_PER_EVENT), not by dividing dy across a
+    fixed number of posts.
+
+    Needs the window frontmost, same as every other gesture in this module —
+    _focus() below asserts it. background.py's scroll_wheel calls this
+    directly rather than reimplementing it, because this is the one gesture
+    that backend cannot deliver without briefly focusing.
+    """
     _focus()
     _post_mouse(Quartz.kCGEventMouseMoved, x, y)
     time.sleep(0.1)
-    for _ in range(steps):
-        ev = Quartz.CGEventCreateScrollWheelEvent(
-            None, Quartz.kCGScrollEventUnitPixel, 1, int(dy / steps))
-        Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-        time.sleep(0.03)
+    if dy == 0:
+        return
+    n = max(1, round(abs(dy) / _SCROLL_PT_PER_EVENT))
+    pt = _SCROLL_EVENT_DELTA if dy > 0 else -_SCROLL_EVENT_DELTA
+    sequence = ([(_SCROLL_PHASE_BEGAN, pt)]
+                + [(_SCROLL_PHASE_CHANGED, pt)] * n
+                + [(_SCROLL_PHASE_ENDED, 0)])
+    for phase, p in sequence:
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, _scroll_event(x, y, phase, p))
+        time.sleep(_SCROLL_STEP_INTERVAL)
 
 
 _KEYCODES = {

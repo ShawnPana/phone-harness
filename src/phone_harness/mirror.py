@@ -220,7 +220,7 @@ def frontmost_window():
 
 
 def is_frontmost():
-    """Does iPhone Mirroring have keyboard focus.
+    """Does iPhone Mirroring have both keyboard focus AND the frontmost window.
 
     Reads AXFrontmost through focus_probe(), not
     NSWorkspace.frontmostApplication(): that value arrives by workspace
@@ -230,13 +230,54 @@ def is_frontmost():
     frontmost", skips focusing, and every CGEvent after that lands in
     whatever the user actually has focused.
 
-    Focus is asked for directly rather than inferred from window order.
-    Measured on a real steal, AXFrontmost reported iPhone Mirroring while the
-    frontmost window still belonged to the user's terminal: the app had taken
-    the keyboard without moving a window. Reading z-order alone would have
-    called that no change, which is precisely the case worth catching.
+    But AXFrontmost alone is not enough either, and requiring z-order too is
+    not optional the way it might look. Measured on a real steal, AXFrontmost
+    reported iPhone Mirroring true while the frontmost window still belonged
+    to the user's terminal — that used to read here as "no change, still
+    focused". It is not: the background backend's SkyLight path
+    (_SLPSSetFrontProcessWithOptions in background._post/_make_key) makes
+    iPhone Mirroring the front *process* without raising its *window*, and
+    once that happens AXFrontmost reports true indefinitely even while the
+    terminal's window stays on top and keeps receiving keyboard and scroll
+    events — those are routed by window z-order, not by AX. So a steal that
+    only moves the window (AX stays true, z-order changes) is exactly the
+    case this has to catch, and it is caught by requiring both signals to
+    agree: AXFrontmost true AND the window list's frontmost normal-layer
+    window owned by this process's PID. A window lookup that finds nothing
+    (app not running, or genuinely no window) counts as not frontmost too.
     """
-    return bool(focus_probe()[0])
+    front, _ = focus_probe()
+    if not front:
+        return False
+    app = running_app()
+    if app is None:
+        return False
+    win = frontmost_window()
+    return bool(win) and win.get("kCGWindowOwnerPID") == app.processIdentifier()
+
+
+def _ax_window_element(app, win):
+    """The AXUIElement for `win`, matched by geometry against the app's
+    AXWindows the way window_ax_content() does, or None.
+
+    Used to AXRaise the phone window directly when activateWithOptions_
+    alone can't move it — see activate().
+    """
+    err, ax_wins = _AS.AXUIElementCopyAttributeValue(
+        _AS.AXUIElementCreateApplication(app.processIdentifier()),
+        "AXWindows", None)
+    if err or not ax_wins or win is None:
+        return None
+    for w in ax_wins:
+        e1, pos = _AS.AXUIElementCopyAttributeValue(w, "AXPosition", None)
+        e2, size = _AS.AXUIElementCopyAttributeValue(w, "AXSize", None)
+        if e1 or e2 or pos is None or size is None:
+            continue
+        ok, p = _AS.AXValueGetValue(pos, _AS.kAXValueCGPointType, None)
+        ok2, _sz = _AS.AXValueGetValue(size, _AS.kAXValueCGSizeType, None)
+        if ok and ok2 and abs(p.x - win["x"]) < 4 and abs(p.y - win["y"]) < 4:
+            return w
+    return None
 
 
 def activate(timeout=2.5):
@@ -257,18 +298,44 @@ def activate(timeout=2.5):
     # app that grabs focus back — a full-screen menu-bar app can reclaim it
     # within a second — and then this timed out against a Mac where simply
     # asking again would have won on the second try.
+    #
+    # activateWithOptions_ alone is not enough any more, now that is_frontmost
+    # checks z-order too. Measured directly: once background.py's SkyLight
+    # calls (_SLPSSetFrontProcessWithOptions, used by every background tap and
+    # keystroke to target events at the process without raising its window)
+    # have left AXFrontmost true for this app, activateWithOptions_ becomes a
+    # no-op — Cocoa sees an app that already reports itself frontmost and
+    # skips the raise, so the window never moves and the loop above would spin
+    # for the full timeout doing nothing. AXRaise on the window's own
+    # AXUIElement works even in that stuck state, so it runs alongside
+    # activateWithOptions_ on every iteration rather than only as a fallback.
+    win = find_window()
     deadline = time.time() + timeout
     while time.time() < deadline:
         app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        el = _ax_window_element(app, win) if win else None
+        if el is not None:
+            _AS.AXUIElementPerformAction(el, "AXRaise")
         time.sleep(0.08)
         if is_frontmost():
             return
+    # is_frontmost() now requires both AXFrontmost and z-order to agree, so a
+    # failure can be either signal (or both) — name the one that's actually
+    # missing rather than a generic "still has focus", since the two failure
+    # modes need different things from the user (bring the window forward vs.
+    # give it keyboard focus).
+    front, _ = focus_probe()
     win = frontmost_window() or {}
     owner = win.get("kCGWindowOwnerName", "unknown")
+    if front and owner != APP_NAME:
+        detail = (f"AXFrontmost is true but {owner!r} still owns the "
+                  f"frontmost window — {APP_NAME} has focus without being "
+                  f"raised")
+    else:
+        detail = f"{owner!r} still has focus"
     raise RuntimeError(
         f"could not bring {APP_NAME} frontmost after {timeout:.1f}s — "
-        f"{owner!r} still has focus. Input would be swallowed, so nothing "
-        f"was sent.")
+        f"{detail}. Input would be swallowed, so nothing was sent.")
 
 
 def ensure_window(timeout=5.0):
@@ -421,13 +488,17 @@ def _mach_absolute_time():
 def _scroll_event(x, y, phase, pt):
     """One event in a phased trackpad-scroll gesture at (x, y).
 
-    Every field here is load-bearing, found by exhaustive trial against a
+    Most fields here are load-bearing, found by exhaustive trial against a
     device (see 404e923's "ruled out" list): IsContinuous plus a ScrollPhase
     walking began/changed/ended is what makes this read as a gesture instead
-    of a plain wheel click; PointDeltaAxis2 is set to a small cross-axis value
-    because a real two-finger scroll always carries one. MomentumPhase (field
-    123) and fields 137/45/101/87 are deliberately NOT set — setting any of
-    those makes iPhone Mirroring silently ignore the whole event.
+    of a plain wheel click, and a nonzero delta has to be on every phase (see
+    scroll_wheel). PointDeltaAxis2 is the one exception — it is set to a small
+    cross-axis value because a real two-finger scroll always carries one, not
+    because it changes anything: the identical recipe with it left at 0
+    measured the same shift (-150px for dy=-140). It stays for fidelity to a
+    real event, not necessity. MomentumPhase (field 123) and fields
+    137/45/101/87 are deliberately NOT set — setting any of those makes
+    iPhone Mirroring silently ignore the whole event.
     """
     ev = Quartz.CGEventCreateScrollWheelEvent(
         None, Quartz.kCGScrollEventUnitPixel, 2, 0, 0)

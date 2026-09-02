@@ -26,7 +26,7 @@ devices → Try [Phone Harness Cloud](https://phone-harness.com/cloud)
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."
 
-<!-- demo video: paste the github user-attachments URL here -->
+https://github.com/user-attachments/assets/80b6d38e-0222-481c-93db-9de60d79247a
 
 ## Setup
 

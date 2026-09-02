@@ -17,8 +17,11 @@ and reads the result.
 ```
 
 Get started by sending the [setup prompt](https://phone-harness.com) to your
-agent. Want hosted iPhones and Android devices instead of your own?
-[Join the phone-harness cloud beta](https://phone-harness.com/cloud).
+coding agent.
+
+Need phones you don't own? Hosted iPhones and Androids with stealth, real
+phone numbers, app store accounts, and parallel devices for every agent.
+Try [Phone Harness Cloud](https://phone-harness.com/cloud).
 
 ## Demo
 

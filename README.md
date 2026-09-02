@@ -20,7 +20,7 @@ and reads the result.
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."
 
-[![Agent books a Waymo from the iPhone](docs/demo.gif)](https://github.com/ShawnPana/phone-harness/releases/download/0.2.0/phone-harness-demo-no-zoom.mp4)
+<!-- demo video: paste the github user-attachments URL here -->
 
 ## Setup
 

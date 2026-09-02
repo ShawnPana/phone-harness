@@ -16,6 +16,10 @@ and reads the result.
   ✓ done
 ```
 
+Get started by sending the [setup prompt](https://phone-harness.com) to your
+agent. Want hosted iPhones and Android devices instead of your own?
+[Join the phone-harness cloud beta](https://phone-harness.com/cloud).
+
 ## Demo
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."

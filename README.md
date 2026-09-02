@@ -16,8 +16,8 @@ and reads the result.
   ✓ done
 ```
 
-Get started by sending the setup prompt to your coding agent →
-[phone-harness.com](https://phone-harness.com)
+Get started by sending the [setup prompt](https://phone-harness.com) to your
+coding agent.
 
 Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited
 devices → [Phone Harness Cloud](https://phone-harness.com/cloud)

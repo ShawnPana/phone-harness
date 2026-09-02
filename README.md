@@ -20,7 +20,7 @@ Get started by sending the [setup prompt](https://phone-harness.com) to your
 coding agent.
 
 Want hosted iPhones and Androids with stealth, real phone numbers, SMS and
-2FA handled, and a fleet your agents can run in parallel?
+2FA handled, and as many phones as your agents need, all at once?
 Try [Phone Harness Cloud](https://phone-harness.com/cloud).
 
 ## Demo

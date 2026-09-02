@@ -19,8 +19,8 @@ and reads the result.
 Get started by sending the [setup prompt](https://phone-harness.com) to your
 coding agent.
 
-Hosted iPhones and Androids with stealth, real numbers, and 2FA, as many as
-you need. Try [Phone Harness Cloud](https://phone-harness.com/cloud).
+Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited
+devices. Try [Phone Harness Cloud](https://phone-harness.com/cloud).
 
 ## Demo
 

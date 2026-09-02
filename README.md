@@ -19,8 +19,8 @@ and reads the result.
 Get started by sending the [setup prompt](https://phone-harness.com) to your
 coding agent.
 
-Want hosted iPhones and Androids with stealth, real phone numbers, app store
-accounts, and a fleet your agents can run in parallel?
+Want hosted iPhones and Androids with stealth, real phone numbers, SMS and
+2FA handled, and a fleet your agents can run in parallel?
 Try [Phone Harness Cloud](https://phone-harness.com/cloud).
 
 ## Demo

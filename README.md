@@ -16,7 +16,7 @@ and reads the result.
   ✓ done
 ```
 
-## See it work
+## Demo
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."
 

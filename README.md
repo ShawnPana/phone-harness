@@ -20,7 +20,7 @@ Get started by sending the [setup prompt](https://phone-harness.com) to your
 coding agent.
 
 Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited
-devices → [Phone Harness Cloud](https://phone-harness.com/cloud)
+devices → Try [Phone Harness Cloud](https://phone-harness.com/cloud)
 
 ## Demo
 

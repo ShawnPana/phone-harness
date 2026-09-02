@@ -10,9 +10,9 @@ and reads the result.
 ```
   ● agent: wants to open Weather
   │
-  ● ocr() → "Weather" at (400, 468)
+  ● find_text("Weather") → (400, 468)
   │
-  ● tap(400, 468) → ocr() confirms the forecast
+  ● tap(400, 468) → reads the screen → forecast is up
   ✓ done
 ```
 

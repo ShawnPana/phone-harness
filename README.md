@@ -1,6 +1,6 @@
 # Phone Harness 📱
 
-**[phone-harness](https://phone-harness.com)** · let your agent control your phone.
+**[phone-harness](https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header)** · let your agent control your phone.
 
 Connect Claude Code, Codex, or any agent to your real phone. **iPhone** through
 the Mac's iPhone Mirroring window, **Android** over adb. No jailbreak, no
@@ -16,11 +16,11 @@ and reads the result.
   ✓ done
 ```
 
-Get started by sending the [setup prompt](https://phone-harness.com) to your
+Get started by sending the [setup prompt](https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=setup-prompt) to your
 coding agent.
 
 Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited
-devices → Try [Phone Harness Cloud](https://phone-harness.com/cloud)
+devices → Try [Phone Harness Cloud](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=cloud)
 
 ## Demo
 

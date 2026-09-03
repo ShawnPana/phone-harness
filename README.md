@@ -71,8 +71,7 @@ the default.
 
 ## Limits
 
-- One phone per session. Unlocking the iPhone pauses mirroring; a PIN-locked
-  Android needs the user.
+- Unlocking the iPhone pauses mirroring; a PIN-locked Android needs the user.
 - OCR sees text, not icons. Unlabeled controls need a screenshot and a
   vision-capable model.
 - No multi-touch, no camera or Face ID flows. DRM video renders black.

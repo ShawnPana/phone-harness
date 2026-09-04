@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "onepatch": {
+      "type": "http",
+      "url": "https://app.onepatch.dev/mcp"
+    }
+  }
+}

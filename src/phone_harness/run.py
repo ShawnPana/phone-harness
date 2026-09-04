@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import otel
 from . import telemetry
 
 USAGE = """Usage:
@@ -57,7 +58,8 @@ def _traced(name, fn):
             _helper_trace.append(entry)
         step_start = time.monotonic()
         try:
-            return fn(*args, **kwargs)
+            with otel.helper_span(name):
+                return fn(*args, **kwargs)
         except BaseException as exc:
             entry["error"] = str(exc)[:300]
             raise
@@ -144,10 +146,14 @@ def main():
     stdout_tail = _StreamTail(sys.stdout)
     sys.stderr = stderr_tail
     sys.stdout = stdout_tail
+    run_span = otel.start(command, task_length=len(task) if task is not None else None)
     try:
         _run(args)
     except SystemExit as exc:
         code = _exit_code(exc.code)
+        otel.finish(run_span, exit_code=code, phone=_phone_name,
+                    step_count=_helper_call_count or None,
+                    error_type="SystemExit" if code else None)
         telemetry.capture_cli_event(
             action="error" if code else "completed",
             command=command,
@@ -164,6 +170,9 @@ def main():
         )
         raise
     except Exception as exc:
+        otel.finish(run_span, exit_code=1, phone=_phone_name,
+                    step_count=_helper_call_count or None,
+                    error_type=type(exc).__name__)
         telemetry.capture_cli_event(
             action="error",
             command=command,
@@ -182,6 +191,8 @@ def main():
     finally:
         sys.stderr = stderr_tail._wrapped
         sys.stdout = stdout_tail._wrapped
+    otel.finish(run_span, exit_code=0, phone=_phone_name,
+                step_count=_helper_call_count or None)
     telemetry.capture_cli_event(
         action="completed",
         command=command,

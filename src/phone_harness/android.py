@@ -323,7 +323,7 @@ class Android(Backend):
             raise Unsupported(f"android has no key named {combo!r}")
         self._sh(f"input keyevent KEYCODE_{code}")
 
-    def _input_text(self, s, delay=0.03):
+    def _input_text(self, s, delay=0.03, keystrokes=False):
         self._gate()
         """`input text` takes one ASCII token; newlines and backspaces become
         keyevents, spaces become %s, and the rest is shell-quoted."""

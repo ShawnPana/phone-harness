@@ -16,11 +16,10 @@ and reads the result.
   ✓ done
 ```
 
+Try [Phone Harness Cloud](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=cloud) → Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited devices
+
 Get started by sending the [setup prompt](https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=setup-prompt) to your
 coding agent.
-
-Hosted iPhones and Androids with stealth, real numbers, 2FA, and unlimited
-devices → Try [Phone Harness Cloud](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=cloud)
 
 ## Demo
 

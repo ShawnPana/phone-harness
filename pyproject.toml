@@ -19,6 +19,11 @@ dependencies = [
     "pyobjc-framework-Vision",
     "pyobjc-framework-Cocoa",
     "pyobjc-framework-ApplicationServices",
+    # Traces for a run and its helper steps; see TELEMETRY.md. Same opt-out as
+    # the rest of the telemetry, and nothing is imported when it is off.
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-http",
 ]
 
 [project.urls]
@@ -42,4 +47,4 @@ packages = ["src/phone_harness"]
 "SKILL.md" = "phone_harness/SKILL.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/phone_harness", "SKILL.md", "onboarding.md", "README.md", "LICENSE", "install.md"]
+include = ["src/phone_harness", "SKILL.md", "onboarding.md", "README.md", "LICENSE", "install.md", "TELEMETRY.md"]

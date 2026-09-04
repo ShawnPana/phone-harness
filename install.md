@@ -74,7 +74,9 @@ Set up each as above; `phone-harness config set platform …` picks the default,
 `PHONE_HARNESS_PLATFORM=…` picks per call. The two never interfere — the
 iPhone is driven through the mirroring window, the Android over adb.
 
-`phone-harness config set telemetry false` turns off anonymous usage telemetry.
+`phone-harness config set telemetry false` turns off anonymous usage telemetry
+and the OpenTelemetry traces described in [TELEMETRY.md](TELEMETRY.md) — one
+switch covers both. `PHONE_HARNESS_TELEMETRY=0` does it for a single call.
 
 ## If It Fails
 

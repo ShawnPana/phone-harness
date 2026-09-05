@@ -73,10 +73,17 @@ class IPhone(Backend):
         return self.mirror.capture(path)
 
     def _screen_text(self, min_confidence=0.3):
+        """Every string Vision found, with its confidence attached.
+
+        `min_confidence` is accepted and ignored. It used to drop boxes below
+        a cutoff before the caller saw them -- and the cutoff was tuned on
+        English. Chinese text scores lower and landed on exactly 0.3, one
+        rounding step from vanishing, so on a Chinese phone rows silently went
+        missing. The score is in every box; what to do with it is the
+        caller's call, not this function's.
+        """
         path, win = self.mirror.capture()
-        return [dict(o, source="pixels")
-                for o in _vision.recognize(path, win)
-                if o["confidence"] >= min_confidence]
+        return [dict(o, source="pixels") for o in _vision.recognize(path, win)]
 
     # Pixels are the only source iOS has ever had.
     _screen_text_pixels = _screen_text

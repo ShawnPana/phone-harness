@@ -21,8 +21,8 @@ step that is missing. Paired phones are
 remembered (see config.py: the devices state file) under a friendly name and
 matched by hardware serial, so a phone whose Wi-Fi port changed overnight is
 still "pixel-8". The first phone paired over Wi-Fi becomes the primary;
-`phone-harness android use NAME` changes that; ANDROID_SERIAL overrides
-everything.
+`phone-harness android use NAME` changes that. An explicit serial argument,
+or ANDROID_SERIAL, overrides automatic discovery for that connection.
 """
 import os
 import re
@@ -136,8 +136,7 @@ class Android(Backend):
     name = "android"
 
     def __init__(self, serial=None):
-        if serial:
-            os.environ["ANDROID_SERIAL"] = serial
+        self._serial = serial or os.environ.get("ANDROID_SERIAL")
         self._bounds = None
         self._resolved = False
         self._gate_at = 0.0
@@ -150,7 +149,7 @@ class Android(Backend):
         unpinned command then fails with "more than one device"."""
         if not self._resolved and self._resolve() is None:
             self._session_require()               # raises with the physical step
-        return _run(*args, binary=binary, timeout=timeout)
+        return _run("-s", self._serial, *args, binary=binary, timeout=timeout)
 
     def _sh(self, cmd, timeout=60):
         return self._adb("shell", cmd, timeout=timeout)
@@ -158,16 +157,17 @@ class Android(Backend):
     # --- choosing the phone -------------------------------------------------
 
     def _resolve(self):
-        """Pin ANDROID_SERIAL to one ready device, connecting a paired phone
+        """Pin this connection to one ready device, connecting a paired phone
         over Wi-Fi if nothing is attached. Returns the adb id or None.
 
-        Order: the user's explicit ANDROID_SERIAL; then a USB phone (wired
-        always wins — it is right there); then a live Wi-Fi link, the saved
+        Order: the explicit serial or ANDROID_SERIAL captured at construction;
+        then a USB phone (wired always wins — it is right there); then a live
+        Wi-Fi link, the saved
         primary first; then mDNS — the primary if it is on the LAN, else the
         first known phone, else any paired phone."""
-        if os.environ.get("ANDROID_SERIAL"):
+        if self._serial:
             self._resolved = True
-            return os.environ["ANDROID_SERIAL"]
+            return self._serial
         cfg = _load()
         primary = (cfg.get("phones") or {}).get(cfg.get("primary") or "", {})
         known = {p.get("serial") for p in (cfg.get("phones") or {}).values()}
@@ -200,7 +200,7 @@ class Android(Backend):
             ready = [r for r in _attached() if r[1] == "device"]
             chosen = pick(ready)
         if chosen is not None:
-            os.environ["ANDROID_SERIAL"] = chosen
+            self._serial = chosen
             self._resolved = True
             try:
                 _remember(cfg, _prop(chosen, "ro.serialno"),
@@ -255,7 +255,7 @@ class Android(Backend):
                 return None
             self._bounds = {"x": 0, "y": 0, "w": int(m.group(1)),
                             "h": int(m.group(2)),
-                            "id": os.environ.get("ANDROID_SERIAL")}
+                            "id": self._serial}
         return self._bounds
 
     def _screen_require(self):

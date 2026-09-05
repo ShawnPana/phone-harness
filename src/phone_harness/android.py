@@ -242,20 +242,30 @@ class Android(Backend):
     # --- screen -------------------------------------------------------------
 
     def _screen_bounds(self):
-        if self._bounds is None:
-            if self._resolve() is None:
-                return None
+        """Current default-display pixels, including rotation and size changes."""
+        if self._resolve() is None:
+            return None
+        try:
+            out = self._sh("dumpsys window displays")
+        except RuntimeError:
+            out = ""
+        # wm size describes the unrotated display. WindowManager's current
+        # dimensions match the screenshot and input coordinate space. Read
+        # them each time: one connection can outlive a rotation or wm resize.
+        m = re.search(r"Display: mDisplayId=0\b[^\n]*\n[^\n]*\bcur=(\d+)x(\d+)", out)
+        if not m:
+            # Retain support for devices whose WindowManager dump differs.
             try:
                 out = self._sh("wm size")
             except RuntimeError:
                 return None
             m = (re.search(r"Override size:\s*(\d+)x(\d+)", out)
                  or re.search(r"Physical size:\s*(\d+)x(\d+)", out))
-            if not m:
-                return None
-            self._bounds = {"x": 0, "y": 0, "w": int(m.group(1)),
-                            "h": int(m.group(2)),
-                            "id": os.environ.get("ANDROID_SERIAL")}
+        if not m:
+            return None
+        self._bounds = {"x": 0, "y": 0, "w": int(m.group(1)),
+                        "h": int(m.group(2)),
+                        "id": os.environ.get("ANDROID_SERIAL")}
         return self._bounds
 
     def _screen_require(self):

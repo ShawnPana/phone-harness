@@ -176,15 +176,20 @@ PY
 - **The phone locks itself** after its screen timeout. `connection_state()`
   reports `locked`; taps and `ocr()` refuse with the same message. Ask the
   user to unlock — never type a PIN. `screenshot()` still works locked, so you
-  can show them what you see. For a task longer than a minute, ask the user,
-  then run `phone-harness android awake --bg`: it keeps the phone awake for
-  the session (and opens a mirror window if scrcpy is installed) without
-  changing any phone setting; `phone-harness android rest` ends it and lets
-  the phone sleep. Do that at the end of the task.
+  can show them what you see. `phone-harness android awake --bg` keeps the
+  phone awake for the session (and opens a mirror window if scrcpy is
+  installed) without changing any phone setting; `phone-harness android
+  connect` starts it for you, so usually it is already running. `phone-harness
+  android rest` ends it and lets the phone sleep. Do that at the end of the task.
 - Connection is still the user's job (USB debugging + Allow, or Wireless
   debugging + `phone-harness android pair CODE`); on `no-device` the
   error names the missing step — relay it, don't retry-loop.
   `phone-harness android` shows known phones and what is attached.
+- **Connecting = seeing.** `phone-harness android connect` (a paired Wi‑Fi
+  phone, by name or IP:PORT) also starts the awake session in the background:
+  a scrcpy mirror window on the Mac plus keep-awake. That is the default
+  because the user wants the phone visible whenever it is connected;
+  `--no-awake` connects only, `--no-mirror` keeps awake without a window.
 
 ## Consent
 

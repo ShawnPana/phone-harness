@@ -103,11 +103,14 @@ def _doctor_android():
     adb = str(config.get("android.adb"))
     if not shutil.which(adb):
         _check(f"adb found ({adb})", False,
-               "brew install android-platform-tools, or set android.adb to the binary")
+               f"{config.install_hint('adb')}, or set android.adb to the binary")
         return
     _check(f"adb found ({shutil.which(adb)})", True)
+    scrcpy = str(config.get("android.scrcpy"))
     _check("scrcpy found (optional: live mirror during `android awake`)",
-           bool(shutil.which("scrcpy")), "brew install scrcpy — not required", fatal=False)
+           bool(shutil.which(scrcpy)),
+           f"{config.install_hint('scrcpy')}, or set android.scrcpy to the "
+           "binary — not required", fatal=False)
 
     from . import android
     phone = android.Android()

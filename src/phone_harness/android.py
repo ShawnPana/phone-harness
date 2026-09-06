@@ -43,6 +43,16 @@ from .transport import Backend, Unsupported
 def _adb_bin():
     return str(config.get("android.adb"))
 
+
+def _no_adb(binary):
+    """Why adb could not be run, and the two ways out. Raised instead of
+    letting FileNotFoundError surface as a traceback: a missing binary is a
+    setup step for the user, not a bug."""
+    return RuntimeError(
+        f"adb not found ({binary}). Install Android platform-tools "
+        f"({config.install_hint('adb')}), or point the harness straight at "
+        f"it: phone-harness config set android.adb /path/to/adb")
+
 # input.keys names -> Android keycodes. Modifier chords are not a thing
 # `input keyevent` can express, so combos raise rather than half-work.
 _KEYS = {
@@ -58,7 +68,11 @@ _KEYS = {
 # --- adb, without a device yet -----------------------------------------------
 
 def _run(*args, binary=False, timeout=60, check=True):
-    r = subprocess.run([_adb_bin(), *args], capture_output=True, timeout=timeout)
+    adb = _adb_bin()
+    try:
+        r = subprocess.run([adb, *args], capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        raise _no_adb(adb) from None
     if check and r.returncode != 0:
         err = (r.stderr or r.stdout).decode(errors="replace").strip()
         raise RuntimeError(f"adb {' '.join(args)} failed: {err}")
@@ -323,10 +337,15 @@ class Android(Backend):
             raise Unsupported(f"android has no key named {combo!r}")
         self._sh(f"input keyevent KEYCODE_{code}")
 
-    def _input_text(self, s, delay=0.03):
-        self._gate()
+    def _input_text(self, s, delay=0.03, keystrokes=False):
         """`input text` takes one ASCII token; newlines and backspaces become
-        keyevents, spaces become %s, and the rest is shell-quoted."""
+        keyevents, spaces become %s, and the rest is shell-quoted.
+
+        `keystrokes` exists for parity with iOS, where it picks key events
+        over a paste. adb has only `input text`, which is key events already,
+        so there is nothing here to switch — but the helper always passes the
+        argument, and refusing it made type_text() unusable on Android."""
+        self._gate()
         for i, line in enumerate(s.split("\n")):
             if i:
                 self._sh("input keyevent KEYCODE_ENTER")
@@ -427,10 +446,7 @@ class Android(Backend):
             self._gate_at = 0.0
             self._gate()                       # raises with the unlock message
         if state == "no-adb":
-            raise RuntimeError(
-                "adb isn't available. Install Android platform-tools "
-                "(brew install android-platform-tools) or set "
-                "PHONE_HARNESS_ADB to the adb binary, then retry.")
+            raise _no_adb(_adb_bin())
         if state == "unauthorized":
             raise RuntimeError(
                 "The Android phone is attached but hasn't authorised this "
@@ -444,7 +460,7 @@ class Android(Backend):
         prim = cfg.get("primary")
         known = (f" Your primary phone is '{prim}' — make sure Wireless "
                  "debugging is on and it is on this Wi-Fi; if it forgot this "
-                 "Mac, pair again." if prim else "")
+                 "computer, pair again." if prim else "")
         raise RuntimeError(
             "No Android device is reachable." + known + " To connect one: "
             "USB — Settings > Developer options > USB debugging, plug in, tap "
@@ -570,16 +586,17 @@ def _awake(mirror=True):
     label = _phone_label(adb_id)
     print(f"awake: {label} ({adb_id})", flush=True)
     proc = None
-    if mirror and shutil.which("scrcpy"):
+    scrcpy = shutil.which(str(config.get("android.scrcpy")))
+    if mirror and scrcpy:
         proc = subprocess.Popen(
-            ["scrcpy", "-s", adb_id, "--stay-awake", "--no-audio",
+            [scrcpy, "-s", adb_id, "--stay-awake", "--no-audio",
              "--always-on-top", "--window-title", f"phone-harness: {label}",
              "--window-width", "360"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("mirror: scrcpy window open (close it to end)", flush=True)
     elif mirror:
-        print("mirror: scrcpy not installed (brew install scrcpy) — keeping "
-              "awake without a window", flush=True)
+        print(f"mirror: scrcpy not installed ({config.install_hint('scrcpy')}) "
+              "— keeping awake without a window", flush=True)
 
     def stop(*_):
         if proc and proc.poll() is None:
@@ -737,7 +754,7 @@ def cli(args):
             if addr is None:
                 print("no phone is offering to pair on this network. Is Wireless "
                       "debugging on, the pairing dialog open, and the phone on the "
-                      "same Wi-Fi as this Mac? If your network blocks mDNS, use: "
+                      "same Wi-Fi as this computer? If your network blocks mDNS, use: "
                       "phone-harness android pair IP:PORT CODE (both shown in the dialog)")
                 return 1
         out = _run("pair", addr, code, timeout=30, check=False)

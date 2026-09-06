@@ -37,6 +37,7 @@ DEFAULTS = {
     "telemetry": True,         # anonymous usage events; `config set telemetry false`
     "android": {
         "adb": "adb",          # the binary; a path if it is not on PATH
+        "scrcpy": "scrcpy",    # the binary; a path if it is not on PATH
         "poke_every": 25,      # seconds between keep-awake pokes
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
@@ -51,6 +52,27 @@ _ENV_ALIASES = {
     "platform": ["PHONE_HARNESS_PLATFORM"],
     "android.adb": ["PHONE_HARNESS_ADB"],
 }
+
+# How you install the external tools, per OS. A hint that names the wrong
+# package manager is worse than no hint — a Windows user has no `brew`.
+_INSTALL_HINTS = {
+    "adb": {
+        "darwin": "brew install android-platform-tools",
+        "win32": "winget install Google.PlatformTools",
+        "linux": "sudo apt install android-tools-adb",
+    },
+    "scrcpy": {
+        "darwin": "brew install scrcpy",
+        "win32": "winget install Genymobile.scrcpy",
+        "linux": "sudo apt install scrcpy",
+    },
+}
+
+
+def install_hint(tool):
+    """The command that installs `tool` on this machine, for error messages."""
+    per_os = _INSTALL_HINTS[tool]
+    return per_os.get(sys.platform, per_os["linux"])
 
 
 # --- where -------------------------------------------------------------------

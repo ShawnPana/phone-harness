@@ -51,6 +51,17 @@ print([o["text"] for o in ocr()][:10])
 PY
 ```
 
+PowerShell has no heredoc; pipe a here-string instead:
+
+```powershell
+@'
+open_app("Notes")
+tap_text("New Note")
+type_text("hello from the harness")
+print([o["text"] for o in ocr()][:10])
+'@ | phone-harness
+```
+
 Helpers are pre-imported. [SKILL.md](SKILL.md) is the agent's day-to-day
 guide; [helpers.py](src/phone_harness/helpers.py) is the full list.
 

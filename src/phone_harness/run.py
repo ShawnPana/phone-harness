@@ -178,6 +178,12 @@ def main():
             exit_code=1,
             error_message=str(exc),
         )
+        # RuntimeError is how the harness says "a human has to do something" —
+        # install adb, plug the phone in, tap Allow. That is the answer, not a
+        # crash, so print it plainly. Anything else keeps its traceback.
+        if isinstance(exc, RuntimeError):
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
         raise
     finally:
         sys.stderr = stderr_tail._wrapped

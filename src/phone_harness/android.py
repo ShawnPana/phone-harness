@@ -303,10 +303,9 @@ class Android(Backend):
                  f"{int(duration * 1000)}")
 
     def _input_scroll(self, x, y, dy, steps=6, dx=0):
-        """A finger drag standing in for a wheel: +dy moves content up the
-        way wheel-up does (revealing what is above), so the finger travels
-        +dy pixels downward; +dx likewise moves the finger right. Slow
-        enough not to fling."""
+        """A finger drag standing in for a wheel: +dy moves the finger and
+        content downward, revealing what is above; +dx likewise moves them
+        right, revealing what is to the left. Slow enough not to fling."""
         self._gate()
         self._sh(f"input swipe {int(x)} {int(y)} {int(x + dx)} {int(y + dy)} "
                  f"{max(150, int(steps) * 50)}")

@@ -337,10 +337,15 @@ class Android(Backend):
             raise Unsupported(f"android has no key named {combo!r}")
         self._sh(f"input keyevent KEYCODE_{code}")
 
-    def _input_text(self, s, delay=0.03):
-        self._gate()
+    def _input_text(self, s, delay=0.03, keystrokes=False):
         """`input text` takes one ASCII token; newlines and backspaces become
-        keyevents, spaces become %s, and the rest is shell-quoted."""
+        keyevents, spaces become %s, and the rest is shell-quoted.
+
+        `keystrokes` exists for parity with iOS, where it picks key events
+        over a paste. adb has only `input text`, which is key events already,
+        so there is nothing here to switch — but the helper always passes the
+        argument, and refusing it made type_text() unusable on Android."""
+        self._gate()
         for i, line in enumerate(s.split("\n")):
             if i:
                 self._sh("input keyevent KEYCODE_ENTER")

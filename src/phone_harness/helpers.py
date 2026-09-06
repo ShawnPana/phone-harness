@@ -13,7 +13,7 @@ live inside one backend each, behind the ops documented in transport.py, so
 `nav.home` and `screen.text` mean the same thing everywhere even though an
 iPhone answers them with a Cmd+1 keystroke and Vision OCR.
 """
-import hashlib, importlib.util, os, time
+import hashlib, importlib.util, os, struct, time
 from pathlib import Path
 
 from . import transport
@@ -81,11 +81,22 @@ def find_window():
     return send("screen.bounds")
 
 
+def _image_size(path):
+    """Pixel size of a capture. A PNG says so in its header, which costs
+    nothing to read — importing the macOS Vision stack for this would make
+    every caller macOS-only, and Android runs on Windows and Linux too."""
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+        return struct.unpack(">II", head[16:24])
+    from . import ocr as _vision             # anything else: ask the Mac
+    return _vision.image_size(path)
+
+
 def screen_info():
     """{window, frontmost, img_px} — bounds, focus state, capture size."""
-    from . import ocr as _vision
     path, win = send("screen.capture")
-    w, h = _vision.image_size(path)
+    w, h = _image_size(path)
     return {"window": win, "frontmost": bool(send("focus.probe")[0]),
             "img_px": [w, h]}
 

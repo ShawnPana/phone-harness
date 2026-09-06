@@ -222,7 +222,9 @@ def _run(args):
         return
     if args or sys.stdin.isatty():
         sys.exit(USAGE)
-    code = sys.stdin.read()
+    # Windows PowerShell writes a UTF-8 BOM when it pipes to a native command,
+    # and Python's exec rejects it as a non-printable character on line 1.
+    code = sys.stdin.read().lstrip("\ufeff")
     if not code.strip():
         sys.exit(USAGE)
     from . import helpers

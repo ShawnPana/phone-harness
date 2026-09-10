@@ -3,9 +3,10 @@
 This branch is the **0.1.2.dev1 candidate**, based on the cloud-backend branch
 at `46125871`. It adds APK upload and installation through the account-owned
 phone-cloud API. It has not been published as a normal customer release. The
-matching upload endpoints must be deployed before these install commands work;
-the staging worker candidate is deployed, while the development API endpoint
-has not been activated. This is not yet a verified real installation path.
+matching upload endpoints must be deployed before these install commands work.
+Development API `f285e6c` and staging worker `17cd6fe` now pass one real sample
+APK install/app-assertion/screenshot/release flow using client/example `eb748d0`.
+Browser viewing of the installed app and the broader release gates remain open.
 
 ## One phone, one build, explicit cleanup
 
@@ -115,7 +116,8 @@ fixture, its build recipe and a runner that checks app outcomes and saves eviden
 Tests use a real local HTTP server with simulated sessions: exact upload bytes,
 owner credential handling, no accidental provisioning, invalid/sparse/FIFO
 inputs, bounded streaming, receipt mismatch, redirect denial, and pending
-cleanup. They do not install an Android package. The paired real-device
-provision/upload/install/launch/assert/browser/evidence/release run is still
-required, with provisioning, installation and preview/input timings measured
-separately. A package build is not a public SDK release.
+cleanup. Those tests simulate sessions. A separate real Android run completed
+provision/upload/install/launch/assert/screenshot/release with the sample app;
+upload/install took 2.514687s and API readiness took 98.161505s. Browser viewing,
+failure/compatibility cases and hardware regressions remain separate gates.
+A package build or one compatible app is not a public SDK release.

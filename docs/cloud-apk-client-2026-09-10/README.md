@@ -78,3 +78,24 @@ MEASURED sdk_private_auth_pass=1 revoked_key_denied=1 sessions_created=0 real_ph
 
 This narrows the remaining real QA gate to the paired API activation,
 installation and actual app/browser checks in a coordinated worker window.
+
+## Real Android result after API activation
+
+The preceding source/build/simulated checks are historical checkpoints. After
+activating development API `f285e6c`, client/example `eb748d0` passed the signed
+sample through actual staging Android: install, launch, counter/reset, required
+name error, greeting, four captures and verified release. API readiness was
+98.161505s; upload/install was 2.514687s. Main visually inspected the initial
+and greeting API captures. The normal account key was revoked and the owned
+tunnel stopped. The worker audit found no phones, domains, containers, VM links
+or APK aliases. This is one compatible app; the client remains unpublished.
+
+The [real receipt](real-app-result.json) records all steps. Complete screenshots,
+deployment details and the strict permission-termination proof are retained in
+phone-cloud's `docs/app-qa-real-2026-09-10/`. Positive browser viewing remains
+pending at the private exe.dev sign-in gate; full hardware regressions and
+broader failure/compatibility checks are separate outstanding gates.
+
+```
+MEASURED api_ready_s=98.161505 apk_bytes=12691 upload_install_s=2.514687 app_qa_pass=1 cleanup_verified=1 owned_phones_after_cleanup=0 real_phones=1
+```

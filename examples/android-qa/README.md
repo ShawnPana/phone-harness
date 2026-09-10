@@ -41,7 +41,9 @@ Android's accessibility tree, and saves four screenshots. After release it waits
 up to 120 seconds for the session to leave the active list. Timeout fails cleanup;
 it does not authorize deleting another phone.
 
-Input request time and the following accessibility observation are separate.
+The historical `*_input` tap event durations include locating the target through
+the hierarchy before issuing its tap RPC. They are complete test-step durations,
+not pure input latency. The following accessibility observation is separate.
 Accessibility nodes supply their center coordinates; the runner taps those
 coordinates directly. Four HTTP example checks cover the complete simulated
 app flow, failed input, failed attachment cleanup, and invalid target rejection.
@@ -50,6 +52,8 @@ latency measurement. Browser video/interaction, API readiness, complete startup
 and worker capacity/cleanup must also be checked separately. Without `--release`,
 the phone remains available for manual testing and cleanup is not claimed.
 
-The first local APK build passed package/signature verification. The runner has
-not yet been exercised against real Android; build success does not prove the
-install/test/release journey. See the client validation evidence in `docs/`.
+The first local APK build passed package/signature verification. The corrected
+`eb748d0` runner subsequently passed the real development-to-staging sample flow:
+install, counter/reset, validation, greeting, four screenshots, and release.
+The operator visually inspected the initial and greeting API captures. Browser
+viewing of the installed app is still pending. See the client evidence in `docs/`.

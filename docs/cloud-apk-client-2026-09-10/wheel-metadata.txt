@@ -1,3 +1,25 @@
+Metadata-Version: 2.5
+Name: phone-harness
+Version: 0.1.2.dev1
+Summary: Control phones locally or through the phone-cloud API
+Project-URL: Homepage, https://phone-harness.com
+Project-URL: Repository, https://github.com/ShawnPana/phone-harness
+Project-URL: Issues, https://github.com/ShawnPana/phone-harness/issues
+License-Expression: MIT
+License-File: LICENSE
+Keywords: agent,automation,iphone,iphone-mirroring,macos
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: MacOS X
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Software Development :: Testing
+Requires-Python: >=3.10
+Requires-Dist: pyobjc-framework-applicationservices; sys_platform == 'darwin'
+Requires-Dist: pyobjc-framework-cocoa; sys_platform == 'darwin'
+Requires-Dist: pyobjc-framework-quartz; sys_platform == 'darwin'
+Requires-Dist: pyobjc-framework-vision; sys_platform == 'darwin'
+Description-Content-Type: text/markdown
+
 # Phone Harness 📱
 
 **[phone-harness](https://phone-harness.com)** · let your agent control your phone.

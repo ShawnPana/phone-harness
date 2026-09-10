@@ -1,0 +1,17 @@
+test_actual_cli_uploads_to_existing_session_without_printing_key (test_cloud_install.Install.test_actual_cli_uploads_to_existing_session_without_printing_key) ... ok
+test_body_is_bounded_when_file_grows_and_detects_truncation (test_cloud_install.Install.test_body_is_bounded_when_file_grows_and_detects_truncation) ... ok
+test_bound_phone_installs_and_preserves_pending_release_receipt (test_cloud_install.Install.test_bound_phone_installs_and_preserves_pending_release_receipt) ... ok
+test_cli_reports_uncertainty_without_retrying (test_cloud_install.Install.test_cli_reports_uncertainty_without_retrying) ... ok
+test_closing_session_is_not_ready_and_cli_labels_pending_cleanup (test_cloud_install.Install.test_closing_session_is_not_ready_and_cli_labels_pending_cleanup) ... ok
+test_exact_bytes_hash_target_and_no_provisioning (test_cloud_install.Install.test_exact_bytes_hash_target_and_no_provisioning) ... ok
+test_invalid_files_credentials_and_ids_fail_before_network (test_cloud_install.Install.test_invalid_files_credentials_and_ids_fail_before_network) ... ok
+test_pixel_ocr_is_not_advertised_on_non_mac_clients (test_cloud_install.Install.test_pixel_ocr_is_not_advertised_on_non_mac_clients) ... ok
+test_receipt_mismatch_and_server_failures_do_not_retry (test_cloud_install.Install.test_receipt_mismatch_and_server_failures_do_not_retry) ... ok
+test_redirects_cannot_forward_apk_or_json_credentials (test_cloud_install.Install.test_redirects_cannot_forward_apk_or_json_credentials) ... ok
+test_unsafe_service_urls_and_attachment_ids_never_send_credentials (test_cloud_install.Install.test_unsafe_service_urls_and_attachment_ids_never_send_credentials) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.277s
+
+OK
+MEASURED client_apk_bytes=95004 existing_session_uploads=1 sessions_created=0 real_phones=0

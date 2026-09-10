@@ -1,0 +1,4 @@
+  pilot_cli   PASS   16 checks   0 failed   11.9s
+  pilot_mock  PASS   11 checks   0 failed    6.5s
+
+ALL PILOTS PASS

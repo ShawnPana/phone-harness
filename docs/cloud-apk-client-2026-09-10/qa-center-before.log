@@ -1,0 +1,23 @@
+test_app_outcomes_and_center_coordinates (test_android_qa_example.AndroidQaExample.test_app_outcomes_and_center_coordinates) ... FAIL
+test_failed_action_still_releases_exact_session_and_reports_failure (test_android_qa_example.AndroidQaExample.test_failed_action_still_releases_exact_session_and_reports_failure) ... FAIL
+
+======================================================================
+FAIL: test_app_outcomes_and_center_coordinates (test_android_qa_example.AndroidQaExample.test_app_outcomes_and_center_coordinates)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/shawnpana/Projects/phone-harness-apk-upload/tests/test_android_qa_example.py", line 150, in test_app_outcomes_and_center_coordinates
+    self.assertEqual(process.returncode, 0, report)
+AssertionError: 1 != 0 : {'session_id': 'qa-example-owned', 'started_unix_s': 1789033702.204919, 'events': [{'name': 'attach_existing_session', 'started_unix_s': 1789033702.2049222, 'status': 'passed', 'elapsed_s': 0.0027713750023394823}, {'name': 'upload_and_install', 'started_unix_s': 1789033702.207695, 'status': 'passed', 'elapsed_s': 0.0005992910009808838}, {'name': 'launch', 'started_unix_s': 1789033702.2082958, 'status': 'passed', 'elapsed_s': 0.0004662919673137367}, {'name': 'verify_foreground_package', 'started_unix_s': 1789033702.208763, 'status': 'passed', 'elapsed_s': 0.0004914160235784948}, {'name': 'initial_counter', 'started_unix_s': 1789033702.209256, 'status': 'passed', 'elapsed_s': 0.00042862503323704004}, {'name': 'increment_input', 'started_unix_s': 1789033702.2106218, 'status': 'failed', 'error_type': 'RuntimeError', 'message': 'phone-cloud: tap missed every actionable element', 'elapsed_s': 0.0009487919742241502}, {'name': 'release', 'started_unix_s': 1789033702.212325, 'status': 'passed', 'elapsed_s': 0.0007720839930698276}, {'name': 'verify_active_session_removed', 'started_unix_s': 1789033702.213099, 'status': 'passed', 'elapsed_s': 0.00046620803186669946}], 'screenshots': [{'file': '01-installed.png', 'sha256': '2142f54f2bd88700b1fdf7eb233fb97568eaba7a4e1d5faa03a8993eaa320b5a'}, {'file': 'failure.png', 'sha256': '2142f54f2bd88700b1fdf7eb233fb97568eaba7a4e1d5faa03a8993eaa320b5a'}], 'checks_passed': False, 'cleanup_verified': True, 'scope': 'APK install and API-driven app QA; browser visibility and startup are separate checks', 'install_receipt': {'installed': True, 'bytes': 44, 'sha256': 'f2f0f07e20d5e247b036a89c340033e5068cbd1a493baab2fee1e486574deec6'}, 'failure': {'type': 'RuntimeError', 'message': 'phone-cloud: tap missed every actionable element'}, 'release_receipt': {'cleanup_pending': True, 'state': 'closing'}, 'ended_unix_s': 1789033702.213566}
+
+======================================================================
+FAIL: test_failed_action_still_releases_exact_session_and_reports_failure (test_android_qa_example.AndroidQaExample.test_failed_action_still_releases_exact_session_and_reports_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/shawnpana/Projects/phone-harness-apk-upload/tests/test_android_qa_example.py", line 159, in test_failed_action_still_releases_exact_session_and_reports_failure
+    self.assertIn('fixture rejected increment', report['failure']['message'])
+AssertionError: 'fixture rejected increment' not found in 'phone-cloud: tap missed every actionable element'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.230s
+
+FAILED (failures=2)

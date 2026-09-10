@@ -1,0 +1,17 @@
+{
+  "apk": "/private/tmp/phone-harness-qa-artifact-20260910/phone-harness-qa.apk",
+  "bytes": 12691,
+  "sha256": "e187ea5f8491c21a1904fbbd79832863137dbe1a75c2b69a083af67f609525e4",
+  "package": "com.phoneharness.qa",
+  "build_tools": "35.0.0",
+  "platform": "android-35",
+  "source_sha256": {
+    "MainActivity.java": "7a11b1d5a0c110964d890c686a913eb78dca31affe381aac63dd55ffbf1bd3e6",
+    "AndroidManifest.xml": "212d0fffeb707560d913890bdafd557e13fe7a5d8b1c995e2da34bc0d2194cd5",
+    "build.py": "aef93e41562f3bbcd5060e7dfc9d3c2d31a588a8fb57f5e0af0c8d4d563644f0"
+  },
+  "java_version": "java version \"25.0.1\" 2025-10-21 LTS\nJava(TM) SE Runtime Environment (build 25.0.1+8-LTS-27)\nJava HotSpot(TM) 64-Bit Server VM (build 25.0.1+8-LTS-27, mixed mode, sharing)\n",
+  "signature_verification": "WARNING: A restricted method in java.lang.System has been called\nWARNING: java.lang.System::loadLibrary has been called by org.conscrypt.NativeLibraryUtil in an unnamed module (file:/opt/homebrew/share/android-commandlinetools/build-tools/35.0.0/lib/apksigner.jar)\nWARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module\nWARNING: Restricted methods will be blocked in a future release unless native access is enabled\n\nVerifies\nVerified using v1 scheme (JAR signing): true\nVerified using v2 scheme (APK Signature Scheme v2): true\nVerified using v3 scheme (APK Signature Scheme v3): true\nVerified using v3.1 scheme (APK Signature Scheme v3.1): false\nVerified using v4 scheme (APK Signature Scheme v4): false\nVerified for SourceStamp: false\nNumber of signers: 1\nSigner #1 certificate DN: CN=Phone Harness QA Test, O=Development, C=US\nSigner #1 certificate SHA-256 digest: a270fbfe2bff1f1054722730f87c1064dc83ab9a47b331304482e829bedb5634\nSigner #1 certificate SHA-1 digest: 8acb66222a310fa6684bca877ecb08efc4085784\nSigner #1 certificate MD5 digest: bb6433e439a30c548cbbae25ff306bfe\nSigner #1 key algorithm: RSA\nSigner #1 key size (bits): 2048\nSigner #1 public key SHA-256 digest: d220295a0ee6e3a5bd7e56249fe7473a00091204aad99b6b73ac59d27647eefa\nSigner #1 public key SHA-1 digest: 3e8b1c63f5bb82a630a9421f75cd655530d96ce8\nSigner #1 public key MD5 digest: 39300bfa8a6bbdcd514138ee964eef90\n",
+  "badging": "package: name='com.phoneharness.qa' versionCode='1' versionName='1.0' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'\nminSdkVersion:'23'\ntargetSdkVersion:'34'\napplication: label='Phone Harness QA' icon=''\nlaunchable-activity: name='com.phoneharness.qa.MainActivity'  label='' icon=''\nfeature-group: label=''\n  uses-feature: name='android.hardware.faketouch'\n  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'\nmain\nsupports-screens: 'small' 'normal' 'large' 'xlarge'\nsupports-any-density: 'true'\nlocales:\ndensities:\n",
+  "real_installs": 0
+}

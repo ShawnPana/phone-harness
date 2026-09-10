@@ -1,0 +1,166 @@
+{
+  "started_unix_s": 1789034825.438451,
+  "uid": "248dcd0ee6ba",
+  "sessions_created": 1,
+  "real_phones": 1,
+  "passed": true,
+  "cleanup_verified": true,
+  "test_key_revoked": true,
+  "scope": "real APK install and API-driven app outcomes via installed client; browser and input-visible latency excluded",
+  "apk_sha256": "e187ea5f8491c21a1904fbbd79832863137dbe1a75c2b69a083af67f609525e4",
+  "apk_bytes": 12691,
+  "create_intent_unix_s": 1789034826.636199,
+  "session_id": "e38871cfb75e",
+  "api_ready_s": 98.16150512505556,
+  "permission_exit_code": 0,
+  "permission": {
+    "session_id": "e38871cfb75e",
+    "started_unix_s": 1789034924.978761,
+    "passed": true,
+    "terminal_kind": "transport_eof",
+    "control_upgrade_ms": 232.5575000140816,
+    "renewed_lease_observed_s": 4.043498791987076,
+    "renewal_pass": true,
+    "error_messages_before_close": 0,
+    "revoke_request_to_terminal_ms": 157.76604099664837,
+    "ended_unix_s": 1789034933.871964
+  },
+  "example_exit_code": 0,
+  "qa_checks_passed": true,
+  "events": [
+    {
+      "name": "attach_existing_session",
+      "started_unix_s": 1789034934.024464,
+      "status": "passed",
+      "elapsed_s": 0.06541108299279585
+    },
+    {
+      "name": "upload_and_install",
+      "started_unix_s": 1789034934.089964,
+      "status": "passed",
+      "elapsed_s": 2.514686916023493
+    },
+    {
+      "name": "launch",
+      "started_unix_s": 1789034936.607742,
+      "status": "passed",
+      "elapsed_s": 2.208190457953606
+    },
+    {
+      "name": "verify_foreground_package",
+      "started_unix_s": 1789034938.818256,
+      "status": "passed",
+      "elapsed_s": 0.3517000409774482
+    },
+    {
+      "name": "initial_counter",
+      "started_unix_s": 1789034939.1702971,
+      "status": "passed",
+      "elapsed_s": 3.4719951660372317
+    },
+    {
+      "name": "increment_input",
+      "started_unix_s": 1789034946.322371,
+      "status": "passed",
+      "elapsed_s": 9.609781334002037
+    },
+    {
+      "name": "increment_observed",
+      "started_unix_s": 1789034955.9365602,
+      "status": "passed",
+      "elapsed_s": 9.372811042005196
+    },
+    {
+      "name": "reset_input",
+      "started_unix_s": 1789034972.334836,
+      "status": "passed",
+      "elapsed_s": 4.820288582996
+    },
+    {
+      "name": "reset_observed",
+      "started_unix_s": 1789034977.155659,
+      "status": "passed",
+      "elapsed_s": 4.084085290960502
+    },
+    {
+      "name": "empty_submit_input",
+      "started_unix_s": 1789034981.240098,
+      "status": "passed",
+      "elapsed_s": 8.19508129201131
+    },
+    {
+      "name": "required_name_observed",
+      "started_unix_s": 1789034989.4357162,
+      "status": "passed",
+      "elapsed_s": 6.568874833988957
+    },
+    {
+      "name": "name_focus_input",
+      "started_unix_s": 1789035007.676778,
+      "status": "passed",
+      "elapsed_s": 4.120407958049327
+    },
+    {
+      "name": "name_text_input",
+      "started_unix_s": 1789035011.797292,
+      "status": "passed",
+      "elapsed_s": 2.5268964159768075
+    },
+    {
+      "name": "hide_keyboard",
+      "started_unix_s": 1789035014.324248,
+      "status": "passed",
+      "elapsed_s": 0.6686202079872601
+    },
+    {
+      "name": "submit_input",
+      "started_unix_s": 1789035014.992886,
+      "status": "passed",
+      "elapsed_s": 3.965335624990985
+    },
+    {
+      "name": "greeting_observed",
+      "started_unix_s": 1789035018.958317,
+      "status": "passed",
+      "elapsed_s": 3.262946040951647
+    },
+    {
+      "name": "release",
+      "started_unix_s": 1789035024.0099578,
+      "status": "passed",
+      "elapsed_s": 0.1672648750245571
+    },
+    {
+      "name": "verify_active_session_removed",
+      "started_unix_s": 1789035024.177231,
+      "status": "passed",
+      "elapsed_s": 21.88049841701286
+    }
+  ],
+  "install_receipt": {
+    "installed": true,
+    "sha256": "e187ea5f8491c21a1904fbbd79832863137dbe1a75c2b69a083af67f609525e4",
+    "bytes": 12691
+  },
+  "failure": null,
+  "screenshots": [
+    {
+      "file": "01-installed.png",
+      "sha256": "735fd319636b36b48a1a6103e521b727f2ab01f1ef58d7f2e31764c6a1a0feda"
+    },
+    {
+      "file": "02-increment.png",
+      "sha256": "a51c632e570670b45f8d2508c4ddd987a4eccf79675418dc4c2e1b1642d69ea8"
+    },
+    {
+      "file": "03-validation-error.png",
+      "sha256": "21fd1ebd17544d28b5025d42953c2d138a570afb80883ad003383b9c7a967205"
+    },
+    {
+      "file": "04-greeting.png",
+      "sha256": "2b1e8662181fa69d32c056b6c3538e281c977f6fc066f2bed02394e045df451d"
+    }
+  ],
+  "tunnel_stopped": true,
+  "ended_unix_s": 1789035047.11657
+}

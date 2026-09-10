@@ -1,9 +1,42 @@
 ---
 name: phone-harness
-description: "Control the user's iPhone through the Mac's iPhone Mirroring window: open apps, tap, type, swipe, read the screen."
+description: "Control a local iPhone or an existing phone-cloud session: install an Android APK, open apps, tap, type, swipe, and inspect the screen."
 ---
 
 # phone-harness
+
+## Cloud Android and APK testing
+
+For a cloud Android task, or when `PHONE_HARNESS_PLATFORM=cloud`, use the cloud
+API. Do not open iPhone Mirroring, attach a local phone, or use worker credentials.
+This is a client candidate: upload requires the matching server endpoints and
+real-device validation described in `CLOUD.md`; do not claim it is a published
+production release.
+
+- Configure `PHONE_CLOUD_URL` and the user's account API key in
+  `PHONE_CLOUD_TOKEN`. Do not print the key or put it in a URL.
+- `phone-harness cloud up shlut` creates one temporary phone and prints its
+  session ID, view-only watch link and attachment instructions. Prefer an
+  already supplied session over creating another one. Export
+  `PHONE_CLOUD_SESSION` and `PHONE_HARNESS_PLATFORM=cloud` to reuse it.
+- `phone-harness cloud install <session-id> <apk-path>` uploads a compatible
+  single APK to that exact session. It does not create a second phone. AABs,
+  split APK sets and arbitrary worker filesystem paths are unsupported.
+- Use `open_app("com.example.app")`, `ocr()` (Android accessibility text),
+  `tap_text`, `type_text`, and `screenshot` to exercise and verify the app.
+  Pixel OCR and some image-coordinate helpers require macOS Vision. On other
+  platforms use the accessibility tree, native screen bounds and screenshots.
+- A successful install receipt is not a passed QA scenario. Assert the expected
+  app state and retain screenshots/reproduction steps. Input acknowledgments
+  are not visible-response measurements.
+- An unknown installation outcome must be inspected before retrying. Never
+  silently allocate a replacement phone or repeat the upload.
+- End owned test sessions on completion/failure. `cloud down <id>` may report
+  closing with billing stopped while cleanup continues; check `cloud ls` before
+  claiming resources are gone. Do not end phones you did not create or that the
+  user has not authorized you to release. Do not promise retained app data.
+
+The following iPhone Mirroring instructions apply to local iPhone tasks only.
 
 Direct iPhone control via the iPhone Mirroring app — screenshots + Vision OCR
 for eyes, HID-level CGEvents for hands. For task-specific edits, use

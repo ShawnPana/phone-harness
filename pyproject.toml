@@ -1,7 +1,7 @@
 [project]
 name = "phone-harness"
-version = "0.1.1"
-description = "Control a real iPhone through macOS iPhone Mirroring: OCR eyes, CGEvent hands"
+version = "0.1.2.dev1"
+description = "Control phones locally or through the phone-cloud API"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -10,15 +10,15 @@ keywords = ["iphone", "automation", "agent", "iphone-mirroring", "macos"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: MacOS X",
-    "Operating System :: MacOS",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
-    "pyobjc-framework-Quartz",
-    "pyobjc-framework-Vision",
-    "pyobjc-framework-Cocoa",
-    "pyobjc-framework-ApplicationServices",
+    "pyobjc-framework-Quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-Vision; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices; sys_platform == 'darwin'",
 ]
 
 [project.urls]
@@ -42,4 +42,4 @@ packages = ["src/phone_harness"]
 "SKILL.md" = "phone_harness/SKILL.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/phone_harness", "SKILL.md", "README.md", "LICENSE", "install.md"]
+include = ["src/phone_harness", "SKILL.md", "README.md", "CLOUD.md", "LICENSE", "install.md", "examples/android-qa"]

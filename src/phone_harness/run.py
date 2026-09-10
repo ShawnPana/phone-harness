@@ -10,7 +10,7 @@ USAGE = """Usage:
 Commands:
   phone-harness --doctor    diagnose permissions, app, and session state
   phone-harness skill       print the phone-harness skill text
-  phone-harness cloud ...   rent/list/release cloud phone sessions
+  phone-harness cloud ...   rent/list/install/release cloud phone sessions
 """
 
 

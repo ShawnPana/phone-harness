@@ -1,0 +1,6 @@
+{
+  "src/phone_harness/cloud.py": "580b933ee3a66bda7918bc8aa4f5bb7c8543d155e4e06938588608ccbb0cc6aa",
+  "tests/test_cloud_create.py": "9eaa98bb776d9b401a99261ec92c4c5047e4f2354fda3a9f4b33a2d509c99fd4",
+  "docs/cloud-apk-client-2026-09-10/create-recovery-proof.py": "a969d072fda87bd89cb5df5a1b7e894790dfceabbe73794ab8ffb9ff22b25de4",
+  "dist/phone_harness-0.1.2.dev1-py3-none-any.whl": "b3d74d38649499da18a17176f4cfbab1af67aa6fb62af780e3c86045b0c5267b"
+}

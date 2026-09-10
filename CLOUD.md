@@ -93,6 +93,53 @@ phone. Check that it disappears from the active list before reporting resource
 cleanup complete. Temporary cloud sessions do not promise retained app data or
 logins for a future session.
 
+## Recovering a lost creation response
+
+On services advertising `session_create_idempotency: "v1"`, each new SDK
+allocation sends a random request key. The CLI prints it before sending the
+creation POST. The SDK never automatically repeats that POST. If the reply is
+lost, inspect the exact request without allocating another phone:
+
+```sh
+phone-harness cloud receipt "$REQUEST_KEY"
+```
+
+For automation that must survive a process crash, generate and save the key in
+your job record **before** calling the SDK. Use one new key per intended phone:
+
+```python
+import uuid
+from phone_harness.cloud import CloudPhone, CreateError
+
+request_key = str(uuid.uuid4())  # Save this and the create parameters in your job.
+try:
+    phone = CloudPhone(provider="shlut", request_key=request_key)
+except CreateError as error:
+    print(error.request_key, error.session_id, error.status)
+    raise  # Reconcile the saved request; do not create a replacement blindly.
+```
+
+To explicitly retry that logical allocation, supply the **same key and original
+parameters** with `CloudPhone(request_key=...)` or
+`phone-harness cloud up shlut --request-key "$REQUEST_KEY"`. The server selects
+the original session. Changed parameters are rejected; a completed request returns
+410 and never rents a replacement. A receipt's `recorded` state remains unresolved,
+and a 404 does not prove an earlier in-flight creation cannot arrive later.
+Python callers can use `creation_receipt(request_key)` for the same read-only lookup.
+
+Request keys grant no access: receipt lookup still requires the same account's
+API key. Attaching by session ID is separate and cannot be combined with a
+creation request key. Automatic generated keys are returned on the ready Python
+object as `request_key` or in `CreateError`; they are not a durable on-disk journal.
+Process termination can lose an unsaved key. The CLI's output is only as durable
+as the caller's logs. Use a saved explicit key for restartable jobs.
+
+Older services continue their legacy create behavior when no explicit key was
+requested. The CLI identifies that mode. An explicit request key or receipt lookup
+against an older service is refused before any allocation. Development is still
+on its earlier API/schema; this recoverable-create server contract has not been
+deployed there yet. The SDK addition is also an unpublished candidate.
+
 ## Errors and platform boundaries
 
 An HTTP rejection or receipt mismatch exits the install command nonzero.

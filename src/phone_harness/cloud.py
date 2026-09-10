@@ -37,6 +37,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 from .transport import Backend, Unsupported
 
@@ -50,6 +51,21 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 MAX_APK_BYTES = 256 * 1024 * 1024
+
+
+class RequestError(RuntimeError):
+    """Service rejection, retaining structured details for explicit recovery."""
+    def __init__(self, message, *, status=None, detail=None):
+        super().__init__(message)
+        self.status = status
+        self.detail = detail if isinstance(detail, dict) else {}
+
+
+class CreateError(RuntimeError):
+    """Creation/attachment was not confirmed. Never infer no phone was created."""
+    def __init__(self, message, *, request_key=None, session_id=None, status=None):
+        super().__init__(message)
+        self.request_key, self.session_id, self.status = request_key, session_id, status
 
 
 class InstallError(RuntimeError):
@@ -163,7 +179,11 @@ def _install_apk(base, token, session_id, path, timeout=600):
                                outcome="unknown") from None
 
 
-def _request(base, token, method, path, body=None, timeout=180):
+def _request(base, token, method, path, body=None, timeout=180, *, request_key=None):
+    if request_key is not None:
+        _valid_request_key(request_key)
+        if method != "POST" or path != "/sessions":
+            raise ValueError("request keys are supported only for POST /sessions")
     base = _service_url(base)
     req = urllib.request.Request(
         base + path,
@@ -172,18 +192,25 @@ def _request(base, token, method, path, body=None, timeout=180):
         headers={"Content-Type": "application/json"})
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    if request_key is not None:
+        req.add_header("Idempotency-Key", request_key)
     try:
         with _OPENER.open(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         try:
-            err = json.loads(e.read().decode())
+            raw = e.read(65537)
+            err = json.loads(raw) if len(raw) <= 65536 else {}
+            if not isinstance(err, dict):
+                err = {}
         except Exception:
             err = {"error": f"HTTP {e.code}"}
+        finally:
+            e.close()
         if err.get("unsupported"):
             raise Unsupported(err.get("error", "unsupported")) from None
-        raise RuntimeError(
-            f"phone-cloud: {err.get('error', e.code)}") from None
+        raise RequestError(
+            f"phone-cloud: {err.get('error', e.code)}", status=e.code, detail=err) from None
     except urllib.error.URLError as e:
         raise RuntimeError(
             f"phone-cloud: cannot reach {base} ({e.reason}) — is the "
@@ -221,23 +248,76 @@ def _wait_ready(base, token, info, timeout=900):
     return info
 
 
-def _create(base, token, body):
-    return _wait_ready(base, token,
-                       _request(base, token, "POST", "/sessions", body,
-                                timeout=60))
+def _valid_request_key(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", value):
+        raise ValueError("phone-cloud: request key must contain 16–128 ASCII letters, digits, underscores or hyphens")
+    return value
+
+
+def _supports_create_requests(base, token):
+    account = _request(base, token, "GET", "/me")
+    return isinstance(account, dict) and account.get("session_create_idempotency") == "v1"
+
+
+def creation_receipt(request_key, *, base=None, token=None):
+    """Read your exact create receipt. Never allocate, attach, touch or release."""
+    _valid_request_key(request_key)
+    default_base, default_token = _service()
+    base, token = base or default_base, token or default_token
+    if not _supports_create_requests(base, token):
+        raise RuntimeError("phone-cloud: this service does not support recoverable creation")
+    receipt = _request(base, token, "GET", "/sessions/requests/" + request_key)
+    if (not isinstance(receipt, dict) or receipt.get("request_key") != request_key
+            or not isinstance(receipt.get("id"), str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", receipt["id"])):
+        raise RuntimeError("phone-cloud: invalid create receipt; allocation remains unresolved")
+    return receipt
+
+
+def _create(base, token, body, *, request_key=None, on_request=None):
+    if request_key is not None:
+        _valid_request_key(request_key)
+    supported = _supports_create_requests(base, token)
+    if request_key is not None and not supported:
+        raise RuntimeError("phone-cloud: this service does not support recoverable creation; no phone was requested")
+    if supported:
+        request_key = request_key or str(uuid.uuid4())
+    if on_request:
+        on_request(request_key)  # Record/print identity before sending the POST.
+    info = None
+    try:
+        info = _request(base, token, "POST", "/sessions", body,
+                        timeout=60, request_key=request_key)
+        if (not isinstance(info, dict)
+                or not isinstance(info.get("id"), str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", info["id"])
+                or (request_key is not None and info.get("request_key") != request_key)):
+            raise RuntimeError("phone-cloud: invalid create response")
+        return _wait_ready(base, token, info)
+    except (RuntimeError, OSError, ValueError) as error:
+        sid = info.get("id") if isinstance(info, dict) and info.get("request_key") == request_key else None
+        if not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", sid):
+            sid = None
+        recovery = (f"; inspect creation receipt {request_key} before requesting a replacement"
+                    if request_key else "; legacy service: inspect your sessions before requesting a replacement")
+        raise CreateError(str(error) + recovery, request_key=request_key,
+                          session_id=sid, status=getattr(error, "status", None)) from None
 
 
 class CloudPhone(Backend):
     name = "cloud-phone"
 
     def __init__(self, base=None, token=None, session_id=None,
-                 provider=None, caps=None):
+                 provider=None, caps=None, request_key=None):
         default_base, default_token = _service()
         self.base = (base or default_base).rstrip("/")
         self.token = token or default_token
         # Attach before create: an exported PHONE_CLOUD_SESSION means "this
         # phone", and silently renting a second one would be a second bill.
         session_id = session_id or os.environ.get("PHONE_CLOUD_SESSION")
+        self.request_key = request_key
+        if session_id and request_key is not None:
+            raise ValueError("phone-cloud: choose an existing session or a creation request key, not both")
         if session_id:
             if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
                 raise RuntimeError("phone-cloud: invalid session ID")
@@ -250,7 +330,8 @@ class CloudPhone(Backend):
                 body["provider"] = provider
             if caps:
                 body["caps"] = caps
-            info = _create(self.base, self.token, body)
+            info = _create(self.base, self.token, body, request_key=request_key,
+                           on_request=lambda key: setattr(self, "request_key", key))
         self.session_id = info["id"]
         self.watch_url = info.get("watch_url")
         self.device = info.get("device")
@@ -317,7 +398,8 @@ class CloudPhone(Backend):
 # --- CLI (phone-harness cloud ...) -------------------------------------------
 
 CLI_USAGE = """Usage:
-  phone-harness cloud up [provider]   rent a phone (provider: service default)
+  phone-harness cloud up [provider] [--request-key KEY]   rent/recover one phone
+  phone-harness cloud receipt KEY    inspect your create receipt without allocating
   phone-harness cloud ls              list live sessions
   phone-harness cloud down <id|all>   release a session — the meter runs
   phone-harness cloud install <id> <apk>  upload/install into an existing phone
@@ -340,11 +422,29 @@ def cli(args):
     cmd = args[0] if args else None
 
     if cmd == "up":
-        body = {"provider": args[1]} if len(args) > 1 else {}
-        print("requesting a device (real hardware can queue for minutes)...",
-              flush=True)
-        _banner(_create(base, token, body))
-        return 0
+        import argparse
+        parser = argparse.ArgumentParser(prog="phone-harness cloud up")
+        parser.add_argument("provider", nargs="?")
+        parser.add_argument("--request-key")
+        try:
+            options = parser.parse_args(args[1:])
+            body = {"provider": options.provider} if options.provider else {}
+            def announce(key):
+                print(f"creation request: {key}" if key else
+                      "legacy service: recoverable creation unavailable", flush=True)
+            _banner(_create(base, token, body, request_key=options.request_key, on_request=announce))
+            return 0
+        except (RuntimeError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+
+    if cmd == "receipt" and len(args) == 2:
+        try:
+            print(json.dumps(creation_receipt(args[1], base=base, token=token), indent=2))
+            return 0
+        except (RuntimeError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
 
     if cmd == "ls":
         sessions = _request(base, token, "GET", "/sessions")

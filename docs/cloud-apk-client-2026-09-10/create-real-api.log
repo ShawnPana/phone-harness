@@ -1,0 +1,3 @@
+MEASURED case=before create_requests=2 distinct_sessions=2 provider_reservations=2 real_phones=0
+MEASURED case=after create_requests=2 distinct_sessions=1 provider_reservations=1 real_phones=0
+{"results": [{"case": "before", "create_requests": 2, "distinct_sessions": 2, "provider_reservations": 2, "real_phones": 0}, {"case": "after", "create_requests": 2, "distinct_sessions": 1, "provider_reservations": 1, "real_phones": 0}], "owned_simulated_phones_after_cleanup": 0, "installed_sdk": "/private/tmp/main-sdk-create-venv/lib/python3.12/site-packages/phone_harness/cloud.py", "pass": true}

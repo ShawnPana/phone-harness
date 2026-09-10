@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/shawnpana/Projects/phone-harness-apk-upload/docs/cloud-apk-client-2026-09-10/create-recovery-proof.py", line 23, in <module>
+    import mock_shlut
+  File "/Users/shawnpana/Projects/phone-cloud-mvp-integration/tests/mock_shlut.py", line 25, in <module>
+    import mock_device
+  File "/Users/shawnpana/Projects/phone-cloud-mvp-integration/tests/mock_device.py", line 19, in <module>
+    from phone_cloud.devices import Provider
+ModuleNotFoundError: No module named 'phone_cloud'

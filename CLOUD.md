@@ -4,9 +4,10 @@ This branch is the **0.1.2.dev1 candidate**, based on the cloud-backend branch
 at `46125871`. It adds APK upload and installation through the account-owned
 phone-cloud API. It has not been published as a normal customer release. The
 matching upload endpoints must be deployed before these install commands work.
-Development API `f285e6c` and staging worker `17cd6fe` now pass one real sample
-APK install/app-assertion/screenshot/release flow using client/example `eb748d0`.
-Browser viewing of the installed app and the broader release gates remain open.
+Development API `9bf9547` and staging worker `33c98cb` now pass the packaged
+client's real lost-create-response recovery, sample APK QA, screenshots and
+release flow. Two explicit same-key requests selected one phone. Browser viewing
+of the installed app and the broader release gates remain open.
 
 ## One phone, one build, explicit cleanup
 
@@ -136,9 +137,9 @@ as the caller's logs. Use a saved explicit key for restartable jobs.
 
 Older services continue their legacy create behavior when no explicit key was
 requested. The CLI identifies that mode. An explicit request key or receipt lookup
-against an older service is refused before any allocation. Development is still
-on its earlier API/schema; this recoverable-create server contract has not been
-deployed there yet. The SDK addition is also an unpublished candidate.
+against an older service is refused before any allocation. Development now runs
+schema `0004_create_requests` and advertises this contract. The SDK addition is
+still an unpublished candidate.
 
 ## Errors and platform boundaries
 
@@ -165,6 +166,11 @@ owner credential handling, no accidental provisioning, invalid/sparse/FIFO
 inputs, bounded streaming, receipt mismatch, redirect denial, and pending
 cleanup. Those tests simulate sessions. A separate real Android run completed
 provision/upload/install/launch/assert/screenshot/release with the sample app;
-upload/install took 2.514687s and API readiness took 98.161505s. Browser viewing,
+upload/install took 2.514687s and API readiness took 98.161505s. The later real
+request-recovery run took 100.353985s from its initial POST to the first ready
+response, including recovery and SDK polling; installation took 6.311425s.
+These single runs used different deployed revisions and do not establish a
+speedup. See the [recovery evidence](docs/cloud-apk-client-2026-09-10/create-recovery.md).
+Browser viewing,
 failure/compatibility cases and hardware regressions remain separate gates.
 A package build or one compatible app is not a public SDK release.

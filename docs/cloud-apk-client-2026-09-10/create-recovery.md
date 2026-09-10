@@ -45,7 +45,12 @@ existing APK/example checks. The new HTTP tests cover lost replies, no automatic
 POST retry, receipt reads, explicit replay, completed requests, conflicting
 parameters, cross-owner denial, legacy capability handling, invalid keys and
 unverified response identity. Wheel and sdist build successfully. CI tests the
-installed package on Python 3.10 and 3.13; current revision results remain pending.
+installed package on Python 3.10 and 3.13. Both jobs passed for source
+`20a78c4960340282ba969f39f0bdb067597e1521` in
+[push CI](https://github.com/ShawnPana/phone-harness/actions/runs/34507850902)
+and [PR CI](https://github.com/ShawnPana/phone-harness/actions/runs/34507855763).
+These results verify the installed client, not a published package or the live
+development API's still-undeployed request-identity contract.
 
 The initial CLI subprocess test omitted the checkout import path and inspected
 the wrong import environment; its test setup was corrected to the same pattern

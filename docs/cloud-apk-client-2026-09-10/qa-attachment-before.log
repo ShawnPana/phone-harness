@@ -1,0 +1,19 @@
+test_app_outcomes_and_center_coordinates (test_android_qa_example.AndroidQaExample.test_app_outcomes_and_center_coordinates) ... ok
+test_failed_action_still_releases_exact_session_and_reports_failure (test_android_qa_example.AndroidQaExample.test_failed_action_still_releases_exact_session_and_reports_failure) ... ok
+test_failed_attachment_still_releases_explicitly_selected_session (test_android_qa_example.AndroidQaExample.test_failed_attachment_still_releases_explicitly_selected_session) ... FAIL
+
+======================================================================
+FAIL: test_failed_attachment_still_releases_explicitly_selected_session (test_android_qa_example.AndroidQaExample.test_failed_attachment_still_releases_explicitly_selected_session)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/shawnpana/Projects/phone-harness-apk-upload/tests/test_android_qa_example.py", line 167, in test_failed_attachment_still_releases_explicitly_selected_session
+    process, report, service = self.run_example(fail_attachment=True)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shawnpana/Projects/phone-harness-apk-upload/tests/test_android_qa_example.py", line 140, in run_example
+    self.assertTrue(report['cleanup_verified'], report)
+AssertionError: False is not true : {'session_id': 'qa-example-owned', 'started_unix_s': 1789033911.7180421, 'events': [{'name': 'attach_existing_session', 'started_unix_s': 1789033911.7180438, 'status': 'failed', 'error_type': 'RuntimeError', 'message': 'phone-cloud: fixture rejected attachment', 'elapsed_s': 0.002523083006963134}], 'screenshots': [], 'checks_passed': False, 'cleanup_verified': False, 'scope': 'APK install and API-driven app QA; browser visibility and startup are separate checks', 'failure': {'type': 'RuntimeError', 'message': 'phone-cloud: fixture rejected attachment'}, 'ended_unix_s': 1789033911.720577}
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.348s
+
+FAILED (failures=1)

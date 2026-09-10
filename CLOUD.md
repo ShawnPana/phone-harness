@@ -4,7 +4,8 @@ This branch is the **0.1.2.dev1 candidate**, based on the cloud-backend branch
 at `46125871`. It adds APK upload and installation through the account-owned
 phone-cloud API. It has not been published as a normal customer release. The
 matching upload endpoints must be deployed before these install commands work;
-they are currently source candidates in phone-cloud and shlut.
+the staging worker candidate is deployed, while the development API endpoint
+has not been activated. This is not yet a verified real installation path.
 
 ## One phone, one build, explicit cleanup
 
@@ -14,6 +15,25 @@ Configure `PHONE_CLOUD_URL` to the intended HTTPS phone-cloud service and
 secret storage; worker credentials and direct ADB access are not needed.
 Remote service URLs require HTTPS. HTTP is accepted only for a literal loopback
 address such as `127.0.0.1` or `[::1]` for a local service or encrypted SSH tunnel.
+
+The private exe.dev development site also has an ingress sign-in gate. This
+client does not borrow browser cookies or replace account authentication with
+an operator key. Authorized operators can open an SSH tunnel to the API's
+loopback listener, then use their normal application account key:
+
+```sh
+ssh -N -T -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -L 127.0.0.1:18723:127.0.0.1:8723 phone-harness-development.exe.xyz
+```
+
+Keep that command running and set `PHONE_CLOUD_URL=http://127.0.0.1:18723`
+in the client terminal. It binds only to the local machine and requires the
+VM's SSH authorization. Keep `PHONE_CLOUD_TOKEN` as the normal account key.
+Stop the tunnel with Ctrl-C when testing is finished. Browser viewing still
+uses the public HTTPS dashboard/watch URL and requires exe.dev sign-in.
+This operator-only development route does not grant SSH access to Web-share
+users and is not a customer production setup requirement.
 
 ```
 phone-harness cloud up shlut

@@ -1,0 +1,2 @@
+{"started_unix_s": 1789033859.278493, "uid": "248dcd0ee6ba", "sessions_created": 0, "real_phones": 0, "passed": true, "test_key_revoked": true, "tunnel_stopped": true, "missing_account_key_status": 401, "installed_cli_list_pass": true, "package_path": "/private/tmp/main-sdk-qa-example-venv/lib/python3.12/site-packages/phone_harness/cloud.py", "revoked_key_status": 401, "ended_unix_s": 1789033861.490156}
+MEASURED sdk_private_auth_pass=1 revoked_key_denied=1 sessions_created=0 real_phones=0

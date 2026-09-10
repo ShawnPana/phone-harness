@@ -30,6 +30,7 @@ jobs:
           test -s /tmp/cloud-client-skill.md
           sdk_test_directory=$(mktemp -d)
           cp -R tests "$sdk_test_directory/tests"
+          cp -R examples "$sdk_test_directory/examples"
           cd "$sdk_test_directory"
           /tmp/cloud-client-venv/bin/python -B -m unittest discover -s tests -v
       - uses: actions/upload-artifact@v4

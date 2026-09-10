@@ -45,3 +45,36 @@ normal account key, assert actual app behavior, inspect the same phone in the
 new browser dashboard, retain screenshots, and confirm release/capacity. The
 ordinary startup, browser continuity, six-phone and production-approval gates
 remain open.
+
+## Example and private-development follow-up
+
+Two reproduced example failures are now corrected. shlut's `screen.text`
+coordinates are already centers: adding half the element size caused the
+original runner to miss its first button. The HTTP fixture reproduced
+`phone-cloud: tap missed every actionable element`; the runner now uses the
+returned point directly. A separate attachment failure left
+`cleanup_verified: false` without issuing DELETE even with `--release`.
+The runner now attempts authorized cleanup of that exact validated ID even
+when attachment fails. Invalid IDs are rejected before any network call.
+
+The suite now passes fifteen tests, including four actual-HTTP example runs
+for expected app states, injected input failure, failed attachment cleanup
+and invalid target rejection. They prove client behavior against simulated
+app outcomes; no real Android or visual response time is measured. CI copies
+the example alongside tests and exercises the installed wheel outside source.
+The before failures and corrected suite output are retained here.
+
+The built, isolated installed client also reached the live private development
+API through a loopback-only authorized SSH tunnel. It used a temporary normal
+account key on main's isolated account, returned `no live sessions`, rejected
+missing credentials with 401 and rejected the revoked key with 401. The key
+was revoked and the owned tunnel stopped. No session was created, no worker
+or service was restarted, and no proxy credential was added to the client.
+The public browser route still requires exe.dev owner sign-in.
+
+```
+MEASURED sdk_private_auth_pass=1 revoked_key_denied=1 sessions_created=0 real_phones=0
+```
+
+This narrows the remaining real QA gate to the paired API activation,
+installation and actual app/browser checks in a coordinated worker window.

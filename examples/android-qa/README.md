@@ -35,12 +35,16 @@ python examples/android-qa/verify.py \
 
 The runner never creates a session or changes the selected one. `--release`
 authorizes ending that session even if a check fails; use only a session created
-for this run. It retains the installation receipt, checks app state through
+for this run. Cleanup is attempted even if the initial attachment fails, and
+invalid session IDs are rejected before network access. It retains the installation receipt, checks app state through
 Android's accessibility tree, and saves four screenshots. After release it waits
 up to 120 seconds for the session to leave the active list. Timeout fails cleanup;
 it does not authorize deleting another phone.
 
 Input request time and the following accessibility observation are separate.
+Accessibility nodes supply their center coordinates; the runner taps those
+coordinates directly. Four HTTP example checks cover the complete simulated
+app flow, failed input, failed attachment cleanup, and invalid target rejection.
 Hierarchy capture is a slow inspection tool, **not** a browser input-to-visible
 latency measurement. Browser video/interaction, API readiness, complete startup
 and worker capacity/cleanup must also be checked separately. Without `--release`,

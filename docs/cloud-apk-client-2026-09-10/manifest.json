@@ -1,0 +1,16 @@
+{
+  "base_commit": "46125871d31de620de14efe74bf3d9499fcec697",
+  "wheel_sha256": "19c1b7ad5c960e35386a15bb79f03f26a5d41545d19f50602416be70f3fc2c42",
+  "source_sha256": {
+    "src/phone_harness/cloud.py": "535c14c46390c3de97ee7e36c5900c7776437778c350040a3856fd317f904b1a",
+    "src/phone_harness/run.py": "be4042416738030b0b2560594d46ea9cc0e80fa972518be3c72ef522cbe32952",
+    "SKILL.md": "5b5a1350533b1fae78784328f4712ca87f024fbb94d84a58631995a42cc3705f",
+    "tests/test_cloud_install.py": "61fc509766a845fd46873b163208b69d9666b402c35a7a87a37950319947cd91"
+  },
+  "local_tests": 11,
+  "linux_installed_wheel_tests": 11,
+  "existing_pilot_cli_checks": 16,
+  "existing_pilot_mock_checks": 11,
+  "real_phones": 0,
+  "public_release": false
+}

@@ -1,0 +1,51 @@
+# Deterministic Android QA example
+
+This native app gives the cloud workflow observable outcomes: increment and
+reset a counter, reject an empty name, and greet a supplied name. It uses no
+account, network permission, external backend, or native library. It is a test
+fixture, not a claim that arbitrary customer apps are compatible.
+
+Build using an **already installed** Android SDK with platform 35, build-tools
+35.0.0 and a JDK with Java 8 bytecode support. The script does not install tools,
+start an emulator or contact ADB devices:
+
+```sh
+python examples/android-qa/build.py \
+  --sdk /path/to/android-sdk --java /path/to/jdk \
+  --output /tmp/qa-build/phone-harness-qa.apk
+```
+
+The output must not already exist. The script packages the manifest and DEX,
+aligns the APK and generates a disposable debug signing key. It verifies the
+signature, package ID and launcher before writing the APK and `.build.json`
+receipt, then deletes temporary build files and the key. Each build has a
+different signature/hash; use the receipt for that exact APK. Use a new temporary
+phone for each build, since Android cannot upgrade a package with a different key.
+
+With the candidate client installed and **both server upload endpoints deployed**,
+create a temporary shlut session using your normal account API key. Open its
+dashboard or watch link, and pass its exact session ID to the runner:
+
+```sh
+phone-harness cloud up shlut
+python examples/android-qa/verify.py \
+  --session SESSION_ID --apk /tmp/qa-build/phone-harness-qa.apk \
+  --output /tmp/qa-run-evidence --release
+```
+
+The runner never creates a session or changes the selected one. `--release`
+authorizes ending that session even if a check fails; use only a session created
+for this run. It retains the installation receipt, checks app state through
+Android's accessibility tree, and saves four screenshots. After release it waits
+up to 120 seconds for the session to leave the active list. Timeout fails cleanup;
+it does not authorize deleting another phone.
+
+Input request time and the following accessibility observation are separate.
+Hierarchy capture is a slow inspection tool, **not** a browser input-to-visible
+latency measurement. Browser video/interaction, API readiness, complete startup
+and worker capacity/cleanup must also be checked separately. Without `--release`,
+the phone remains available for manual testing and cleanup is not claimed.
+
+The first local APK build passed package/signature verification. The runner has
+not yet been exercised against real Android; build success does not prove the
+install/test/release journey. See the client validation evidence in `docs/`.

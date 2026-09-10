@@ -1,0 +1,39 @@
+name: cloud-client
+
+on:
+  pull_request:
+  push:
+    branches: [codex/cloud-apk-upload, reland/cloud-backend]
+
+permissions:
+  contents: read
+
+jobs:
+  installed-client:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Test the installed wheel without source imports
+        run: |
+          python -m venv /tmp/cloud-client-venv
+          /tmp/cloud-client-venv/bin/python -m pip install --no-index dist/*.whl
+          /tmp/cloud-client-venv/bin/phone-harness cloud --help
+          /tmp/cloud-client-venv/bin/phone-harness skill > /tmp/cloud-client-skill.md
+          test -s /tmp/cloud-client-skill.md
+          sdk_test_directory=$(mktemp -d)
+          cp -R tests "$sdk_test_directory/tests"
+          cd "$sdk_test_directory"
+          /tmp/cloud-client-venv/bin/python -B -m unittest discover -s tests -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-client-python-${{ matrix.python }}
+          path: dist/
+          retention-days: 7

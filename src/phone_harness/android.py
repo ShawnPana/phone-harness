@@ -522,8 +522,12 @@ CLI_USAGE = """Usage:
   phone-harness android                          known phones, primary, what's live
   phone-harness android pair [CODE] [NAME]       Wireless debugging: pair with the 6-digit
                                                  code (phone found over mDNS), connect, remember
+                                                 (then starts the awake session like connect)
   phone-harness android pair IP:PORT CODE [NAME] the same, if mDNS is blocked on your network
-  phone-harness android connect [NAME|IP:PORT]   connect a paired phone (default: primary, via mDNS)
+  phone-harness android connect [NAME|IP:PORT] [--no-awake] [--no-mirror]
+        connect a paired phone (default: primary, via mDNS) and start the awake
+        session — mirror window + keep-awake — in the background. --no-awake
+        connects only; --no-mirror keeps awake without a window.
   phone-harness android use NAME                 make NAME the primary
   phone-harness android forget NAME
   phone-harness android awake [--bg] [--no-mirror]
@@ -621,6 +625,29 @@ def _awake(mirror=True):
             pass
 
 
+def _start_awake_bg(mirror=True):
+    """Detach an awake session (keep-awake pokes + scrcpy mirror if `mirror`
+    and scrcpy is installed). No-op if one is already running. Returns 0 on
+    success, 1 if the child died at once."""
+    pid = _awake_pid()
+    if pid:
+        print(f"already awake (pid {pid}); phone-harness android rest to end")
+        return 0
+    child = subprocess.Popen(
+        [sys.executable, "-m", "phone_harness.run", "android", "awake",
+         "--fg"] + (["--no-mirror"] if not mirror else []),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    _pidfile().parent.mkdir(parents=True, exist_ok=True)
+    _pidfile().write_text(str(child.pid))
+    time.sleep(2)
+    if child.poll() is None:
+        print(f"awake in background (pid {child.pid}); phone-harness android rest to end")
+        return 0
+    print("awake exited at once — is a phone connected? try: phone-harness android awake")
+    return 1
+
+
 def _awake_pid():
     """pid of a running awake session (not ourselves), else None."""
     try:
@@ -670,22 +697,12 @@ def cli(args):
         return 0
 
     if cmd == "awake":
+        mirror = "--no-mirror" not in args and bool(config.get("android.mirror"))
+        if "--bg" in args:
+            return _start_awake_bg(mirror=mirror)
         if _awake_pid():
             print(f"already awake (pid {_awake_pid()}); phone-harness android rest to end")
             return 0
-        mirror = "--no-mirror" not in args and bool(config.get("android.mirror"))
-        if "--bg" in args:
-            child = subprocess.Popen(
-                [sys.executable, "-m", "phone_harness.run", "android", "awake",
-                 "--fg"] + (["--no-mirror"] if not mirror else []),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True)
-            _pidfile().parent.mkdir(parents=True, exist_ok=True)
-            _pidfile().write_text(str(child.pid))
-            time.sleep(2)
-            print(f"awake in background (pid {child.pid}); phone-harness android rest to end"
-                  if child.poll() is None else "awake exited at once — is a phone connected? try without --bg")
-            return 0 if child.poll() is None else 1
         _pidfile().parent.mkdir(parents=True, exist_ok=True)
         _pidfile().write_text(str(os.getpid()))
         return _awake(mirror=mirror)
@@ -767,25 +784,37 @@ def cli(args):
         if config.get("platform") != "android":
             print("tip: `phone-harness config set platform android` makes Android "
                   "the default, so nothing needs PHONE_HARNESS_PLATFORM=android")
+        if "--no-awake" not in args:
+            _start_awake_bg(mirror="--no-mirror" not in args
+                            and bool(config.get("android.mirror")))
         return 0
 
     if cmd == "connect":
-        target = args[1] if len(args) > 1 else cfg.get("primary")
+        flags = {a for a in args[1:] if a.startswith("--")}
+        pos = [a for a in args[1:] if not a.startswith("--")]
+        target = pos[0] if pos else cfg.get("primary")
         if not target:
             print("no primary phone yet — pair one first"); return 1
         if ":" in target:
             out = _run("connect", target, timeout=15, check=False); print(out.strip())
-            return 0 if "connected" in out and "cannot" not in out else 1
-        p = phones.get(target)
-        if not p:
-            print(f"unknown phone {target!r}; known: {', '.join(phones) or 'none'}"); return 1
-        adb_id = _connect_serial(p["serial"])
-        if adb_id is None:
-            print(f"'{target}' isn't announcing on this Wi-Fi. Is Wireless "
-                  "debugging on, and the phone on the same network?"); return 1
-        _remember(cfg, p["serial"], p.get("model"), host=adb_id.rpartition(":")[0],
-                  primary=True)
-        print(f"connected: {target} ({adb_id})"); return 0
+            if not ("connected" in out and "cannot" not in out):
+                return 1
+        else:
+            p = phones.get(target)
+            if not p:
+                print(f"unknown phone {target!r}; known: {', '.join(phones) or 'none'}"); return 1
+            adb_id = _connect_serial(p["serial"])
+            if adb_id is None:
+                print(f"'{target}' isn't announcing on this Wi-Fi. Is Wireless "
+                      "debugging on, and the phone on the same network?"); return 1
+            _remember(cfg, p["serial"], p.get("model"), host=adb_id.rpartition(":")[0],
+                      primary=True)
+            print(f"connected: {target} ({adb_id})")
+        if "--no-awake" in flags:
+            return 0
+        # connected means visible: bring up the mirror + keep-awake session too
+        return _start_awake_bg(mirror="--no-mirror" not in flags
+                               and bool(config.get("android.mirror")))
 
     if cmd == "use":
         if len(args) < 2 or args[1] not in phones:

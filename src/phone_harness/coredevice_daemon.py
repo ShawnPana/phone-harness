@@ -237,6 +237,19 @@ class Session:
                                          remotepairing_fallback=False)
         self.rsd = await self.tunnel.aopen()
 
+        # A session an earlier run never stopped (cable pulled, process
+        # killed) keeps the phone's screen-sharing indicator on. Clear it
+        # before starting ours, so plugging in and running awake is the fix.
+        try:
+            leftover = await self._stream_sessions()
+        except Exception as e:
+            leftover = []
+            log.warning("could not read stream sessions: %s", type(e).__name__)
+        if leftover:
+            phase("clearing")
+            log.info("stopping %d leftover stream session(s)", len(leftover))
+            await self._stop_sessions(leftover, why="leftover")
+
         # The display service is the part that wedges after an unclean
         # session: connect times out, or the stream request is dropped. One
         # remount of the developer image, one retry, then give up loudly.
@@ -294,16 +307,96 @@ class Session:
         await asyncio.sleep(0.3)                # backboardd re-matches HID surfaces
         self.drain = asyncio.create_task(self._drain())
 
+    async def _display(self):
+        from pymobiledevice3.remote.core_device.display_service import DisplayService
+        svc = DisplayService(self.rsd)
+        await asyncio.wait_for(svc.connect(), CONNECT_TIMEOUT)
+        return svc
+
+    async def _stream_sessions(self):
+        """Session ids the phone's media server currently reports."""
+        svc = await self._display()
+        try:
+            status = await asyncio.wait_for(svc.get_media_stream_server_status(), 6)
+        finally:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(svc.close(), 1)
+        ids = []
+        for sess in (status or {}).get("sessions") or []:
+            try:
+                raw = sess["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
+                ids.append(raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw)))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return ids
+
+    async def _stop_sessions(self, ids, wait=25.0, why="ours", send_stop=True):
+        """End stream sessions the phone still reports, then wait for its
+        media server to confirm. A per-session stop is only accepted on the
+        connection that started the stream; from any other connection the
+        server wants a `stopAll` request, which ends every session at once
+        (observed on iOS 27). While a session lingers the phone shows its
+        screen-sharing indicator and blocks the camera, so this waits for
+        the server's word and remounts the developer image as a last resort,
+        which restarts the media daemon."""
+        if send_stop and ids:
+            svc = await self._display()
+            try:
+                r = await asyncio.wait_for(svc.invoke(
+                    "com.apple.coredevice.feature.stopmediastream", {"stopAll": True},
+                    action_identifier="com.apple.coredevice.action.mediastreamstop"), 6)
+                log.info("stopAll (%s) -> %s", why, json.dumps(r, default=str)[:120])
+            except Exception as e:
+                log.warning("stopAll (%s): %s", why, type(e).__name__)
+            finally:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(svc.close(), 1)
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            try:
+                left = await self._stream_sessions()
+            except Exception as e:
+                log.warning("stream status: %s", type(e).__name__)
+                return False
+            if not left:
+                log.info("stream sessions ended (%s)", why)
+                return True
+            await asyncio.sleep(0.5)
+        log.error("the phone still reports %d stream session(s) after %.0fs; remounting the "
+                  "developer image to clear them", len(left), wait)
+        try:
+            await mount_ddi(self.udid, remount=True)
+        except Exception as e:
+            log.error("remount failed: %s", type(e).__name__)
+        return False
+
+    async def _stop_stream_verified(self):
+        """Stop our stream on the connection that started it: the phone ends
+        the session at once and drops that channel (the library reports
+        {"stopped": True}). A stop from any other connection is refused, and
+        an unstopped session lingers ~20s (RTCP timeout) with the phone's
+        screen-sharing indicator on and its camera blocked."""
+        if self.stream_id is None or self.rsd is None:
+            return
+        stopped = False
+        if self.display is not None:
+            try:
+                r = await asyncio.wait_for(self.display.stop_media_stream(self.stream_id), 6)
+                stopped = bool((r or {}).get("stopped")) or r == {}
+                log.info("stream %s stop -> %s", self.stream_id, json.dumps(r, default=str)[:80])
+            except Exception as e:
+                log.warning("stream %s stop on its own connection: %s", self.stream_id, type(e).__name__)
+        await self._stop_sessions([self.stream_id], wait=(4.0 if stopped else 8.0),
+                                  why="ours", send_stop=not stopped)
+
     async def _close_stream(self):
         if self.drain is not None:
             self.drain.cancel()
             with contextlib.suppress(BaseException):
                 await self.drain
             self.drain = None
+        await self._stop_stream_verified()
         if self.display is not None:
-            if self.stream_id is not None:
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(self.display.stop_media_stream(self.stream_id), 4)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(self.display.close(), 1)
         if self.transport is not None:

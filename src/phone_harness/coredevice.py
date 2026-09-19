@@ -325,7 +325,7 @@ def _daemon_pid():
     return st["pid"] if st else None
 
 
-def _stop_daemon(pid, wait=15.0):
+def _stop_daemon(pid, wait=45.0):
     """Ask the daemon to shut down over its socket, which lets it stop the
     phone's stream cleanly (an unstopped stream wedges the next session).
     Fall back to a signal, and on Windows to taskkill, if it does not answer."""
@@ -337,9 +337,13 @@ def _stop_daemon(pid, wait=15.0):
         except (RuntimeError, OSError, Unsupported):
             pass
     deadline = time.time() + wait
+    said = False
     while time.time() < deadline:
         if _daemon_pid() is None:
             return True
+        if not said and time.time() > deadline - wait + 3:
+            print("waiting for the phone to end its screen stream...", flush=True)
+            said = True
         time.sleep(0.25)
     try:
         if sys.platform == "win32":
@@ -373,6 +377,7 @@ def _wait_ready(pid, timeout=300):
                      "mounting": "mounting the developer image (downloads it the first time)",
                      "connecting": "opening the USB tunnel",
                      "recovering": "display service stalled; remounting the developer image",
+                     "clearing": "ending a stream session an earlier run left behind",
                      "streaming": "starting the screen stream that authorises input",
                      "ready": "ready"}
             print(f"  {phase}: {notes.get(phase, '')}".rstrip(": "), flush=True)

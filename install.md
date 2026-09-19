@@ -142,6 +142,11 @@ is driven through the mirroring window or the USB tunnel, the Android over adb.
   phone's media daemon got stuck after an earlier session that was not shut
   down cleanly. awake remounts the developer image once on its own, which
   usually clears it; if it still fails, reboot the iPhone.
+- **iPhone over USB — the phone keeps showing the screen-sharing indicator
+  and the camera is blocked**: a stream session outlived its computer (cable
+  pulled, process killed). Plug the phone in and run `phone-harness ios awake`
+  — it ends leftover sessions before starting its own — or `phone-harness ios
+  rest`. A phone restart also clears it.
 - **iPhone over USB — `locked`**: unlock the phone on the phone. Taps and
   typing refuse while the lock screen is showing; `screenshot()` still works.
   The phone auto-locks on its own idle timeout; set Auto-Lock to Never for a

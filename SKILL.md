@@ -38,6 +38,11 @@ PY
   # task: report the iOS version and model name from Settings
   # step: scroll to General, open About, read the screen
   ```
+- **Tell the user what you are doing as you go.** A phone task is many short
+  scripts, and the user sees none of them: say one line before each script
+  (what you are about to do) and one line after it (what you saw). Never run
+  two scripts in a row in silence. The `# task:` / `# step:` comments are not
+  this — the user cannot see them.
 - Helpers are pre-imported. All coordinates are global screen points.
 - `ensure_mirroring()` launches the window and gates on connection. The
   default build works the phone **without taking the user's focus**: capture is
@@ -225,9 +230,12 @@ phone-harness cloud stop       # ends billing and saves the phone
 - **It bills by the minute while it is up.** Start it once and keep it for the
   whole conversation — a stop and a restart between two requests wastes more
   than it saves. Stop it when the user is done, and say that you did.
-- **Stop before the deadline.** A session that simply runs out keeps the
-  phone's data but not its running state. The harness warns on stderr when
-  under two minutes remain; `phone-harness cloud` shows the time left.
+- **Stop before the deadline, because a session cannot be extended.** One
+  that simply runs out keeps the phone's data but not its running state. The
+  harness warns on stderr when under two minutes remain; `phone-harness cloud`
+  shows the time left. If the task needs longer, stop and start again: the
+  phone comes back where it was in about 15 seconds. `cloud stop` returns at
+  once; the save finishes on its own, and a `cloud start` during it waits.
 - **A session the user started is theirs.** `cloud start` attaches to a phone
   that is already running instead of starting another; leave that one running
   unless they ask you to stop it.
@@ -237,7 +245,8 @@ phone-harness cloud stop       # ends billing and saves the phone
   instead of waiting for your report. `cloud start --temp` is a throwaway
   phone that keeps nothing.
 - The connection is handled for you, including reconnecting after a drop.
-  Never print or ask for the phone's adb address or unlock code.
+  The adb address the CLI shows is not a secret; the unlock code is, and you
+  never need it — do not look for it, print it, or ask the user for it.
 
 ## Consent
 

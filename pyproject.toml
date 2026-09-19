@@ -1,16 +1,18 @@
 [project]
 name = "phone-harness"
-version = "0.2.1"
-description = "Control a real iPhone through macOS iPhone Mirroring: OCR eyes, CGEvent hands"
+version = "0.3.0"
+description = "Let an agent drive a real phone: an iPhone through macOS iPhone Mirroring, an Android over adb, or a rented cloud Android"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-keywords = ["iphone", "automation", "agent", "iphone-mirroring", "macos"]
+keywords = ["iphone", "android", "adb", "automation", "agent", "iphone-mirroring", "cloud-phone"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Environment :: MacOS X",
+    "Environment :: Console",
     "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Testing",
 ]

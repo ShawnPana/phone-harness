@@ -273,17 +273,32 @@ class CloudCli(unittest.TestCase):
         self.assertIn("still saving", r.stdout)
         self.assertEqual(FakeCloud.posts, [{"timeout_seconds": 900, "profile_id": "prof-1"}])
 
-    def test_stop_saves_and_detaches(self):
+    def test_stop_returns_at_once_and_detaches(self):
         self.login()
         self.run_cli("cloud", "start")
+        started = time.monotonic()
         r = self.run_cli("cloud", "stop")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("stored", r.stdout)
+        self.assertLess(time.monotonic() - started, 2.5)             # no polling for the save
+        self.assertIn("billing stopped", r.stdout)
+        self.assertIn("being saved", r.stdout)
         self.assertEqual(FakeCloud.sessions, {})
         state = json.loads((Path(self.home.name) / "state" / "cloud.json").read_text())
         self.assertNotIn("session", state)
         self.assertIn("none attached", self.run_cli("cloud").stdout)
 
+    def test_stop_wait_watches_the_save(self):
+        self.login()
+        self.run_cli("cloud", "start")
+        r = self.run_cli("cloud", "stop", "--wait")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("stored", r.stdout)
+
+    def test_a_temporary_phone_has_nothing_to_save(self):
+        self.login()
+        self.run_cli("cloud", "start", "--temp")
+        r = self.run_cli("cloud", "stop")
+        self.assertNotIn("saved", r.stdout)
 
 if __name__ == "__main__":
     unittest.main()

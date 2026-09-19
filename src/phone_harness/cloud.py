@@ -550,6 +550,7 @@ def _report(session, profile_id=None):
 
 def _stop(args):
     everything = _flag(args, "--all")
+    watch_save = _flag(args, "--wait")
     if everything:
         sids = [s["id"] for s in _api("GET", "/sessions")]
         if not sids:
@@ -570,16 +571,23 @@ def _stop(args):
                 raise
             print(f"Session {sid} was already gone.")
         _detach(sid)
-    if held_profile:
-        print("  Saving your phone…", end="", flush=True)
-        deadline = time.monotonic() + SAVE_WAIT
-        state = "saving"
-        while time.monotonic() < deadline:
-            time.sleep(3)
-            state = (_api("GET", "/me").get("profile") or {}).get("state")
-            if state != "saving" and state != "running":
-                break
-        print(f" {state}.")
+    if not held_profile:
+        return 0
+    # Billing ended with the DELETE. The save runs on the service for another
+    # half minute and needs nothing from here, so waiting on it is opt-in;
+    # `cloud start` waits out a save that is still going.
+    if not watch_save:
+        print("  Your phone is being saved (about 30s); `phone-harness cloud phone` shows when.")
+        return 0
+    print("  Saving your phone…", end="", flush=True)
+    deadline = time.monotonic() + SAVE_WAIT
+    state = "saving"
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        state = (_api("GET", "/me").get("profile") or {}).get("state")
+        if state not in ("saving", "running"):
+            break
+    print(f" {state}.")
     return 0
 
 
@@ -749,7 +757,9 @@ CLI_USAGE = """Usage:
   phone-harness cloud logout | whoami
   phone-harness cloud start [--temp] [--minutes N]
                                                start your saved phone (or a throwaway one) and connect
-  phone-harness cloud stop [SID|--all]         end it; your phone is saved for next time
+  phone-harness cloud stop [SID|--all] [--wait]
+                                               end it; your phone is saved for next time
+                                               (--wait watches the save finish)
   phone-harness cloud ls [-n NUM]              running sessions (* = attached)
   phone-harness cloud show [SID]               one session in full
   phone-harness cloud use SID                  attach the helpers to another running session

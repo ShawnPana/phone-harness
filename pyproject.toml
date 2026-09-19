@@ -1,16 +1,17 @@
 [project]
 name = "phone-harness"
 version = "0.2.1"
-description = "Control a real iPhone through macOS iPhone Mirroring: OCR eyes, CGEvent hands"
+description = "Let your agent control a real phone: iPhone (macOS via iPhone Mirroring, any OS over USB) or Android over adb"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-keywords = ["iphone", "automation", "agent", "iphone-mirroring", "macos"]
+keywords = ["iphone", "android", "automation", "agent", "iphone-mirroring", "pymobiledevice3"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Environment :: MacOS X",
     "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Testing",
 ]
@@ -21,6 +22,18 @@ dependencies = [
     "pyobjc-framework-Vision; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
     "pyobjc-framework-ApplicationServices; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+# iPhone over USB from Linux, Windows or macOS through the CoreDevice
+# services (no mirroring window). Needs Python 3.13+: older ssl modules
+# cannot do the tunnel's TLS-PSK handshake. Pinned: the backend reaches into
+# pymobiledevice3's screen-stream internals, which move between releases.
+# pymobiledevice3 is GPL-3.0-or-later and runs in its own process (the
+# session daemon); see THIRD-PARTY notes in install.md.
+iphone = [
+    "pymobiledevice3==11.13.1; python_version >= '3.13'",
+    "rapidocr-onnxruntime>=1.4; sys_platform != 'darwin'",
 ]
 
 [project.urls]

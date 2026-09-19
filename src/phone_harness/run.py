@@ -13,8 +13,9 @@ USAGE = """Usage:
   PY
 
 Commands:
-  phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
+  phone-harness --doctor [ios|android|coredevice]   diagnose the phone the helpers would drive
   phone-harness skill       print the phone-harness skill text
+  phone-harness ios ...     iPhone over USB (Linux/Windows/macOS): pair, awake, rest
   phone-harness android ... pair/connect/choose an Android phone
   phone-harness config ...  settings: `config set platform android`
 """
@@ -94,7 +95,7 @@ def _telemetry_command(args):
         return "help"
     if first in {"--doctor", "doctor"}:
         return "doctor"
-    if first in {"android", "config", "skill"}:
+    if first in {"android", "ios", "config", "skill"}:
         return first
     return "usage"
 
@@ -207,6 +208,9 @@ def _run(args):
         sys.exit(run_doctor(args[1] if len(args) > 1 else None))
     if args and args[0] == "android":
         from .android import cli
+        sys.exit(cli(args[1:]))
+    if args and args[0] == "ios":
+        from .coredevice import cli
         sys.exit(cli(args[1:]))
     if args and args[0] == "config":
         from .config import cli

@@ -13,7 +13,7 @@ live inside one backend each, behind the ops documented in transport.py, so
 `nav.home` and `screen.text` mean the same thing everywhere even though an
 iPhone answers them with a Cmd+1 keystroke and Vision OCR.
 """
-import hashlib, importlib.util, os, time
+import hashlib, importlib.util, os, time, zlib
 from pathlib import Path
 
 from . import transport
@@ -585,18 +585,58 @@ def wait_for_app(app_id, timeout=10.0, interval=0.3):
         time.sleep(interval)
 
 
+def _frame_digest(path):
+    """What two captures are compared by. Byte-identical files are the fast
+    path; otherwise the decoded PNG scanlines, so the comparison can ignore
+    the sub-pixel noise some captures carry."""
+    data = Path(path).read_bytes()
+    return hashlib.md5(data).hexdigest(), data
+
+
+def _frames_alike(a, b, tolerance=0.005):
+    """True if two captures show the same screen. Identical bytes, or PNGs
+    whose decoded pixels differ in fewer than `tolerance` of their bits: an
+    iPhone's own screenshots (16-bit PNGs) are never byte-identical between
+    two captures of a still screen, but differ by ~0.05%; a changed row of
+    text or a scrolled list differs by orders of magnitude more."""
+    if a[0] == b[0]:
+        return True
+    try:
+        pa, pb = _png_scanlines(a[1]), _png_scanlines(b[1])
+    except (ValueError, zlib.error):
+        return False
+    if len(pa) != len(pb):
+        return False
+    diff = (int.from_bytes(pa, "big") ^ int.from_bytes(pb, "big")).bit_count()
+    return diff <= tolerance * len(pa) * 8
+
+
+def _png_scanlines(data):
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    i, idat = 8, []
+    while i + 8 <= len(data):
+        n = int.from_bytes(data[i:i + 4], "big")
+        tag = data[i + 4:i + 8]
+        if tag == b"IDAT":
+            idat.append(data[i + 8:i + 8 + n])
+        i += 12 + n
+    return zlib.decompress(b"".join(idat))
+
+
 def wait_stable(timeout=6.0, interval=0.5, settle=2):
-    """Wait until `settle` consecutive captures are identical (animation done).
-    The status-bar clock ticks once a minute, so near-misses are rare."""
+    """Wait until `settle` consecutive captures show the same screen
+    (animation done). The status-bar clock ticks once a minute, so
+    near-misses are rare."""
     prev, same = None, 0
     deadline = time.time() + timeout
     while time.time() < deadline:
         path, _ = send("screen.capture")
-        digest = hashlib.md5(Path(path).read_bytes()).hexdigest()
-        same = same + 1 if digest == prev else 0
+        cur = _frame_digest(path)
+        same = same + 1 if prev is not None and _frames_alike(prev, cur) else 0
         if same >= settle - 1:
             return True
-        prev = digest
+        prev = cur
         time.sleep(interval)
     return False
 

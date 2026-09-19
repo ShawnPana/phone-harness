@@ -1,5 +1,6 @@
 """Diagnostics: `phone-harness --doctor` walks the ladder for the phone the
-helpers would drive — the config default, or `--doctor ios|android`."""
+helpers would drive — the config default, or `--doctor ios|android|coredevice`.
+`ios` means iPhone Mirroring on a Mac and the USB CoreDevice backend elsewhere."""
 import os
 import shutil
 import subprocess
@@ -28,6 +29,9 @@ def run_doctor(platform=None):
     _failures.clear()
     if platform == "android":
         _doctor_android()
+    elif platform in ("coredevice", "ios-usb", "usb") or (
+            platform in ("ios", "iphone", "ipad") and sys.platform != "darwin"):
+        _doctor_coredevice()
     else:
         _doctor_ios()
     ok = not _failures
@@ -144,3 +148,75 @@ def _doctor_android():
     reg = config.devices_of("android")
     _check(f"remembered phones: {', '.join(reg['phones']) or 'none'}; primary: "
            f"{reg['primary'] or 'none'}", True)
+
+
+# --- iPhone over USB (CoreDevice): python -> library -> usbmuxd -> phone ->
+#     trust -> iOS version -> Developer Mode -> image -> session -> capture+OCR
+
+_USBMUXD_INSTALL = {
+    "linux": "apt install usbmuxd (or your distro's usbmuxd) and replug the phone",
+    "win32": "install iTunes or the Apple Devices app (they provide the Apple Mobile Device service)",
+}.get(sys.platform, "is the phone plugged in and unlocked?")
+
+
+def _doctor_coredevice():
+    import asyncio
+    from . import config, ocr
+    _check(f"Python {sys.version_info.major}.{sys.version_info.minor} (3.13+ needed for the USB tunnel)",
+           sys.version_info >= (3, 13), "reinstall with a newer Python: uv tool install --python 3.13 'phone-harness[iphone]'")
+    try:
+        import pymobiledevice3  # noqa: F401
+        _check("pymobiledevice3 installed", True)
+    except ImportError:
+        _check("pymobiledevice3 installed", False, "pip install 'phone-harness[iphone]'")
+        return
+    eng = ocr.engine()
+    _check(f"OCR engine: {eng or 'none'}", eng is not None,
+           "pip install rapidocr-onnxruntime (part of phone-harness[iphone])")
+
+    from . import coredevice, coredevice_daemon as D
+    serial = config.get("coredevice.serial") or config.devices_of("coredevice").get("primary")
+    info = asyncio.run(D.probe(serial))
+    _check("USB device service reachable (usbmuxd / Apple Mobile Device)", info["usbmuxd"],
+           _USBMUXD_INSTALL)
+    if not info["usbmuxd"]:
+        return
+    _check(f"an iPhone on USB ({', '.join(info['devices']) or 'none'})", bool(info["udid"]),
+           "plug the phone in with a data cable and unlock it"
+           if info["error"] != "several-devices" else
+           "several phones: phone-harness config set coredevice.serial UDID")
+    if not info["udid"]:
+        return
+    _check("this computer is trusted by the phone", bool(info["paired"]),
+           "phone-harness ios pair — then tap Trust and enter the passcode on the phone")
+    if not info["paired"]:
+        return
+    _check(f"{info['name']} ({info['model']}) on iOS {info['ios']}: 27 or later",
+           D.ios_at_least(info["ios"], 27, 0),
+           "screen streaming has only been seen working on iOS 27; older phones report no media features")
+    _check("Developer Mode on", bool(info["developer_mode"]),
+           "on the phone: Settings > Privacy & Security > Developer Mode "
+           "(`phone-harness ios reveal` if it is not listed)")
+    if not info["developer_mode"]:
+        return
+    _check("developer image mounted (awake mounts it if not)", bool(info["ddi_mounted"]),
+           "`phone-harness ios awake` will download and mount it", fatal=False)
+
+    st = coredevice._state()
+    _check("USB session running (phone-harness ios awake)", bool(st and st.get("ready")),
+           "run `phone-harness ios awake --bg` and re-run the doctor")
+    if not (st and st.get("ready")):
+        return
+    phone = coredevice.CoreDevice()
+    try:
+        path, win = phone.send("screen.capture")
+        size = os.path.getsize(path)
+        _check(f"screenshot works ({win['w']}x{win['h']} px, {size} bytes)", size > 1000)
+        n = len(ocr.recognize(path, win))
+        _check(f"OCR works ({n} text boxes)", True)
+    except Exception as e:
+        _check("screenshot + OCR", False, str(e)[:160])
+        return
+    state = phone.send("session.state")
+    _check(f"session state: {state}", state == "ready",
+           "unlock the phone on the phone itself" if state == "locked" else "", fatal=False)

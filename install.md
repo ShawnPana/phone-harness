@@ -1,9 +1,10 @@
 # phone-harness install
 
-phone-harness drives a real phone from a Mac (first-run flow for agents:
-`onboarding.md`; day-to-day usage: `SKILL.md`). It works with an **iPhone** through the macOS
-iPhone Mirroring app, or an **Android** over adb (USB or Wi‑Fi). Same helpers
-either way; you choose a default and can switch per call.
+phone-harness drives a real phone from your computer (first-run flow for
+agents: `onboarding.md`; day-to-day usage: `SKILL.md`). It works with an
+**iPhone** — through the macOS iPhone Mirroring app on a Mac, or over a USB
+cable from Linux, Windows or macOS — or an **Android** over adb (USB or Wi‑Fi).
+Same helpers either way; you choose a default and can switch per call.
 
 ## Common
 
@@ -19,8 +20,10 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness"
 phone-harness skill > "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness/SKILL.md"
 ```
 
-- Python 3.10+, any OS. **iPhone needs a Mac** (it drives iPhone Mirroring);
-  **Android works on macOS, Linux and Windows** and is the default off a Mac.
+- Python 3.10+, any OS (3.13+ for the USB iPhone path). **Android works on
+  macOS, Linux and Windows** and is the default off a Mac. **iPhone** works on
+  a Mac through iPhone Mirroring, and on any OS over USB (see "iPhone over
+  USB" below).
   Only the CLI? `pip install phone-harness` works too; the
   checkout is what makes the harness editable (`agent-workspace/agent_helpers.py`).
 - The default phone is `phone-harness config set platform ios|android`;
@@ -51,6 +54,45 @@ the agent's copy matches the code.
 > more the first time an action runs. If `--doctor` passes but taps, typing, or
 > capture silently do nothing, look for a macOS permission prompt.
 
+## iPhone over USB (Linux, Windows, macOS)
+
+No mirroring window: the harness talks to the same developer services Xcode
+uses — a screenshot service for eyes, a HID service for touches and keys —
+through [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) over
+the cable. Nothing is installed on the phone.
+
+```bash
+uv tool install --python 3.13 "phone-harness[iphone]"    # or: pip install "phone-harness[iphone]" on Python 3.13+
+sudo apt install usbmuxd                                   # Linux only: the USB device service
+# Windows only: install iTunes or the Apple Devices app (they provide the Apple Mobile Device service)
+```
+
+- **The phone must run iOS 27 or later.** Older versions report no
+  screen-streaming features from the display service and cannot be driven
+  this way (checked on iOS 17, 18 and 26.2). `phone-harness ios` shows the
+  version it sees.
+- Plug the phone in with a data cable and unlock it, then
+  `phone-harness ios pair`: tap **Trust** and enter the passcode *on the phone*.
+- Turn on **Developer Mode** on the phone: Settings → Privacy & Security →
+  Developer Mode (if it is not listed, `phone-harness ios reveal` makes it
+  appear). The phone restarts once. Developer Mode lets trusted computers use
+  developer services, which is a real loosening of the phone's security —
+  say so to the user before they turn it on.
+- Each session: `phone-harness ios awake --bg`. It mounts the developer disk
+  image if the phone dropped it (it does on every reboot; the first mount
+  downloads the image from Apple), opens the USB tunnel and the screen stream
+  that authorises input, then waits. `phone-harness ios rest` ends it. Every
+  helper needs the session: without it they raise "no CoreDevice session".
+- `phone-harness config set platform ios` (off a Mac, `ios` means this
+  backend; on a Mac use `coredevice` to pick it over iPhone Mirroring), then
+  `phone-harness --doctor` walks the ladder: Python, library, USB service,
+  phone, trust, iOS version, Developer Mode, image, session, screenshot, OCR.
+- Coordinates are **screenshot pixels** and the capture is 1:1 with `tap(x, y)`
+  — no window offset, no Retina scaling. `ocr()` runs Apple Vision on a Mac
+  and RapidOCR (bundled ONNX models) elsewhere.
+- pymobiledevice3 is GPL-3.0-or-later. It runs in its own process, the
+  session daemon that `ios awake` starts; phone-harness itself stays MIT.
+
 ## Android
 
 - adb: `brew install android-platform-tools` (macOS), `apt install adb` (Debian/Ubuntu),
@@ -75,8 +117,8 @@ the agent's copy matches the code.
 ## Both
 
 Set up each as above; `phone-harness config set platform …` picks the default,
-`PHONE_HARNESS_PLATFORM=…` picks per call. The two never interfere — the
-iPhone is driven through the mirroring window, the Android over adb.
+`PHONE_HARNESS_PLATFORM=…` picks per call. They never interfere — the iPhone
+is driven through the mirroring window or the USB tunnel, the Android over adb.
 
 `phone-harness config set telemetry false` turns off anonymous usage telemetry.
 
@@ -93,6 +135,17 @@ iPhone is driven through the mirroring window, the Android over adb.
   running a different Python than the one that has pyobjc; use the interpreter
   `pip install -e .` used, or `pip install pyobjc-framework-Quartz
   pyobjc-framework-Vision pyobjc-framework-Cocoa` for that one.
+- **iPhone over USB — "no CoreDevice session"**: run `phone-harness ios awake
+  --bg`. If awake itself fails, `phone-harness ios` names the rung: not
+  plugged in, not trusted (`ios pair`), Developer Mode off, iOS too old.
+- **iPhone over USB — awake says the display service is not answering**: the
+  phone's media daemon got stuck after an earlier session that was not shut
+  down cleanly. awake remounts the developer image once on its own, which
+  usually clears it; if it still fails, reboot the iPhone.
+- **iPhone over USB — `locked`**: unlock the phone on the phone. Taps and
+  typing refuse while the lock screen is showing; `screenshot()` still works.
+  The phone auto-locks on its own idle timeout; set Auto-Lock to Never for a
+  long session if you want (Settings → Display & Brightness).
 - **Android — `unauthorized`**: unlock the phone and tap Allow on the "Allow
   USB debugging?" prompt (replug if it does not appear).
 - **Android — `no-device`**: USB debugging off, cable/port, or for Wi‑Fi:

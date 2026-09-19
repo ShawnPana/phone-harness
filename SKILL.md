@@ -1,15 +1,18 @@
 ---
 name: phone-harness
-description: "Control the user's phone — iPhone through the Mac's iPhone Mirroring window, or an Android over adb: open apps, tap, type, swipe, read the screen."
+description: "Control the user's phone — iPhone through the Mac's iPhone Mirroring window or over USB from any OS, or an Android over adb: open apps, tap, type, swipe, read the screen."
 ---
 
 # phone-harness
 
-Direct control of the user's phone. iPhone: through the iPhone Mirroring app —
-screenshots + Vision OCR for eyes, HID-level CGEvents for hands. Android: over
-adb — screenshots + the phone's accessibility tree for eyes, `input` for hands
-(see the Android section; the helpers are the same). `phone-harness config`
-shows which is the default. For task-specific edits, use
+Direct control of the user's phone. iPhone on a Mac: through the iPhone
+Mirroring app — screenshots + Vision OCR for eyes, HID-level CGEvents for
+hands. iPhone over USB (Linux, Windows, or a Mac): the phone's own developer
+services — a screenshot service for eyes, a virtual HID touchscreen and
+keyboard for hands, no window (see the "iPhone over USB" section). Android:
+over adb — screenshots + the phone's accessibility tree for eyes, `input` for
+hands (see the Android section; the helpers are the same). `phone-harness
+config` shows which is the default. For task-specific edits, use
 `agent-workspace/agent_helpers.py`. For setup or permission problems, read
 `install.md`.
 
@@ -137,6 +140,51 @@ PY
   the helpers don't cover — but raw CGEvents don't ride the helpers' delivery
   path, and where they land is its own question per event type. Check what
   actually happened on screen rather than assuming the event arrived.
+
+## iPhone over USB (Linux, Windows, macOS)
+
+Same helpers, no window. Off a Mac this is what `platform ios` means; on a
+Mac `PHONE_HARNESS_PLATFORM=coredevice` picks it over iPhone Mirroring. The
+session daemon must be running first:
+
+```bash
+phone-harness ios awake --bg     # opens the USB tunnel + screen stream; ~2s when the image is mounted
+phone-harness ios rest           # ends it
+```
+
+Every helper raises "no CoreDevice session" until awake has run — relay that
+to the user rather than retrying. `phone-harness ios` shows what is plugged in
+and why a session cannot start (not trusted, Developer Mode off, iOS too old).
+
+- **Coordinates are screenshot pixels.** The capture is the phone's own PNG
+  at native resolution and `tap(x, y)` takes the same pixel you saw in it, so
+  `tap_image_point` and `image_point` are identity conversions here. Nothing
+  moves and nothing needs focus: `activate()` is a no-op and
+  `interruption()` always reports nothing disturbed.
+- `ocr()` is pixel OCR (Vision on a Mac, RapidOCR elsewhere), the same
+  contract as iPhone Mirroring. No `ui()`/`tree`.
+- `open_app("Settings")` launches by app name or bundle id through the app
+  service, no Spotlight; `list_apps()` exists (`include_system=True` for
+  Apple's built-ins). `current_app()` is Unsupported.
+- `home()` is a real Home-button event; `app_switcher()` double-clicks Home
+  on a Home-button phone and does the swipe-and-hold on the rest. `press()`
+  takes chords (`"cmd+a"`, `"return"`, `"delete"`). `type_text` pastes by
+  default through the phone's pasteboard (exact, Unicode fine);
+  `keystrokes=True` types ASCII through the virtual keyboard.
+- `scroll()` is a finger drag with a rest at the end; `swipe()` is the same
+  flick as elsewhere. Vertical swipes work here (they are real touches).
+- **A locked phone refuses input.** `connection_state()` is `locked` when
+  the lock screen is recognised on the capture; taps and typing raise the
+  same message. Ask the user to unlock it; `screenshot()` still works so you
+  can show them what you see. Never enter a passcode. The phone still
+  auto-locks after its own idle timeout (Settings → Display & Brightness →
+  Auto-Lock), so for a long task ask the user to set that to Never for the
+  session — do not change it yourself.
+- Screenshots take ~0.3s and consecutive captures of a still screen are not
+  byte-identical, so verify with `ocr()`/`wait_for_text()` rather than image
+  equality.
+- The user keeps their phone in hand the whole time: your touches and theirs
+  interleave, and nothing shows on their computer.
 
 ## Android
 

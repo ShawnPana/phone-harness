@@ -44,6 +44,9 @@ DEFAULTS = {
         "restore_clipboard": False,   # put the old clipboard back after a paste
         "paste_settle": 2.0,          # ...after this many seconds, if so
     },
+    "coredevice": {
+        "serial": None,               # the iPhone's UDID when several are plugged in
+    },
 }
 
 # Settings that historically had their own environment variable.
@@ -281,8 +284,8 @@ def cli(args):
         print(json.dumps(value) if source != "unset" else f"{args[1]}: unset")
         return 0 if source != "unset" else 1
     if cmd == "set" and len(args) == 3:
-        if args[1] == "platform" and args[2] not in ("ios", "android"):
-            print("platform must be ios or android"); return 2
+        if args[1] == "platform" and args[2] not in ("ios", "android", "coredevice"):
+            print("platform must be ios, android or coredevice"); return 2
         v = set(args[1], args[2])
         print(f"{args[1]} = {json.dumps(v)}")
         return 0

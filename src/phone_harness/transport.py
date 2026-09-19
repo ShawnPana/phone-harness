@@ -129,7 +129,10 @@ class Backend:
 def connect(platform=None, **kw):
     """Build a backend. Explicit argument, else PHONE_HARNESS_PLATFORM, else
     `platform` in the config file (`phone-harness config set platform …`),
-    else ios.
+    else ios on a Mac and android elsewhere.
+
+    "ios" is iPhone Mirroring on macOS and the USB CoreDevice backend on
+    every other OS; "coredevice" asks for the USB backend by name anywhere.
 
     Returns an object rather than installing a module global, so a script can
     hold two devices at once instead of being limited to one per process.
@@ -137,12 +140,18 @@ def connect(platform=None, **kw):
     """
     from . import config
     platform = (platform or config.get("platform")).lower()
-    if platform in ("ios", "iphone", "ipad"):
-        if sys.platform != "darwin":
-            raise RuntimeError("iPhone control needs macOS (it drives the iPhone Mirroring app); "
-                               "on this machine use Android: PHONE_HARNESS_PLATFORM=android "
-                               "or `phone-harness config set platform android`")
+    if platform in ("ios", "iphone", "ipad") and sys.platform == "darwin":
         return importlib.import_module(".ios", __package__).IPhone(**kw)
+    if platform in ("ios", "iphone", "ipad", "coredevice", "ios-usb", "usb"):
+        # Off a Mac, "ios" means the USB CoreDevice backend; on a Mac the
+        # explicit names pick it over iPhone Mirroring.
+        try:
+            return importlib.import_module(".coredevice", __package__).CoreDevice(**kw)
+        except ImportError as e:
+            raise RuntimeError(
+                "iPhone control off macOS needs the CoreDevice extra: "
+                "pip install 'phone-harness[iphone]' (Python 3.13+), then "
+                f"`phone-harness ios awake`. ({e})") from None
     if platform == "android":
         return importlib.import_module(".android", __package__).Android(**kw)
     raise ValueError(f"unknown platform {platform!r}")

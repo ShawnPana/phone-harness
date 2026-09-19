@@ -55,6 +55,22 @@ PY
 Helpers are pre-imported. [SKILL.md](SKILL.md) is the agent's day-to-day
 guide; [helpers.py](src/phone_harness/helpers.py) is the full list.
 
+## No phone on your desk? Rent one
+
+```bash
+phone-harness cloud login     # once: approve in your browser
+phone-harness cloud start     # your own Android phone; apps and logins are kept
+phone-harness <<'PY'
+print(screenshot())
+PY
+phone-harness cloud stop      # billing stops, the phone is saved
+```
+
+[Phone Harness Cloud](https://phone-harness.com/cloud) phones are Android
+phones reached over adb, so every helper works on them unchanged and there is
+nothing to export or select. `phone-harness cloud` lists the rest: `ls`,
+`watch`, `history`, and `start --temp` for a throwaway phone.
+
 ## How it works
 
 **iPhone.** iPhone Mirroring renders the phone as a Mac window and forwards

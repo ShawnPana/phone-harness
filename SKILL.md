@@ -186,6 +186,38 @@ PY
   error names the missing step — relay it, don't retry-loop.
   `phone-harness android` shows known phones and what is attached.
 
+## Cloud phones
+
+`phone-harness cloud start` rents the user's own Android phone from Phone
+Harness Cloud and connects to it; from then on every script drives that phone
+with nothing exported, exactly as the Android section describes. It is the
+same phone each time: apps, logins and normally the exact screen are kept
+between sessions.
+
+```bash
+phone-harness cloud            # signed in? a phone attached? minutes left?
+phone-harness cloud start      # about 15s; safe to run twice, it reattaches
+phone-harness cloud watch      # opens the live view for the user
+phone-harness cloud stop       # ends billing and saves the phone
+```
+
+- **It bills by the minute while it is up.** Start it once and keep it for the
+  whole conversation — a stop and a restart between two requests wastes more
+  than it saves. Stop it when the user is done, and say that you did.
+- **Stop before the deadline.** A session that simply runs out keeps the
+  phone's data but not its running state. The harness warns on stderr when
+  under two minutes remain; `phone-harness cloud` shows the time left.
+- **A session the user started is theirs.** `cloud start` attaches to a phone
+  that is already running instead of starting another; leave that one running
+  unless they ask you to stop it.
+- `Not signed in` means the user has to run `phone-harness cloud login` and
+  approve it in a browser. Relay that; you cannot do it for them.
+- Offer `cloud watch` early on a long task, so the user can see the phone
+  instead of waiting for your report. `cloud start --temp` is a throwaway
+  phone that keeps nothing.
+- The connection is handled for you, including reconnecting after a drop.
+  Never print or ask for the phone's adb address or unlock code.
+
 ## Consent
 
 This is the user's real phone. Stop and ask before anything outward-facing or

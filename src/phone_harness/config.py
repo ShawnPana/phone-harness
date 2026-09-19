@@ -5,10 +5,13 @@ Two kinds of thing, kept apart because they live differently:
   config   intent — the default platform, the adb binary, how often to poke
            a phone awake. Hand-editable, small, worth putting in dotfiles.
              ~/.config/phone-harness/config.json
+           The cloud sign-in sits beside it, private to the user:
+             ~/.config/phone-harness/auth.json
   state    what the harness learned — remembered phones and which is
-           primary, the pid of a running awake session. Machine-managed,
-           rebuildable, never worth backing up.
+           primary, the attached cloud phone, the pid of a running awake
+           session. Machine-managed, rebuildable, never worth backing up.
              ~/.local/state/phone-harness/devices.json
+             ~/.local/state/phone-harness/cloud.json
              ~/.local/state/phone-harness/telemetry.json
              ~/.local/state/phone-harness/run/awake.pid
 
@@ -39,6 +42,15 @@ DEFAULTS = {
         "adb": "adb",          # the binary; a path if it is not on PATH
         "poke_every": 25,      # seconds between keep-awake pokes
         "mirror": True,        # open scrcpy during `android awake` if installed
+    },
+    "cloud": {
+        "api": "https://api.phone-harness.com",
+        "minutes": 15,         # how long `cloud start` rents a phone for
+        "max_minutes": 30,     # the most one `cloud start` may ask for
+        # `cloud login` is an OAuth device flow against the account system.
+        # The client id names a public client: it is not a secret.
+        "oauth_issuer": "https://clerk.phone-harness.com",
+        "oauth_client_id": "Fu2QHJcGewhL7uKh",
     },
     "ios": {
         "restore_clipboard": False,   # put the old clipboard back after a paste
@@ -77,7 +89,9 @@ def run_dir():
 
 def paths():
     return {"config": config_dir() / "config.json",
+            "auth": config_dir() / "auth.json",
             "devices": state_dir() / "devices.json",
+            "cloud": state_dir() / "cloud.json",
             "telemetry": state_dir() / "telemetry.json",
             "run": run_dir()}
 

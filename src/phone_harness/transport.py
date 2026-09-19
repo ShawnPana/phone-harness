@@ -136,7 +136,15 @@ def connect(platform=None, **kw):
     helpers.py binds one of these as its default.
     """
     from . import config
-    platform = (platform or config.get("platform")).lower()
+    if platform is None:
+        platform, source = config.lookup("platform")
+        if not source.startswith("env:"):
+            # A phone rented with `cloud start` is the one meant, even on a
+            # Mac whose default is the iPhone. An explicit platform still wins.
+            from . import cloud
+            if cloud.attached():
+                platform = "android"
+    platform = platform.lower()
     if platform in ("ios", "iphone", "ipad"):
         if sys.platform != "darwin":
             raise RuntimeError("iPhone control needs macOS (it drives the iPhone Mirroring app); "

@@ -150,6 +150,20 @@ class Android(Backend):
         unpinned command then fails with "more than one device"."""
         if not self._resolved and self._resolve() is None:
             self._session_require()               # raises with the physical step
+        from . import cloud
+        rented = cloud.attached()
+        if not rented or os.environ.get("ANDROID_SERIAL") != cloud.serial_of(rented):
+            return _run(*args, binary=binary, timeout=timeout)
+        # A rented phone is reached over the internet, and every new connection
+        # to it starts locked (commands answer "locked"): reconnect once, and
+        # only then is a failure real.
+        try:
+            out = _run(*args, binary=binary, timeout=timeout)
+            if out.strip() not in ("locked", b"locked"):
+                return out
+        except RuntimeError:
+            pass
+        cloud.ensure_connected(rented)
         return _run(*args, binary=binary, timeout=timeout)
 
     def _sh(self, cmd, timeout=60):
@@ -161,11 +175,20 @@ class Android(Backend):
         """Pin ANDROID_SERIAL to one ready device, connecting a paired phone
         over Wi-Fi if nothing is attached. Returns the adb id or None.
 
-        Order: the user's explicit ANDROID_SERIAL; then a USB phone (wired
+        Order: the user's explicit ANDROID_SERIAL; then a phone rented with
+        `phone-harness cloud start` (asked for by name, and paid for by the
+        minute); then a USB phone (wired
         always wins — it is right there); then a live Wi-Fi link, the saved
         primary first; then mDNS — the primary if it is on the LAN, else the
         first known phone, else any paired phone."""
         if os.environ.get("ANDROID_SERIAL"):
+            self._resolved = True
+            return os.environ["ANDROID_SERIAL"]
+        from . import cloud
+        rented = cloud.attached()
+        if rented:
+            # Not remembered below: its address is reused by other phones.
+            os.environ["ANDROID_SERIAL"] = cloud.ensure_connected(rented)
             self._resolved = True
             return os.environ["ANDROID_SERIAL"]
         cfg = _load()

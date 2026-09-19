@@ -16,6 +16,7 @@ Commands:
   phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
+  phone-harness cloud ...   rent a cloud phone: `cloud login`, `cloud start`, `cloud stop`
   phone-harness config ...  settings: `config set platform android`
 """
 
@@ -79,7 +80,7 @@ class _StreamTail:
 
     def write(self, s):
         self.length += len(s)
-        self.tail = (self.tail + s)[-self._limit:]
+        self.tail = (self.tail + s)[-self._limit:] if self._limit else ""
         return self._wrapped.write(s)
 
     def __getattr__(self, name):
@@ -94,7 +95,7 @@ def _telemetry_command(args):
         return "help"
     if first in {"--doctor", "doctor"}:
         return "doctor"
-    if first in {"android", "config", "skill"}:
+    if first in {"android", "cloud", "config", "skill"}:
         return first
     return "usage"
 
@@ -140,8 +141,10 @@ def main():
     if not args and not sys.stdin.isatty():
         task = sys.stdin.read()
         sys.stdin = io.StringIO(task)
-    stderr_tail = _StreamTail(sys.stderr)
-    stdout_tail = _StreamTail(sys.stdout)
+    # `cloud` prints account keys and viewer links; none of it is telemetry.
+    tail_limit = 0 if command == "cloud" else _MAX_OUTPUT_LENGTH
+    stderr_tail = _StreamTail(sys.stderr, tail_limit)
+    stdout_tail = _StreamTail(sys.stdout, tail_limit)
     sys.stderr = stderr_tail
     sys.stdout = stdout_tail
     try:
@@ -207,6 +210,9 @@ def _run(args):
         sys.exit(run_doctor(args[1] if len(args) > 1 else None))
     if args and args[0] == "android":
         from .android import cli
+        sys.exit(cli(args[1:]))
+    if args and args[0] == "cloud":
+        from .cloud import cli
         sys.exit(cli(args[1:]))
     if args and args[0] == "config":
         from .config import cli

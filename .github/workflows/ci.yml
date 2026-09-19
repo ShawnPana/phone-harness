@@ -29,6 +29,9 @@ jobs:
           out=$(PHONE_HARNESS_PLATFORM=android phone-harness --doctor android 2>&1 || true)
           echo "$out"
           echo "$out" | grep -q "adb found"
+      - name: unit tests (fake cloud API, fake adb)
+        if: runner.os != 'Windows'     # the fake adb is a shell script
+        run: python -m unittest discover tests
       - name: iPhone is refused with a clear message off macOS
         if: runner.os != 'macOS'
         shell: bash

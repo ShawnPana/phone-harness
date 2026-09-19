@@ -39,6 +39,7 @@ class FakeCloud(BaseHTTPRequestHandler):
     sessions, profile, polls, posts = {}, {}, {}, []
     valid, token_polls, refreshes, revoked = set(), 0, 0, []
     closing_reads = 0
+    seen_headers = []
 
     def _oauth(self, path, form):
         c = FakeCloud
@@ -83,6 +84,7 @@ class FakeCloud(BaseHTTPRequestHandler):
         path, m = self.path.split("?")[0], self.command
         if path.startswith("/oauth/"):
             return self._oauth(path, dict(urllib.parse.parse_qsl(raw.decode())))
+        c.seen_headers.append(dict(self.headers))
         if self.headers.get("Authorization", "")[7:] not in c.valid:
             return self._send(401, {"error": "unauthorized"})
         body = json.loads(raw) if raw else {}
@@ -213,6 +215,15 @@ class CloudCli(unittest.TestCase):
                            capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 1)
         self.assertIn("must be one of prod, dev", r.stderr)
+
+    def test_a_proxy_token_rides_along_as_the_gate_header(self):
+        FakeCloud.valid.add("pck_ci")
+        FakeCloud.seen_headers = []
+        r = self.run_cli("cloud", "whoami", env={"PHONE_HARNESS_API_KEY": "pck_ci",
+                                                  "PHONE_HARNESS_CLOUD_PROXY_TOKEN": "gate-1"})
+        self.assertIn("a@b.c", r.stdout)
+        self.assertIn("Bearer gate-1", [h.get("X-Exedev-Authorization") for h in FakeCloud.seen_headers])
+        self.assertNotIn("gate-1", r.stdout)
 
     def test_an_api_key_in_the_environment_is_used_for_ci(self):
         FakeCloud.valid.add("pck_ci")

@@ -53,6 +53,10 @@ DEFAULTS = {
         "api": "",
         "oauth_issuer": "",
         "oauth_client_id": "",
+        # The development cloud sits behind exe.dev's gate, which admits an
+        # X-Exedev-Authorization bearer. A secret: set it in the environment
+        # (PHONE_HARNESS_CLOUD_PROXY_TOKEN), not here.
+        "proxy_token": "",
     },
     "ios": {
         "restore_clipboard": False,   # put the old clipboard back after a paste

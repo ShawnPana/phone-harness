@@ -182,6 +182,9 @@ def _api(method, path, body=None, token=None, headers=None, timeout=40):
 def _request(method, path, body, token, headers, timeout):
     h = {"Authorization": f"Bearer {token}", "Accept": "application/json",
          "User-Agent": USER_AGENT, **(headers or {})}
+    proxy = config.get("cloud.proxy_token")
+    if proxy:
+        h["X-Exedev-Authorization"] = f"Bearer {proxy}"
     data = None
     if body is not None:
         h["Content-Type"] = "application/json"
@@ -807,7 +810,8 @@ CLI_USAGE = """Usage:
   phone-harness cloud history [-n NUM]
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
 PHONE_HARNESS_CLOUD_ENV=dev (or `config set cloud.env dev`) talks to the development
-cloud instead; its sign-in and attached phone are kept apart from prod's.
+cloud instead; its sign-in and attached phone are kept apart from prod's. That cloud
+sits behind exe.dev's gate: set PHONE_HARNESS_CLOUD_PROXY_TOKEN to get through it.
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,

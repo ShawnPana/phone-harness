@@ -198,6 +198,22 @@ class CloudCli(unittest.TestCase):
         self.assertEqual(FakeCloud.revoked, ["rt-1", "at-1"])
         self.assertIn("cloud login", self.run_cli("cloud", "whoami").stderr)
 
+    def test_dev_is_a_separate_cloud_with_its_own_sign_in(self):
+        self.login()                                          # prod, against the fake
+        env = {k: v for k, v in self.env.items() if not k.startswith("PHONE_HARNESS_CLOUD_")}
+        env["PHONE_HARNESS_CLOUD_ENV"] = "dev"
+        r = subprocess.run([sys.executable, "-m", "phone_harness.run", "cloud"],
+                           capture_output=True, text=True, env=env)
+        self.assertIn("Not signed in", r.stdout)               # prod's tokens are not reused
+        self.assertIn("cloud.env is dev", r.stdout)
+        self.assertTrue((Path(self.home.name) / "config" / "auth.json").exists())
+        self.assertFalse((Path(self.home.name) / "config" / "auth-dev.json").exists())
+        env["PHONE_HARNESS_CLOUD_ENV"] = "staging"
+        r = subprocess.run([sys.executable, "-m", "phone_harness.run", "cloud"],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("must be one of prod, dev", r.stderr)
+
     def test_an_api_key_in_the_environment_is_used_for_ci(self):
         FakeCloud.valid.add("pck_ci")
         r = self.run_cli("cloud", "whoami", env={"PHONE_HARNESS_API_KEY": "pck_ci"})

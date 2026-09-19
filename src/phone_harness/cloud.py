@@ -28,7 +28,10 @@ import webbrowser
 
 from . import config
 
-DASHBOARD = "https://phone-harness.com/dashboard"
+
+
+def _dashboard():
+    return ENVS[env_name()]["dashboard"]
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
 READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
 LOW_TIME = 120        # warn the script when the session has less than this left
@@ -44,14 +47,46 @@ class CloudError(RuntimeError):
         super().__init__(self.body.get("error") or f"HTTP {status}")
 
 
+# Each environment is its own API, its own sign-in system and its own users;
+# a token from one is refused by the other. `cloud.env` picks one, and the
+# sign-in and the attached phone are kept per env so switching never sends a
+# token to the wrong place.
+ENVS = {
+    "prod": {"api": "https://api.phone-harness.com",
+             "oauth_issuer": "https://clerk.phone-harness.com",
+             "oauth_client_id": "Fu2QHJcGewhL7uKh",
+             "dashboard": "https://phone-harness.com/dashboard"},
+    "dev": {"api": "https://phone-harness-development.exe.xyz",
+            "oauth_issuer": "https://assured-hagfish-1875.clerk.accounts.dev",
+            "oauth_client_id": "2hdhbfwpBu8cbjvL",
+            "dashboard": "https://phone-harness-development.exe.xyz/dashboard"},
+}
+
+
+def env_name():
+    name = str(config.get("cloud.env") or "prod").lower()
+    if name not in ENVS:
+        sys.exit(f"cloud.env must be one of {', '.join(ENVS)}, not {name!r}")
+    return name
+
+
+def _target(key):
+    """A piece of the chosen env, unless overridden (`cloud.api` etc.)."""
+    return str(config.get(f"cloud.{key}") or ENVS[env_name()][key]).rstrip("/")
+
+
+def _suffix():
+    return "" if env_name() == "prod" else f"-{env_name()}"
+
+
 # --- files -------------------------------------------------------------------
 
 def _auth_path():
-    return config.config_dir() / "auth.json"
+    return config.config_dir() / f"auth{_suffix()}.json"
 
 
 def _state_path():
-    return config.state_dir() / "cloud.json"
+    return config.state_dir() / f"cloud{_suffix()}.json"
 
 
 def _load_state():
@@ -77,7 +112,7 @@ def _save_auth(record):
 
 
 def _oauth():
-    return str(config.get("cloud.oauth_issuer")).rstrip("/"), str(config.get("cloud.oauth_client_id"))
+    return _target("oauth_issuer"), _target("oauth_client_id")
 
 
 def _form_post(url, fields):
@@ -151,7 +186,7 @@ def _request(method, path, body, token, headers, timeout):
     if body is not None:
         h["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
-    req = urllib.request.Request(str(config.get("cloud.api")).rstrip("/") + path,
+    req = urllib.request.Request(_target("api") + path,
                                  data=data, headers=h, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -172,11 +207,11 @@ def _explain(e):
         return "This machine is signed out. Run: phone-harness cloud login"
     if e.status == 403:
         return (f"Your account isn't enabled for phones yet ({e}). "
-                f"Request access at {DASHBOARD}")
+                f"Request access at {_dashboard()}")
     if e.status == 402 or "balance_cents" in e.body:
         cents = e.body.get("balance_cents")
         have = f" (${cents / 100:.2f})" if isinstance(cents, int) else ""
-        return f"Not enough credit{have}. Add credit at {DASHBOARD}"
+        return f"Not enough credit{have}. Add credit at {_dashboard()}"
     if "available_session_slots" in e.body:
         return (f"Session limit reached ({e.body.get('active_session_count')} of "
                 f"{e.body.get('session_limit')}). `phone-harness cloud ls` shows them.")
@@ -595,9 +630,12 @@ def _stop(args):
 
 def _status(args):
     if not _bearer(required=False):
-        print("Not signed in. Run: phone-harness cloud login")
+        print("Not signed in. Run: phone-harness cloud login"
+              + (f"   (cloud.env is {env_name()})" if env_name() != "prod" else ""))
         return 1
     me = _api("GET", "/me")
+    if env_name() != "prod":
+        print(f"env         {env_name()} · {_target('api')}")
     print(f"signed in   {me.get('email') or me.get('uid')} · {_money(me.get('balance_cents'))} credit")
     print(f"phone       {_describe_profile(me.get('profile') or {})}")
     sess = attached()
@@ -768,6 +806,8 @@ CLI_USAGE = """Usage:
   phone-harness cloud keys [create [LABEL] | revoke HASH]   API keys, for CI
   phone-harness cloud history [-n NUM]
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
+PHONE_HARNESS_CLOUD_ENV=dev (or `config set cloud.env dev`) talks to the development
+cloud instead; its sign-in and attached phone are kept apart from prod's.
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,
@@ -787,5 +827,5 @@ def cli(args):
         print(_explain(e), file=sys.stderr)
         return 1
     except OSError as e:
-        print(f"Could not reach {config.get('cloud.api')}: {e}", file=sys.stderr)
+        print(f"Could not reach {_target('api')}: {e}", file=sys.stderr)
         return 1

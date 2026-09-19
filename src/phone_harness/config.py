@@ -44,13 +44,15 @@ DEFAULTS = {
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
     "cloud": {
-        "api": "https://api.phone-harness.com",
+        "env": "prod",         # prod | dev: which Phone Harness Cloud to talk to
         "minutes": 15,         # how long `cloud start` rents a phone for
         "max_minutes": 30,     # the most one `cloud start` may ask for
-        # `cloud login` is an OAuth device flow against the account system.
-        # The client id names a public client: it is not a secret.
-        "oauth_issuer": "https://clerk.phone-harness.com",
-        "oauth_client_id": "Fu2QHJcGewhL7uKh",
+        # Overrides for one piece of the chosen env (tests, a local API);
+        # empty means the env's own value from cloud.ENVS. A client id names
+        # a public OAuth client: it is not a secret.
+        "api": "",
+        "oauth_issuer": "",
+        "oauth_client_id": "",
     },
     "ios": {
         "restore_clipboard": False,   # put the old clipboard back after a paste

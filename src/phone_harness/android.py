@@ -55,6 +55,29 @@ _KEYS = {
 }
 
 
+# Names people say -> package ids that do not contain them. Only apps whose
+# id would not be found by matching the name against installed ids; first
+# installed one wins.
+_APP_IDS = {
+    "tiktok": ("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"),
+    "x": ("com.twitter.android",), "twitter": ("com.twitter.android",),
+    "threads": ("com.instagram.barcelona",),
+    "facebook": ("com.facebook.katana", "com.facebook.lite"),
+    "messenger": ("com.facebook.orca",),
+    "signal": ("org.thoughtcrime.securesms",),
+    "gmail": ("com.google.android.gm",),
+    "playstore": ("com.android.vending",), "googleplay": ("com.android.vending",),
+    "uber": ("com.ubercab",), "ubereats": ("com.ubercab.eats",),
+    "cashapp": ("com.squareup.cash",),
+    "amazon": ("com.amazon.mShop.android.shopping",),
+    "googlemaps": ("com.google.android.apps.maps",),
+    "messages": ("com.google.android.apps.messaging",),
+    "phone": ("com.google.android.dialer", "com.android.dialer"),
+    "clock": ("com.google.android.deskclock", "com.android.deskclock"),
+    "files": ("com.google.android.documentsui", "com.android.documentsui"),
+}
+
+
 # --- adb, without a device yet -----------------------------------------------
 
 def _run(*args, binary=False, timeout=60, check=True):
@@ -139,6 +162,7 @@ class Android(Backend):
         if serial:
             os.environ["ANDROID_SERIAL"] = serial
         self._bounds = None
+        self._motionevents = None       # does this phone's `input` know motionevent?
         self._resolved = False
         self._gate_at = 0.0
 
@@ -325,13 +349,41 @@ class Android(Backend):
         self._sh(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} "
                  f"{int(duration * 1000)}")
 
-    def _input_scroll(self, x, y, dy, steps=6):
-        """A finger drag standing in for a wheel: +dy moves content up the
-        way wheel-up does (revealing what is above), so the finger travels
-        +dy pixels downward. Slow enough not to fling."""
+    def _input_scroll(self, x, y, dy, dx=0, steps=6):
+        """A finger drag standing in for a wheel, in content space: +dy reveals
+        what is above, so the finger travels +dy pixels down (and +dx right).
+
+        It must not fling. `input swipe` lifts the finger while it is still
+        moving, so the list coasts on by a quarter of the distance and a walk
+        skips rows without any error. So: touch down, move in steps, hold
+        still, then lift. The gesture is centred on (x, y) and kept on the
+        glass, since a drag that starts at the centre and runs off the edge
+        is cut short."""
         self._gate()
-        self._sh(f"input swipe {int(x)} {int(y)} {int(x)} {int(y + dy)} "
-                 f"{max(150, int(steps) * 50)}")
+        b = self._screen_bounds() or {}
+        w, h = b.get("w", 0), b.get("h", 0)
+        x1, y1, x2, y2 = x - dx / 2, y - dy / 2, x + dx / 2, y + dy / 2
+        if w and h:
+            keep = lambda v, size: min(max(v, size * 0.06), size * 0.94)
+            x1, x2, y1, y2 = keep(x1, w), keep(x2, w), keep(y1, h), keep(y2, h)
+        n = max(2, int(steps))
+        if self._motionevents is not False:
+            moves = " && ".join(
+                f"input motionevent MOVE {int(x1 + (x2 - x1) * i / n)} {int(y1 + (y2 - y1) * i / n)}"
+                for i in range(1, n + 1))
+            try:
+                self._sh(f"input motionevent DOWN {int(x1)} {int(y1)} && {moves} && "
+                         f"sleep 0.2 && input motionevent UP {int(x2)} {int(y2)}")
+                self._motionevents = True
+                return
+            except RuntimeError:
+                if self._motionevents:            # it has worked before: a real failure
+                    raise
+                self._motionevents = False        # an older Android without `motionevent`
+        # The fallback still lifts a moving finger; slow enough that it coasts little.
+        travel = max(abs(x2 - x1), abs(y2 - y1))
+        self._sh(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} "
+                 f"{max(600, int(travel * 4))}")
 
     def _input_keys(self, combo):
         self._gate()
@@ -346,7 +398,7 @@ class Android(Backend):
             raise Unsupported(f"android has no key named {combo!r}")
         self._sh(f"input keyevent KEYCODE_{code}")
 
-    def _input_text(self, s, delay=0.03):
+    def _input_text(self, s, delay=0.03, keystrokes=False):
         self._gate()
         """`input text` takes one ASCII token; newlines and backspaces become
         keyevents, spaces become %s, and the rest is shell-quoted."""
@@ -376,18 +428,30 @@ class Android(Backend):
     # --- apps ---------------------------------------------------------------
 
     def _apps_launch(self, name):
-        """A package id, or a name matched against installed package ids
-        ('chrome' -> com.android.chrome). Returns the package launched."""
+        """A package id, or the name a person would say. Android only knows
+        apps by package id, and plenty of ids do not contain the brand
+        ("TikTok" is com.zhiliaoapp.musically), so a name is tried as: an
+        installed id; a well-known app (_APP_IDS); a fragment of an id
+        ('chrome' -> com.android.chrome); and last the label on the launcher,
+        tapped like a person would. Returns the package launched."""
         self._gate()
-        pkg = name if "." in name else None
+        pkgs = self._apps_list(include_system=True)
+        want = re.sub(r"[^a-z0-9]+", "", name.lower())
+        pkg = name if name in pkgs else next(
+            (p for p in _APP_IDS.get(want, ()) if p in pkgs), None)
         if pkg is None:
-            pkgs = self._apps_list(include_system=True)
-            hits = [p for p in pkgs if name.lower() in p.lower()]
-            if not hits:
-                raise RuntimeError(f"no installed app matches {name!r}")
+            hits = [p for p in pkgs if want and want in p.lower().replace(".", "")]
             # shortest match is the least-qualified, e.g. com.android.chrome
             # over com.android.chrome.helper
-            pkg = sorted(hits, key=len)[0]
+            pkg = sorted(hits, key=len)[0] if hits else None
+        if pkg is None:
+            launched = self._launch_by_label(name)
+            if launched:
+                return launched
+            raise RuntimeError(
+                f"no installed app matches {name!r}. Installed: "
+                f"{', '.join(self._apps_list()) or 'no third-party apps'}. "
+                "Pass one of these package ids.")
         out = self._sh("cmd package resolve-activity --brief "
                        f"-c android.intent.category.LAUNCHER {shlex.quote(pkg)}")
         comp = next((l.strip() for l in reversed(out.splitlines())
@@ -396,6 +460,33 @@ class Android(Backend):
             raise RuntimeError(f"{pkg} has no launchable activity")
         self._sh(f"am start -W -n {shlex.quote(comp)}")
         return pkg
+
+    def _launch_by_label(self, name):
+        """Tap the icon labelled `name` on the home screen, else in the app
+        drawer. -> the package that came to the front, or None."""
+        want = name.strip().lower()
+        self._nav_home()
+        launcher = self._apps_current()
+        for opened_drawer in (False, True):
+            if opened_drawer:
+                b = self._screen_bounds() or {"w": 720, "h": 1280}
+                self._sh(f"input swipe {b['w'] // 2} {int(b['h'] * 0.8)} "
+                         f"{b['w'] // 2} {int(b['h'] * 0.25)} 250")
+                time.sleep(1.0)
+            try:
+                nodes = self._tree()
+            except RuntimeError:
+                continue
+            for n in nodes:
+                if (n["text"] or n["desc"]).strip().lower() == want:
+                    self._sh(f"input tap {n['x']} {n['y']}")
+                    for _ in range(20):
+                        time.sleep(0.25)
+                        now = self._apps_current()
+                        if now and now != launcher:
+                            return now
+        self._nav_home()
+        return None
 
     def _apps_current(self):
         out = self._sh("dumpsys activity activities")

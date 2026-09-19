@@ -159,10 +159,31 @@ PY
   Prefer `ui()` / `find_nodes()` / `tap_ui()`: they also see elements with no
   visible text (icons with a content-description, fields by resource-id like
   `tap_ui("url_bar")`). `ocr_pixels()` is Unsupported here.
-- `back()`, `current_app()`, `list_apps()` exist. `open_app("chrome")`
-  matches installed package ids and returns the one launched.
+- **adb is the native language here, and it is first-class.** `shell(cmd)`
+  runs `adb shell cmd` on whichever phone the harness chose, so anything you
+  know how to do with adb, do: `shell("input tap 360 640")`,
+  `shell("input keyevent KEYCODE_BACK")`, `shell("am start -n pkg/.Activity")`,
+  `shell("dumpsys notification --noredact")`, `shell("pm list packages -3")`.
+  The input helpers (`tap`, `swipe`, `press`, `home`) are one-line wrappers
+  over the same commands — use whichever you think in. What the harness adds
+  that raw adb does not: finding and reconnecting the phone, and reading the
+  screen as a short list instead of a page of XML.
+- **On Android, `scroll` and `swipe` are different gestures.** `scroll` moves
+  the content and stops: no momentum, the same distance every time, so use it
+  (and `scroll_until` / `scroll_collect`) to walk a list without skipping
+  rows. `swipe` is a flick and coasts past whatever was next — right for "next
+  video" or changing pages, wrong for reading a list. (The note above about
+  vertical swipes doing nothing is about iPhone Mirroring; here both work.)
+- `open_app("TikTok")` takes the name a person would say, a package id, or a
+  fragment of one, and returns the package it launched. When nothing matches,
+  the error lists what is installed. `back()`, `current_app()`, `list_apps()`
+  exist.
 - `press()` takes single keys only (`"enter"`, `"back"`, `"tab"`); chords
-  raise Unsupported. `type_text` needs a focused field, same as iOS.
+  raise Unsupported. `type_text` needs a focused field, same as iOS, and types
+  ASCII: adb cannot type emoji or accented letters.
+- **Some screens never give up their tree** — a playing video, a screen that
+  animates. `ocr()` / `ui()` then raise saying so; take a `screenshot()` and
+  look at it instead of retrying.
 - No focus to keep: nothing on the Mac has to be frontmost, and
   `interruption(before, after)` always reports nothing disturbed.
 - **Verify cheaply, then read.** adb reports nothing about outcomes — a tap on

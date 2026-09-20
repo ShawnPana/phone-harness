@@ -39,6 +39,8 @@ Set up phone-harness for me. Clone https://github.com/ShawnPana/phone-harness in
 The agent asks which phone is your default and walks you through the parts
 that need your hands: pairing iPhone Mirroring and granting Accessibility and
 Screen Recording, or turning on Android developer options and approving adb.
+It also offers a cloud Android — the same helpers with nothing to pair, and
+the first 100 minutes free — so an iPhone user can test on Android too.
 `phone-harness --doctor` checks the chain. Details in [install.md](install.md).
 
 ## Usage

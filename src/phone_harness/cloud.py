@@ -424,8 +424,9 @@ def _login(args):
             sys.exit("Sign-in was denied." if err == "access_denied"
                      else f"Sign-in failed: {err}")
     if not tok:
-        sys.exit("Sign-in timed out. Run `phone-harness cloud login` again — or, without an "
-                 f"account to sign in with, get one at {SIGNUP}")
+        sys.exit("Sign-in timed out. If you joined the waitlist just now, run "
+                 "`phone-harness cloud login` again once your invite email arrives. "
+                 f"No account and no waitlist yet? {SIGNUP}")
     try:
         me = _api("GET", "/me", token=tok["access_token"])
     except CloudError as e:

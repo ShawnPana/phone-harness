@@ -31,6 +31,9 @@ phone-harness skill > "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness/SKILL.md
 
 Re-run the `phone-harness skill > …/SKILL.md` lines after pulling updates so
 the agent's copy matches the code.
+- **No phone on your desk?** `phone-harness cloud login` then
+  `phone-harness cloud start` rents your own Android in the cloud; new accounts
+  get $5 of credit (100 minutes). It needs only adb (below) — nothing to pair.
 
 ## iPhone
 

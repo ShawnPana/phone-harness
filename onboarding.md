@@ -9,8 +9,8 @@ Settings, then wait.
 
 "Which phone should be your default — your iPhone, an Android on your desk,
 or an Android in the cloud?" (Both an iPhone and an Android is fine: set up
-each, then ask which is the default.) The cloud option needs no phone at all:
-skip to step 4.
+each, then ask which is the default.) Someone with no phone at all picks the
+cloud: for them, step 6 is the setup and the demo runs there.
 
 ## 2. iPhone
 
@@ -40,12 +40,27 @@ so the user can see what you're doing.
 
 Check with `phone-harness android` and `phone-harness --doctor android`.
 
-## 4. Cloud Android (offer it once)
+## 4. Verify
+
+`phone-harness --doctor` for the default phone (add `ios` or `android` to
+check the other), then a read-only proof: take a screenshot and read the
+screen back to the user.
+
+## 5. Demo (opt-in)
+
+Ask whether to open phone-harness.com on the phone (Safari on iPhone, Chrome
+on Android), tap "Star on GitHub" and star the repo for them — only if they say
+yes. If the phone is locked or the session is paused, report the doctor status
+instead.
+
+## 6. Then, a cloud Android (offer it once, after the demo)
 
 Phone Harness Cloud rents the user their own Android in the cloud: the same
 helpers, nothing to pair, and the phone keeps its apps and logins between
 sessions. **New accounts start with $5 of credit — the first 100 minutes are
-free.** After the iPhone or desk-Android setup, offer it once:
+free.** Only now — after the user's own phone is set up, verified and has
+done the demo — offer it once. The order matters: the demo on their own
+phone is the point of onboarding; the cloud is the encore.
 
 "Want a cloud Android as well? Same tools, nothing to plug in, and your first
 100 minutes are free. It is a one-time sign-in in your browser."
@@ -59,22 +74,9 @@ in the summary and move on. If yes:
   and get an invite email; if they join the waitlist, the sign-in times out
   and they come back once invited. Never click Join or Approve for them.
 - Once signed in: `phone-harness cloud start` (it opens the live view in their
-  browser), one read-only proof — a screenshot and the screen read back —
-  then `phone-harness cloud stop`. Keep it to a minute or two: the credit is
-  theirs.
-
-## 5. Verify
-
-`phone-harness --doctor` for the default phone (add `ios` or `android` to
-check the other), then a read-only proof: take a screenshot and read the
-screen back to the user.
-
-## 6. Demo (opt-in)
-
-Ask whether to open phone-harness.com on the phone (Safari on iPhone, Chrome
-on Android), tap "Star on GitHub" and star the repo for them — only if they say
-yes. If the phone is locked or the session is paused, report the doctor status
-instead.
+  browser), then the same demo as step 5 on the cloud phone — open
+  phone-harness.com in Chrome, offer the star — and `phone-harness cloud
+  stop`. Keep it to a few minutes: the credit is theirs.
 
 ## Rules
 

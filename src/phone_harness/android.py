@@ -24,6 +24,7 @@ still "pixel-8". The first phone paired over Wi-Fi becomes the primary;
 `phone-harness android use NAME` changes that; ANDROID_SERIAL overrides
 everything.
 """
+import importlib.util
 import os
 import re
 import shlex
@@ -38,6 +39,16 @@ from datetime import datetime, timezone
 
 from . import config
 from .transport import Backend, Unsupported
+
+# Apple's Vision OCR ships with the iPhone backend; on a Mac it can read an
+# Android screenshot too, so a screen the accessibility tree cannot describe
+# still yields text. Checked cheaply here, imported only when needed.
+_VISION = importlib.util.find_spec("Vision") is not None
+
+# How long a never-idle screen keeps the tree off. uiautomator itself waits
+# ~10s for idle before refusing, so one refusal is expensive; asking again a
+# second later gets the same answer.
+_TREE_BUSY_FOR = 20
 
 
 def _adb_bin():
@@ -155,6 +166,10 @@ def _remember(cfg, serial, model, host=None, name=None, primary=False):
     return key
 
 
+class TreeUnavailable(RuntimeError):
+    """uiautomator would not dump this screen; retrying will not change that."""
+
+
 class Android(Backend):
     name = "android"
 
@@ -163,6 +178,7 @@ class Android(Backend):
             os.environ["ANDROID_SERIAL"] = serial
         self._bounds = None
         self._motionevents = None       # does this phone's `input` know motionevent?
+        self._tree_busy_until = 0.0     # after "could not get idle state": read pixels
         self._resolved = False
         self._gate_at = 0.0
 
@@ -320,18 +336,44 @@ class Android(Backend):
         return path, bounds
 
     def _screen_text(self, min_confidence=0.3):
-        """From the accessibility tree: exact strings, exact boxes."""
+        """From the accessibility tree: exact strings, exact boxes. When the
+        tree is unavailable (uiautomator refuses a screen that never goes
+        idle) and Vision is here, read the pixels instead — slower and fuzzy,
+        but an answer. `source` says which."""
+        if time.time() < self._tree_busy_until and _VISION:
+            return self._pixel_text(min_confidence)
+        try:
+            nodes = self._tree()
+        except TreeUnavailable:
+            if not _VISION:
+                raise
+            return self._pixel_text(min_confidence)
         out = []
-        for n in self._tree():
+        for n in nodes:
             s = n["text"] or n["desc"]
             if s:
                 out.append({"text": s, "confidence": 1.0, "source": "tree",
                             "x": n["x"], "y": n["y"], "w": n["w"], "h": n["h"]})
         return out
 
-    # No _screen_text_pixels: the tree is the text source here, and a caller
-    # that needs pixels can look at screen.capture. Keeps this backend free of
-    # anything but adb.
+    def _pixel_text(self, min_confidence=0.3):
+        """Vision OCR over a screenshot. Android screenshots are 1:1 with
+        device pixels, so the boxes are tap-ready as they come."""
+        from . import ocr as _vision
+        path, bounds = self._screen_capture()
+        try:
+            rows = _vision.recognize(path, {"x": 0, "y": 0, "w": bounds["w"], "h": bounds["h"]})
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return [{**r, "source": "pixels"} for r in rows if r["confidence"] >= min_confidence]
+
+    if _VISION:
+        def _screen_text_pixels(self, min_confidence=0.3):
+            """Force pixel OCR: canvases, games, WebViews the tree cannot see."""
+            return self._pixel_text(min_confidence)
 
     # --- input --------------------------------------------------------------
 
@@ -581,32 +623,38 @@ class Android(Backend):
 
     def _tree(self):
         """[{text, desc, id, class, clickable, x, y, w, h}] from
-        `uiautomator dump`, retried briefly: it refuses while the UI is
-        settling ("could not get idle state")."""
+        `uiautomator dump`. uiautomator waits about ten seconds for the UI to
+        go idle and then refuses ("could not get idle state"); a screen that
+        never idles — a playing video, some Settings pages — answers that
+        every time, so it is asked once and remembered. Other failures (a
+        transition mid-dump, a truncated tree) are retried briefly."""
         self._screen_require()
         self._gate()
         last = None
-        for i in range(5):
+        for i in range(3):
             try:
                 raw = self._adb("exec-out", "uiautomator", "dump", "/dev/tty",
                                 binary=True, timeout=30)
                 start = raw.find(b"<?xml")
                 if start < 0:                        # uiautomator printed an error, not a tree
                     last = raw.decode(errors="replace").strip() or "empty dump"
+                    if "idle" in last:
+                        self._tree_busy_until = time.time() + _TREE_BUSY_FOR
+                        raise TreeUnavailable(
+                            "the accessibility tree is not available on this screen "
+                            "(uiautomator: could not get idle state). Read it from "
+                            "screenshot() instead.")
                     raise ValueError(last)
                 xml = raw[start:raw.rfind(b">") + 1]
                 root = ET.fromstring(xml)
+                self._tree_busy_until = 0.0
                 break
             except (RuntimeError, ValueError, ET.ParseError) as e:
+                if isinstance(e, TreeUnavailable):
+                    raise
                 last = str(e)
-                time.sleep(0.5 * (i + 1))          # 0.5, 1, 1.5, 2s: transitions settle
+                time.sleep(0.5 * (i + 1))          # 0.5, 1s: a transition settles
         else:
-            if "idle" in (last or ""):
-                raise RuntimeError(
-                    "the accessibility tree is unavailable on this screen: it "
-                    "never goes idle (something animates or auto-refreshes), so "
-                    "uiautomator will not dump it. Read it from screenshot() "
-                    "instead, or navigate to a screen that settles.")
             raise RuntimeError(f"uiautomator dump failed: {last}")
         nodes = []
         for el in root.iter("node"):

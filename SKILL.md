@@ -186,9 +186,12 @@ PY
 - `press()` takes single keys only (`"enter"`, `"back"`, `"tab"`); chords
   raise Unsupported. `type_text` needs a focused field, same as iOS, and types
   ASCII: adb cannot type emoji or accented letters.
-- **Some screens never give up their tree** — a playing video, a screen that
-  animates. `ocr()` / `ui()` then raise saying so; take a `screenshot()` and
-  look at it instead of retrying.
+- **Some screens never give up their tree** — a playing video, some Settings
+  pages. On a Mac, `ocr()` then reads the screenshot with Vision instead
+  (`source: "pixels"`, fuzzier, still tap-ready; the first read costs ~12s
+  while uiautomator gives up, later reads are fast). Elsewhere it raises
+  saying so; take a `screenshot()` and look at it instead of retrying.
+  `ui()` / `tap_ui()` need the real tree and keep raising on such screens.
 - No focus to keep: nothing on the Mac has to be frontmost, and
   `interruption(before, after)` always reports nothing disturbed.
 - **Verify cheaply, then read.** adb reports nothing about outcomes — a tap on

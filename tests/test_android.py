@@ -1,19 +1,40 @@
 """Android backend behaviour that needs no phone: the commands it would send."""
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from phone_harness.android import Android  # noqa: E402
+from phone_harness import android as android_mod  # noqa: E402
+from phone_harness.android import Android, TreeUnavailable  # noqa: E402
 
 
 class Recorded(Android):
     """An Android whose adb shell is a list."""
 
-    def __init__(self, installed=(), fail_motionevent=False):
+    def __init__(self, installed=(), fail_motionevent=False, dumps=()):
         super().__init__()
         self.sent, self.installed, self.fail_motionevent = [], list(installed), fail_motionevent
+        self.dumps, self.dump_calls, self.shots = list(dumps), 0, 0
         self._bounds = {"x": 0, "y": 0, "w": 720, "h": 1280, "id": "fake"}
+        self._resolved = True
+
+    def _screen_require(self):
+        return self._bounds
+
+    def _adb(self, *args, binary=False, timeout=60):
+        if "uiautomator" in args:
+            self.dump_calls += 1
+            return self.dumps.pop(0) if self.dumps else b"ERROR: could not get idle state."
+        if "screencap" in args:
+            self.shots += 1
+            return b"\x89PNG-fake"
+        raise AssertionError(args)
+
+    def _pixel_text(self, min_confidence=0.3):
+        self.shots += 1
+        return [{"text": "Device name", "confidence": 0.9, "source": "pixels",
+                 "x": 160, "y": 570, "w": 220, "h": 40}]
 
     def _gate(self):
         pass
@@ -53,6 +74,47 @@ class Scroll(unittest.TestCase):
         self.assertEqual(len(swipes), 2)
         self.assertGreaterEqual(int(swipes[0].split()[-1]), 600)
         self.assertEqual(sum("motionevent" in c for c in phone.sent), 1)         # asked once
+
+
+TREE = (b'<?xml version="1.0"?><hierarchy><node text="Apps" content-desc="" resource-id="" '
+        b'class="android.widget.TextView" clickable="true" bounds="[100,900][300,960]"/></hierarchy>')
+
+
+class Tree(unittest.TestCase):
+    def test_a_never_idle_screen_is_asked_once_then_read_from_pixels(self):
+        phone = Recorded()
+        with unittest.mock.patch.object(android_mod, "_VISION", True):
+            rows = phone._screen_text()
+        self.assertEqual(phone.dump_calls, 1)                     # not five
+        self.assertEqual([r["source"] for r in rows], ["pixels"])
+        self.assertEqual(rows[0]["text"], "Device name")
+        with unittest.mock.patch.object(android_mod, "_VISION", True):
+            phone._screen_text()                                  # within the busy window:
+        self.assertEqual(phone.dump_calls, 1)                     # ...no second dump at all
+
+    def test_without_vision_it_fails_at_once_with_a_plain_message(self):
+        phone = Recorded()
+        with unittest.mock.patch.object(android_mod, "_VISION", False):
+            with self.assertRaises(TreeUnavailable) as cm:
+                phone._screen_text()
+        self.assertEqual(phone.dump_calls, 1)
+        self.assertIn("screenshot()", str(cm.exception))
+        self.assertNotIn("animates", str(cm.exception))
+
+    def test_a_good_tree_is_preferred_and_clears_the_busy_window(self):
+        phone = Recorded(dumps=[TREE])
+        phone._tree_busy_until = 0.0
+        rows = phone._screen_text()
+        self.assertEqual([(r["text"], r["source"], r["x"], r["y"]) for r in rows],
+                         [("Apps", "tree", 200, 930)])
+        self.assertEqual(phone.shots, 0)
+
+    def test_a_transient_failure_is_retried_briefly(self):
+        phone = Recorded(dumps=[b"garbage", TREE])
+        with unittest.mock.patch.object(android_mod.time, "sleep"):
+            rows = phone._screen_text()
+        self.assertEqual(phone.dump_calls, 2)
+        self.assertEqual(rows[0]["text"], "Apps")
 
 
 class Launch(unittest.TestCase):

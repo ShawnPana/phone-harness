@@ -500,6 +500,7 @@ def _wait_for_profile():
 
 def _start(args):
     temp = _flag(args, "--temp")
+    watch = not _flag(args, "--no-watch")
     minutes = _option(args, "--minutes", "-m")
     if args:
         sys.exit(CLI_USAGE)
@@ -522,7 +523,7 @@ def _start(args):
             live = None
         if live and live["state"] in ("provisioning", "ready"):
             print(f"Already attached to session {live['id']}; reusing it.")
-            return _report(_wait_ready(live["id"]))
+            return _report(_wait_ready(live["id"]), watch=False)   # its view is already open
         _detach()
 
     body = {"timeout_seconds": minutes * 60}
@@ -530,7 +531,7 @@ def _start(args):
     if not temp:
         profile_id = _wait_for_profile()
         if isinstance(profile_id, dict):                  # it is already up: use it
-            return _report(profile_id["session"], profile_id["id"])
+            return _report(profile_id["session"], profile_id["id"], watch)
         if profile_id:
             body["profile_id"] = profile_id
 
@@ -549,10 +550,10 @@ def _start(args):
         created = _api("GET", f"/sessions/requests/{request_key}")
         if created.get("cleanup_complete") or not created.get("id"):
             raise
-    return _report(_wait_ready(created["id"]), profile_id)
+    return _report(_wait_ready(created["id"]), profile_id, watch)
 
 
-def _report(session, profile_id=None):
+def _report(session, profile_id=None, watch=True):
     serial = _attach(session, profile_id)
     how = (session.get("startup") or {}).get("startup")
     note = {"exact": " Resumed exactly where you left it.",
@@ -562,8 +563,22 @@ def _report(session, profile_id=None):
     print(f"  adb      {serial} (connected, unlocked)")
     print(f"  expires  in {_left(session.get('expires_at'))} — `phone-harness cloud stop` "
           "before then" + (" to keep the running state" if session.get("profile") else ""))
-    print("  watch    phone-harness cloud watch")
+    # The user asked for a phone; show it to them. Fails quietly where there
+    # is no browser (an SSH box, CI), and the command is one line away.
+    if watch and session.get("watch_url") and _open_browser(session["watch_url"]):
+        print("  watch    opened in your browser")
+    else:
+        print("  watch    phone-harness cloud watch")
     return 0
+
+
+def _open_browser(url):
+    if not config.get("cloud.watch"):
+        return False
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
 
 
 def _stop(args):
@@ -775,8 +790,9 @@ CLI_USAGE = """Usage:
   phone-harness cloud                          who is signed in, what is attached
   phone-harness cloud login [--no-browser]     sign in through the browser
   phone-harness cloud logout | whoami
-  phone-harness cloud start [--temp] [--minutes N]
-                                               start your saved phone (or a throwaway one) and connect
+  phone-harness cloud start [--temp] [--minutes N] [--no-watch]
+                                               start your saved phone (or a throwaway one), connect,
+                                               and open its live view (config: cloud.watch)
   phone-harness cloud stop [SID|--all] [--wait]
                                                end it; your phone is saved for next time
                                                (--wait watches the save finish)

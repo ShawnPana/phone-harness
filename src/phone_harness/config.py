@@ -72,6 +72,7 @@ DEFAULTS = {
     "cloud": {
         "minutes": 15,         # how long `cloud start` rents a phone for
         "max_minutes": 30,     # the most one `cloud start` may ask for
+        "watch": True,         # `cloud start` opens the phone's live view in the browser
     },
     "ios": {
         "restore_clipboard": False,   # put the old clipboard back after a paste

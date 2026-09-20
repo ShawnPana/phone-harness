@@ -243,6 +243,29 @@ class CloudCli(unittest.TestCase):
         ls = self.run_cli("cloud", "ls")
         self.assertIn("* sid001", ls.stdout)
 
+    def test_start_opens_the_live_view_unless_told_not_to(self):
+        self.login()
+        opened = Path(self.home.name) / "opened-urls"
+        # a fake browser: `webbrowser` honours $BROWSER, so point it at a script that records the url
+        fake = Path(self.home.name) / "browser"
+        fake.write_text(f'#!/bin/sh\necho "$1" >> "{opened}"\n')
+        fake.chmod(0o755)
+        r = self.run_cli("cloud", "start", env={"BROWSER": str(fake)})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("opened in your browser", r.stdout)
+        self.assertEqual(opened.read_text().strip(), "https://watch.example/secret")
+        self.assertNotIn("watch.example", r.stdout)            # the url itself is never printed
+        again = self.run_cli("cloud", "start", env={"BROWSER": str(fake)})   # reattach: no second tab
+        self.assertEqual(len(opened.read_text().split()), 1, again.stdout)
+        self.run_cli("cloud", "stop")
+        r = self.run_cli("cloud", "start", "--no-watch", env={"BROWSER": str(fake)})
+        self.assertIn("phone-harness cloud watch", r.stdout)
+        self.assertEqual(len(opened.read_text().split()), 1)
+        self.run_cli("cloud", "stop")
+        r = self.run_cli("cloud", "start", env={"BROWSER": str(fake), "PHONE_HARNESS_CLOUD_WATCH": "0"})
+        self.assertIn("phone-harness cloud watch", r.stdout)
+        self.assertEqual(len(opened.read_text().split()), 1)
+
     def test_temp_phone_and_minutes_cap(self):
         self.login()
         self.assertEqual(self.run_cli("cloud", "start", "--temp").returncode, 0)

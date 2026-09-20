@@ -70,9 +70,10 @@ Android user it is a second, always-available phone. If they say no, note it
 in the summary and move on. If yes:
 
 - `phone-harness cloud login` — a URL and a code print, and their browser
-  opens. They sign in or, without an account, join the waitlist right there
-  and get an invite email; if they join the waitlist, the sign-in times out
-  and they come back once invited. Never click Join or Approve for them.
+  opens. They sign in, or create an account right there if they have none.
+  (If sign-ups happen to be on a waitlist at the time, they join it there;
+  the sign-in then times out and they come back once invited.) Never click
+  Sign up, Join or Approve for them.
 - Once signed in: `phone-harness cloud start` (it opens the live view in their
   browser), then the same demo as step 5 on the cloud phone — open
   phone-harness.com in Chrome, offer the star — and `phone-harness cloud

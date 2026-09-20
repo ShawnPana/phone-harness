@@ -52,8 +52,8 @@ DASHBOARD = "https://phone-harness.com/dashboard"
 OAUTH_ISSUER = "https://clerk.phone-harness.com"
 OAUTH_CLIENT_ID = "Fu2QHJcGewhL7uKh"           # the "phone-harness CLI" OAuth app
 # Someone who finds the cloud here and has no account is the strongest signal
-# there is. Send them to the site — which decides whether that is a waitlist
-# or a signup form, so this text never goes stale — and say where they came
+# there is. Send them to the site — which decides whether that means a signup
+# form or a waitlist, so this text never goes stale — and say where they came
 # from so the signal is not lost.
 SIGNUP = "https://phone-harness.com/cloud?source=cli"
 waitlist_shown = False                          # read by run.py for telemetry (a flag, no PII)
@@ -424,9 +424,8 @@ def _login(args):
             sys.exit("Sign-in was denied." if err == "access_denied"
                      else f"Sign-in failed: {err}")
     if not tok:
-        sys.exit("Sign-in timed out. If you joined the waitlist just now, run "
-                 "`phone-harness cloud login` again once your invite email arrives. "
-                 f"No account and no waitlist yet? {SIGNUP}")
+        sys.exit("Sign-in timed out. Run `phone-harness cloud login` again when you can "
+                 f"sign in. No account yet? {SIGNUP}")
     try:
         me = _api("GET", "/me", token=tok["access_token"])
     except CloudError as e:
@@ -471,7 +470,7 @@ def _print_account(me):
     print(f"  credit   {_credit(me)}")
     print(f"  phone    {_describe_profile(me.get('profile') or {})}")
     if not me.get("can_rent", True):
-        print(f"  access   not enabled yet: {me.get('rent_blocked_reason') or 'invite-only'}")
+        print(f"  access   not enabled yet: {me.get('rent_blocked_reason') or 'rentals are closed'}")
 
 
 def _describe_profile(profile):

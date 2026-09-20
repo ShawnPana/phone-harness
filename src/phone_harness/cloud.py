@@ -17,7 +17,6 @@ Stdlib only. API reference: https://phone-harness.com/docs
 """
 import json
 import os
-import re
 import shutil
 import sys
 import time
@@ -29,10 +28,6 @@ import webbrowser
 
 from . import config
 
-
-
-def _dashboard():
-    return _target("dashboard")
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
 READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
 LOW_TIME = 120        # warn the script when the session has less than this left
@@ -48,46 +43,32 @@ class CloudError(RuntimeError):
         super().__init__(self.body.get("error") or f"HTTP {status}")
 
 
-# Where the cloud is comes from config (`phone-harness config`): the defaults
-# are the public Phone Harness Cloud, and every piece can be overridden.
-# `cloud.env` names which cloud this machine talks to. It is `prod` unless
-# you run a cloud of your own, in which case you set cloud.api,
-# cloud.oauth_issuer and cloud.oauth_client_id for it; the sign-in and the
-# attached phone are kept under that name, so switching never sends a token
-# to the wrong place.
-_CLOUD_KEYS = ("api", "oauth_issuer", "oauth_client_id")
-
-
-def env_name():
-    name = str(config.get("cloud.env") or "prod").lower()
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", name):
-        sys.exit(f"cloud.env must be a short lowercase name, not {name!r}")
-    return name
+# Where the cloud is. Like gh, vercel and gcloud, the CLI names itself to the
+# sign-in system with a public OAuth client id: it identifies the app and
+# proves nothing, so it is safe here. PHONE_HARNESS_CLOUD_API and friends
+# override these for tests and for a Phone Harness instance of your own.
+API = "https://api.phone-harness.com"
+DASHBOARD = "https://phone-harness.com/dashboard"
+OAUTH_ISSUER = "https://clerk.phone-harness.com"
+OAUTH_CLIENT_ID = "Fu2QHJcGewhL7uKh"           # the "phone-harness CLI" OAuth app
 
 
 def _target(key):
-    """A piece of the chosen cloud. The built-in defaults describe the public
-    cloud only, so another cloud.env must set its own."""
-    value, source = config.lookup(f"cloud.{key}")
-    if env_name() != "prod" and source == "default" and key in _CLOUD_KEYS:
-        sys.exit(f"cloud.env is {env_name()!r}: set cloud.api, cloud.oauth_issuer and "
-                 "cloud.oauth_client_id for that cloud (`phone-harness config set cloud.api https://…`), "
-                 "or `phone-harness config unset cloud.env` for the public one.")
-    return str(value or "").rstrip("/")
+    return os.environ.get(f"PHONE_HARNESS_CLOUD_{key}") or globals()[key]
 
 
-def _suffix():
-    return "" if env_name() == "prod" else f"-{env_name()}"
+def _dashboard():
+    return _target("DASHBOARD").rstrip("/")
 
 
 # --- files -------------------------------------------------------------------
 
 def _auth_path():
-    return config.config_dir() / f"auth{_suffix()}.json"
+    return config.config_dir() / "auth.json"
 
 
 def _state_path():
-    return config.state_dir() / f"cloud{_suffix()}.json"
+    return config.state_dir() / "cloud.json"
 
 
 def _load_state():
@@ -113,7 +94,7 @@ def _save_auth(record):
 
 
 def _oauth():
-    return _target("oauth_issuer"), _target("oauth_client_id")
+    return _target("OAUTH_ISSUER").rstrip("/"), _target("OAUTH_CLIENT_ID")
 
 
 def _form_post(url, fields):
@@ -183,14 +164,15 @@ def _api(method, path, body=None, token=None, headers=None, timeout=40):
 def _request(method, path, body, token, headers, timeout):
     h = {"Authorization": f"Bearer {token}", "Accept": "application/json",
          "User-Agent": USER_AGENT, **(headers or {})}
-    proxy = config.get("cloud.proxy_token")
+    # A gate in front of a private instance (exe.dev's, for the dev VM) admits this bearer.
+    proxy = os.environ.get("PHONE_HARNESS_CLOUD_PROXY_TOKEN")
     if proxy:
         h["X-Exedev-Authorization"] = f"Bearer {proxy}"
     data = None
     if body is not None:
         h["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
-    req = urllib.request.Request(_target("api") + path,
+    req = urllib.request.Request(_target("API").rstrip("/") + path,
                                  data=data, headers=h, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -399,9 +381,6 @@ def _login(args):
     laptop and over SSH, because the approval happens in any browser."""
     open_browser = not _flag(args, "--no-browser")
     issuer, client_id = _oauth()
-    if not issuer or not client_id:
-        sys.exit("Sign-in is not configured: cloud.oauth_issuer and cloud.oauth_client_id "
-                 "are empty (`phone-harness config`).")
     status, start = _form_post(f"{issuer}/oauth/device_authorization", {
         "client_id": client_id, "scope": "openid profile email offline_access"})
     if status != 200 or "device_code" not in start:
@@ -634,12 +613,11 @@ def _stop(args):
 
 def _status(args):
     if not _bearer(required=False):
-        print("Not signed in. Run: phone-harness cloud login"
-              + (f"   (cloud.env is {env_name()})" if env_name() != "prod" else ""))
+        print("Not signed in. Run: phone-harness cloud login")
         return 1
     me = _api("GET", "/me")
-    if env_name() != "prod":
-        print(f"env         {env_name()} · {_target('api')}")
+    if os.environ.get("PHONE_HARNESS_CLOUD_API"):
+        print(f"api         {_target('API')}")
     print(f"signed in   {me.get('email') or me.get('uid')} · {_money(me.get('balance_cents'))} credit")
     print(f"phone       {_describe_profile(me.get('profile') or {})}")
     sess = attached()
@@ -810,10 +788,8 @@ CLI_USAGE = """Usage:
   phone-harness cloud keys [create [LABEL] | revoke HASH]   API keys, for CI
   phone-harness cloud history [-n NUM]
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
-cloud.env names the cloud this machine talks to (default prod). Another name is a cloud
-you configure yourself: set cloud.api, cloud.oauth_issuer and cloud.oauth_client_id
-(and cloud.proxy_token if a gate sits in front of it); its sign-in and attached
-phone are kept apart from prod's.
+PHONE_HARNESS_CLOUD_API, _OAUTH_ISSUER, _OAUTH_CLIENT_ID and _PROXY_TOKEN point the CLI
+at a Phone Harness instance of your own (or a gated one); unset, it is the public cloud.
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,
@@ -833,5 +809,5 @@ def cli(args):
         print(_explain(e), file=sys.stderr)
         return 1
     except OSError as e:
-        print(f"Could not reach {_target('api')}: {e}", file=sys.stderr)
+        print(f"Could not reach {_target('API')}: {e}", file=sys.stderr)
         return 1

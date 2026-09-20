@@ -44,19 +44,6 @@ DEFAULTS = {
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
     "cloud": {
-        # Where Phone Harness Cloud is. These describe the public cloud; a
-        # cloud of your own overrides them (and names itself with `env`, so
-        # its sign-in is kept apart). A client id names a public OAuth
-        # client: it is not a secret.
-        "env": "prod",
-        "api": "https://api.phone-harness.com",
-        "oauth_issuer": "https://clerk.phone-harness.com",
-        "oauth_client_id": "Fu2QHJcGewhL7uKh",
-        "dashboard": "https://phone-harness.com/dashboard",
-        # A bearer for a gate in front of a private cloud, sent as
-        # X-Exedev-Authorization. A secret: set it in the environment
-        # (PHONE_HARNESS_CLOUD_PROXY_TOKEN), not here.
-        "proxy_token": "",
         "minutes": 15,         # how long `cloud start` rents a phone for
         "max_minutes": 30,     # the most one `cloud start` may ask for
     },

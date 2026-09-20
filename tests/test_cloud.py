@@ -40,6 +40,7 @@ class FakeCloud(BaseHTTPRequestHandler):
     valid, token_polls, refreshes, revoked = set(), 0, 0, []
     closing_reads = 0
     seen_headers = []
+    forbid = False
 
     def _oauth(self, path, form):
         c = FakeCloud
@@ -88,6 +89,8 @@ class FakeCloud(BaseHTTPRequestHandler):
         if self.headers.get("Authorization", "")[7:] not in c.valid:
             return self._send(401, {"error": "unauthorized"})
         body = json.loads(raw) if raw else {}
+        if (m, path) == ("GET", "/me") and c.forbid:
+            return self._send(403, {"error": "beta access required", "code": "beta_access_required"})
         if (m, path) == ("GET", "/me"):
             if c.closing_reads:
                 c.closing_reads -= 1
@@ -117,7 +120,7 @@ class FakeCloud(BaseHTTPRequestHandler):
         if path.startswith("/sessions/") and sid in c.sessions:
             if m == "GET":
                 c.polls[sid] = c.polls.get(sid, 0) + 1
-                if c.polls[sid] >= 2:
+                if c.polls[sid] >= 2 and c.sessions[sid]["state"] == "provisioning":
                     c.sessions[sid].update(state="ready", startup={"startup": "exact"}, adb={
                         "host": "live.example", "port": 22220, "code": "ph_code"})
                 return self._send(200, c.sessions[sid])
@@ -140,6 +143,7 @@ class CloudCli(unittest.TestCase):
         FakeCloud.sessions, FakeCloud.polls, FakeCloud.posts = {}, {}, []
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
+        FakeCloud.forbid = False
         FakeCloud.profile = {"id": "prof-1", "state": "stored", "session": None,
                              "saved_at": time.time() - 7200}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCloud)
@@ -271,6 +275,29 @@ class CloudCli(unittest.TestCase):
         r = self.run_cli("cloud", "open", "--print")
         self.assertEqual(r.stdout.strip(), "https://phone-harness.com/dashboard")
         self.assertNotIn("watch", r.stdout)
+
+    def test_the_uninvited_are_pointed_at_the_waitlist_with_a_source(self):
+        r = self.run_cli("cloud")                                # not signed in
+        self.assertIn("phone-harness.com/cloud?source=cli", r.stdout)
+        FakeCloud.forbid = True
+        r = self.run_cli("cloud", "login", "--no-browser")       # signed in at Clerk, not invited
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("isn't enabled for phones yet", r.stderr)
+        self.assertIn("?source=cli", r.stderr)
+        FakeCloud.forbid = False
+        r = self.login()                                         # invited: no waitlist talk after sign-in
+        self.assertNotIn("waitlist", r.stdout.split("Signed in as")[1])
+
+    def test_status_says_saving_while_the_session_closes(self):
+        self.login()
+        self.run_cli("cloud", "start")
+        sid = json.loads((Path(self.home.name) / "state" / "cloud.json").read_text())["session"]["sid"]
+        FakeCloud.sessions[sid]["state"] = "closing"
+        FakeCloud.profile.update(state="running", session=sid)
+        r = self.run_cli("cloud")
+        self.assertIn("phone       saving", r.stdout)
+        self.assertIn("closing — saving the phone", r.stdout)
+        self.assertNotIn("running in session", r.stdout)
 
     def test_temp_phone_and_minutes_cap(self):
         self.login()

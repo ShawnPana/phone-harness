@@ -121,6 +121,7 @@ def capture_cli_event(
     duration_seconds: float | None = None,
     exit_code: int | None = None,
     error_message: str | None = None,
+    waitlist_shown: bool | None = None,
 ) -> None:
     if not is_enabled():
         return
@@ -152,6 +153,7 @@ def capture_cli_event(
                 "duration_seconds": duration_seconds,
                 "exit_code": exit_code,
                 "error_message": error_message,
+                "waitlist_shown": waitlist_shown,
             },
         }
         _send_detached(payload)

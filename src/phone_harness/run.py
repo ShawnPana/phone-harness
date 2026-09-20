@@ -122,6 +122,13 @@ def _intents(task):
     return out
 
 
+def _waitlist_shown():
+    """True when a `cloud` command pointed the user at the waitlist: the one
+    thing about a cloud run worth counting (no output, no identity)."""
+    mod = sys.modules.get("phone_harness.cloud")
+    return bool(getattr(mod, "waitlist_shown", False)) or None
+
+
 def _exit_code(code):
     if code is None:
         return 0
@@ -163,6 +170,7 @@ def main():
             step_count=_helper_call_count or None,
             duration_seconds=time.monotonic() - start_time,
             exit_code=code,
+            waitlist_shown=_waitlist_shown(),
             error_message=str(exc.code) if isinstance(exc.code, str) else (stderr_tail.tail.strip() or None) if code else None,
         )
         raise
@@ -179,6 +187,7 @@ def main():
             step_count=_helper_call_count or None,
             duration_seconds=time.monotonic() - start_time,
             exit_code=1,
+            waitlist_shown=_waitlist_shown(),
             error_message=str(exc),
         )
         raise
@@ -197,6 +206,7 @@ def main():
         step_count=_helper_call_count or None,
         duration_seconds=time.monotonic() - start_time,
         exit_code=0,
+        waitlist_shown=_waitlist_shown(),
     )
 
 

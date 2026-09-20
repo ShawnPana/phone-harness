@@ -51,6 +51,11 @@ API = "https://api.phone-harness.com"
 DASHBOARD = "https://phone-harness.com/dashboard"
 OAUTH_ISSUER = "https://clerk.phone-harness.com"
 OAUTH_CLIENT_ID = "Fu2QHJcGewhL7uKh"           # the "phone-harness CLI" OAuth app
+# Phone Harness Cloud is invite-only. Someone who finds it here and has no
+# account is the strongest signal there is; send them to the waitlist, and
+# say where they came from so that signal is not lost.
+WAITLIST = "https://phone-harness.com/cloud?source=cli"
+waitlist_shown = False                          # read by run.py for telemetry (a flag, no PII)
 
 
 def _target(key):
@@ -59,6 +64,12 @@ def _target(key):
 
 def _dashboard():
     return _target("DASHBOARD").rstrip("/")
+
+
+def _waitlist_line():
+    global waitlist_shown
+    waitlist_shown = True
+    return f"Phone Harness Cloud is invite-only. No account yet? Join the waitlist: {WAITLIST}"
 
 
 # --- files -------------------------------------------------------------------
@@ -193,7 +204,7 @@ def _explain(e):
         return "This machine is signed out. Run: phone-harness cloud login"
     if e.status == 403:
         return (f"Your account isn't enabled for phones yet ({e}). "
-                f"Request access at {_dashboard()}")
+                f"{_waitlist_line()}")
     if e.status == 402 or "balance_cents" in e.body:
         cents = e.body.get("balance_cents")
         have = f" (${cents / 100:.2f})" if isinstance(cents, int) else ""
@@ -387,7 +398,8 @@ def _login(args):
         sys.exit("Could not start sign-in: "
                  f"{start.get('error_description') or start.get('error') or start.get('title') or status}")
     print(f"To sign in, open:  {start['verification_uri']}\n"
-          f"and enter code:    {start['user_code']}\n")
+          f"and enter code:    {start['user_code']}\n\n"
+          f"{_waitlist_line()}\n")
     if open_browser:
         try:
             webbrowser.open(start.get("verification_uri_complete") or start["verification_uri"])
@@ -411,7 +423,8 @@ def _login(args):
             sys.exit("Sign-in was denied." if err == "access_denied"
                      else f"Sign-in failed: {err}")
     if not tok:
-        sys.exit("Sign-in timed out. Run `phone-harness cloud login` again.")
+        sys.exit("Sign-in timed out. Run `phone-harness cloud login` again — or, without an "
+                 f"account to sign in with, join the waitlist: {WAITLIST}")
     try:
         me = _api("GET", "/me", token=tok["access_token"])
     except CloudError as e:
@@ -446,10 +459,14 @@ def _logout(args):
     return 0
 
 
-def _print_account(me):
+def _credit(me):
     rate = me.get("price_cents_per_minute") or 0
     minutes = f" (about {me.get('balance_cents', 0) // rate} min)" if rate else ""
-    print(f"  credit   {_money(me.get('balance_cents'))}{minutes}")
+    return f"{_money(me.get('balance_cents'))}{minutes}"
+
+
+def _print_account(me):
+    print(f"  credit   {_credit(me)}")
     print(f"  phone    {_describe_profile(me.get('profile') or {})}")
     if not me.get("can_rent", True):
         print(f"  access   not enabled yet: {me.get('rent_blocked_reason') or 'invite-only'}")
@@ -629,25 +646,37 @@ def _stop(args):
 def _status(args):
     if not _bearer(required=False):
         print("Not signed in. Run: phone-harness cloud login")
+        print(_waitlist_line())
         return 1
     me = _api("GET", "/me")
     if os.environ.get("PHONE_HARNESS_CLOUD_API"):
         print(f"api         {_target('API')}")
-    print(f"signed in   {me.get('email') or me.get('uid')} · {_money(me.get('balance_cents'))} credit")
-    print(f"phone       {_describe_profile(me.get('profile') or {})}")
+    print(f"signed in   {me.get('email') or me.get('uid')}")
+    print(f"credit      {_credit(me)}")
+    profile = me.get("profile") or {}
     sess = attached()
+    live = None
+    if sess:
+        try:
+            live = _api("GET", f"/sessions/{sess['sid']}")
+        except CloudError:
+            live = None
+    # Just after `stop`, the API still says the profile is `running` while its
+    # session is `closing`; the truth for the user is that it is being saved.
+    if live and live.get("state") == "closing" and live.get("profile"):
+        profile = {**profile, "state": "saving"}
+    print(f"phone       {_describe_profile(profile)}")
     if not sess:
         running = me.get("active_session_count") or 0
         print("session     none attached" + (f" ({running} running: `phone-harness cloud ls`)"
                                               if running else " — `phone-harness cloud start`"))
         return 0
-    try:
-        live = _api("GET", f"/sessions/{sess['sid']}")
-    except CloudError:
+    if live is None:
         print(f"session     {sess['sid']} is gone; detaching")
         _detach()
         return 0
-    print(f"session     {live['id']} · {live['state']} · {_left(live.get('expires_at'))} left"
+    state = "closing — saving the phone" if live["state"] == "closing" else live["state"]
+    print(f"session     {live['id']} · {state} · {_left(live.get('expires_at'))} left"
           f" · {'your phone' if live.get('profile') else 'temporary'}")
     print(f"adb         {serial_of(sess)}")
     return 0

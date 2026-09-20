@@ -19,7 +19,10 @@ XDG_CONFIG_HOME / XDG_STATE_HOME are honoured; PHONE_HARNESS_HOME moves both
 roots under one directory (tests, sandboxes).
 
 One rule for every setting: explicit argument, else environment variable,
-else config file, else built-in default. `get("android.poke_every")` looks
+else config file, else built-in default. A `.env` file at the repo root or
+in the agent workspace is read once at import and fills in environment
+variables that are not already set (the same as browser-harness): a place
+for per-machine overrides such as PHONE_HARNESS_CLOUD_API, never committed. `get("android.poke_every")` looks
 at PHONE_HARNESS_ANDROID_POKE_EVERY, then config.json, then DEFAULTS. Env
 vars are per-call overrides; nothing requires them.
 
@@ -34,6 +37,29 @@ import tempfile
 from pathlib import Path
 
 VERSION = 1
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _load_env_files():
+    """KEY=value lines from <repo>/.env and <agent-workspace>/.env into the
+    environment, without overriding what is already set. No dependency; a
+    `#` line is a comment, quotes around a value are stripped."""
+    workspace = Path(os.environ.get("PH_AGENT_WORKSPACE", _REPO_ROOT / "agent-workspace"))
+    for path in (_REPO_ROOT / ".env", workspace / ".env"):
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_files()
 
 DEFAULTS = {
     "platform": "ios" if sys.platform == "darwin" else "android",   # iPhone needs a Mac

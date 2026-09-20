@@ -790,6 +790,7 @@ CLI_USAGE = """Usage:
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
 PHONE_HARNESS_CLOUD_API, _OAUTH_ISSUER, _OAUTH_CLIENT_ID and _PROXY_TOKEN point the CLI
 at a Phone Harness instance of your own (or a gated one); unset, it is the public cloud.
+They may live in a .env file at the repo root or in the agent workspace (never committed).
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,

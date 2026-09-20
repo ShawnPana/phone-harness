@@ -200,6 +200,16 @@ class CloudCli(unittest.TestCase):
         self.assertEqual(FakeCloud.revoked, ["rt-1", "at-1"])
         self.assertIn("cloud login", self.run_cli("cloud", "whoami").stderr)
 
+    def test_a_dotenv_in_the_agent_workspace_fills_in_unset_variables(self):
+        FakeCloud.valid.add("pck_ci")
+        ws = Path(self.home.name) / "workspace"
+        ws.mkdir()
+        (ws / ".env").write_text("# per-machine overrides\n"
+                                 "PHONE_HARNESS_API_KEY=pck_ci\n"
+                                 "PHONE_HARNESS_CLOUD_API='http://127.0.0.1:1'\n")   # loses to the real env
+        r = self.run_cli("cloud", "whoami", env={"PH_AGENT_WORKSPACE": str(ws)})
+        self.assertIn("a@b.c", r.stdout, r.stderr)
+
     def test_a_proxy_token_rides_along_as_the_gate_header(self):
         FakeCloud.valid.add("pck_ci")
         FakeCloud.seen_headers = []

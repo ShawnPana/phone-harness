@@ -266,6 +266,12 @@ class CloudCli(unittest.TestCase):
         self.assertIn("phone-harness cloud watch", r.stdout)
         self.assertEqual(len(opened.read_text().split()), 1)
 
+    def test_open_is_the_dashboard_not_the_watch_link(self):
+        self.login()
+        r = self.run_cli("cloud", "open", "--print")
+        self.assertEqual(r.stdout.strip(), "https://phone-harness.com/dashboard")
+        self.assertNotIn("watch", r.stdout)
+
     def test_temp_phone_and_minutes_cap(self):
         self.login()
         self.assertEqual(self.run_cli("cloud", "start", "--temp").returncode, 0)

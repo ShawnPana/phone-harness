@@ -711,6 +711,17 @@ def _watch(args):
     return 0
 
 
+def _open(args):
+    """The dashboard: the interactive viewer, behind the user's own sign-in.
+    `watch` is for looking; this is for taking the controls."""
+    url = _dashboard()
+    if _flag(args, "--print") or not _open_browser(url):
+        print(url)
+    else:
+        print(f"opened {url} — sign in there to control the phone")
+    return 0
+
+
 def _whoami(args):
     me = _api("GET", "/me")
     if _flag(args, "--json"):
@@ -799,7 +810,8 @@ CLI_USAGE = """Usage:
   phone-harness cloud ls [-n NUM]              running sessions (* = attached)
   phone-harness cloud show [SID]               one session in full
   phone-harness cloud use SID                  attach the helpers to another running session
-  phone-harness cloud watch [SID] [--print]    open the live view
+  phone-harness cloud watch [SID] [--print]    the read-only live view (no sign-in; shareable)
+  phone-harness cloud open [--print]           the dashboard: control the phone yourself (sign-in)
   phone-harness cloud phone [reset --yes]      your saved phone
   phone-harness cloud keys [create [LABEL] | revoke HASH]   API keys, for CI
   phone-harness cloud history [-n NUM]
@@ -810,7 +822,7 @@ They may live in a .env file at the repo root or in the agent workspace (never c
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,
-             "stop": _stop, "ls": _ls, "show": _show, "use": _use, "watch": _watch,
+             "stop": _stop, "ls": _ls, "show": _show, "use": _use, "watch": _watch, "open": _open,
              "phone": _phone, "keys": _keys, "history": _history}
 
 

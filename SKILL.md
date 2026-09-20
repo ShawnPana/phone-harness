@@ -242,8 +242,13 @@ phone-harness cloud stop       # ends billing and saves the phone
 - `Not signed in` means the user has to run `phone-harness cloud login` and
   approve it in a browser. Relay that; you cannot do it for them.
 - `cloud start` opens the phone's live view in the user's browser, so they
-  can watch you work; `cloud watch` reopens it if they closed it.
-  `cloud start --temp` is a throwaway phone that keeps nothing.
+  can watch you work; `cloud watch` reopens it if they closed it. That view
+  is read-only. When the user wants to take the controls themselves — to
+  type a password, pass a 2FA prompt, or just drive — run
+  `phone-harness cloud open`: the dashboard, behind their own sign-in, with
+  the interactive viewer. Wait for them to say they are done before you
+  touch the phone again. `cloud start --temp` is a throwaway phone that
+  keeps nothing.
 - The connection is handled for you, including reconnecting after a drop.
   The adb address the CLI shows is not a secret; the unlock code is, and you
   never need it — do not look for it, print it, or ask the user for it.

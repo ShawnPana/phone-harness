@@ -51,10 +51,11 @@ API = "https://api.phone-harness.com"
 DASHBOARD = "https://phone-harness.com/dashboard"
 OAUTH_ISSUER = "https://clerk.phone-harness.com"
 OAUTH_CLIENT_ID = "Fu2QHJcGewhL7uKh"           # the "phone-harness CLI" OAuth app
-# Phone Harness Cloud is invite-only. Someone who finds it here and has no
-# account is the strongest signal there is; send them to the waitlist, and
-# say where they came from so that signal is not lost.
-WAITLIST = "https://phone-harness.com/cloud?source=cli"
+# Someone who finds the cloud here and has no account is the strongest signal
+# there is. Send them to the site — which decides whether that is a waitlist
+# or a signup form, so this text never goes stale — and say where they came
+# from so the signal is not lost.
+SIGNUP = "https://phone-harness.com/cloud?source=cli"
 waitlist_shown = False                          # read by run.py for telemetry (a flag, no PII)
 
 
@@ -69,7 +70,7 @@ def _dashboard():
 def _waitlist_line():
     global waitlist_shown
     waitlist_shown = True
-    return f"Phone Harness Cloud is invite-only. No account yet? Join the waitlist: {WAITLIST}"
+    return f"No Phone Harness Cloud account yet? Get one at {SIGNUP}"
 
 
 # --- files -------------------------------------------------------------------
@@ -424,7 +425,7 @@ def _login(args):
                      else f"Sign-in failed: {err}")
     if not tok:
         sys.exit("Sign-in timed out. Run `phone-harness cloud login` again — or, without an "
-                 f"account to sign in with, join the waitlist: {WAITLIST}")
+                 f"account to sign in with, get one at {SIGNUP}")
     try:
         me = _api("GET", "/me", token=tok["access_token"])
     except CloudError as e:

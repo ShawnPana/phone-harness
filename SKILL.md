@@ -133,9 +133,8 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
   that is already running instead of starting another; leave it running unless
   they ask you to stop it.
 - **`Not signed in`** means the user runs `phone-harness cloud login` and
-  approves it in a browser. Relay that; you cannot do it for them. Phone
-  Harness Cloud is invite-only: a user without an account is pointed at the
-  waitlist by the CLI itself.
+  approves it in a browser. Relay that; you cannot do it for them. A user
+  without an account is pointed at phone-harness.com by the CLI itself.
 - **Watching versus controlling.** `cloud start` opens the phone's live view
   in the user's browser so they can watch you work; it is read-only and
   `cloud watch` reopens it. When the user wants to drive themselves — a

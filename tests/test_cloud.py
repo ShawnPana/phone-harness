@@ -286,7 +286,7 @@ class CloudCli(unittest.TestCase):
         self.assertIn("?source=cli", r.stderr)
         FakeCloud.forbid = False
         r = self.login()                                         # invited: no waitlist talk after sign-in
-        self.assertNotIn("waitlist", r.stdout.split("Signed in as")[1])
+        self.assertNotIn("account yet", r.stdout.split("Signed in as")[1])
 
     def test_status_says_saving_while_the_session_closes(self):
         self.login()

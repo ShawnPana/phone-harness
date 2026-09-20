@@ -44,19 +44,21 @@ DEFAULTS = {
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
     "cloud": {
-        "env": "prod",         # prod | dev: which Phone Harness Cloud to talk to
-        "minutes": 15,         # how long `cloud start` rents a phone for
-        "max_minutes": 30,     # the most one `cloud start` may ask for
-        # Overrides for one piece of the chosen env (tests, a local API);
-        # empty means the env's own value from cloud.ENVS. A client id names
-        # a public OAuth client: it is not a secret.
-        "api": "",
-        "oauth_issuer": "",
-        "oauth_client_id": "",
-        # The development cloud sits behind exe.dev's gate, which admits an
-        # X-Exedev-Authorization bearer. A secret: set it in the environment
+        # Where Phone Harness Cloud is. These describe the public cloud; a
+        # cloud of your own overrides them (and names itself with `env`, so
+        # its sign-in is kept apart). A client id names a public OAuth
+        # client: it is not a secret.
+        "env": "prod",
+        "api": "https://api.phone-harness.com",
+        "oauth_issuer": "https://clerk.phone-harness.com",
+        "oauth_client_id": "Fu2QHJcGewhL7uKh",
+        "dashboard": "https://phone-harness.com/dashboard",
+        # A bearer for a gate in front of a private cloud, sent as
+        # X-Exedev-Authorization. A secret: set it in the environment
         # (PHONE_HARNESS_CLOUD_PROXY_TOKEN), not here.
         "proxy_token": "",
+        "minutes": 15,         # how long `cloud start` rents a phone for
+        "max_minutes": 30,     # the most one `cloud start` may ask for
     },
     "ios": {
         "restore_clipboard": False,   # put the old clipboard back after a paste

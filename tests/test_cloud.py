@@ -200,21 +200,28 @@ class CloudCli(unittest.TestCase):
         self.assertEqual(FakeCloud.revoked, ["rt-1", "at-1"])
         self.assertIn("cloud login", self.run_cli("cloud", "whoami").stderr)
 
-    def test_dev_is_a_separate_cloud_with_its_own_sign_in(self):
+    def test_another_cloud_is_configured_not_built_in_and_keeps_its_own_sign_in(self):
         self.login()                                          # prod, against the fake
         env = {k: v for k, v in self.env.items() if not k.startswith("PHONE_HARNESS_CLOUD_")}
         env["PHONE_HARNESS_CLOUD_ENV"] = "dev"
+        r = subprocess.run([sys.executable, "-m", "phone_harness.run", "cloud", "login", "--no-browser"],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("set cloud.api", r.stderr)               # the code knows no cloud but the public one
+        env.update({"PHONE_HARNESS_CLOUD_API": self.env["PHONE_HARNESS_CLOUD_API"],
+                    "PHONE_HARNESS_CLOUD_OAUTH_ISSUER": self.env["PHONE_HARNESS_CLOUD_OAUTH_ISSUER"],
+                    "PHONE_HARNESS_CLOUD_OAUTH_CLIENT_ID": "cli-client"})
         r = subprocess.run([sys.executable, "-m", "phone_harness.run", "cloud"],
                            capture_output=True, text=True, env=env)
         self.assertIn("Not signed in", r.stdout)               # prod's tokens are not reused
         self.assertIn("cloud.env is dev", r.stdout)
         self.assertTrue((Path(self.home.name) / "config" / "auth.json").exists())
         self.assertFalse((Path(self.home.name) / "config" / "auth-dev.json").exists())
-        env["PHONE_HARNESS_CLOUD_ENV"] = "staging"
+        env["PHONE_HARNESS_CLOUD_ENV"] = "Not A Name"
         r = subprocess.run([sys.executable, "-m", "phone_harness.run", "cloud"],
                            capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("must be one of prod, dev", r.stderr)
+        self.assertIn("short lowercase name", r.stderr)
 
     def test_a_proxy_token_rides_along_as_the_gate_header(self):
         FakeCloud.valid.add("pck_ci")

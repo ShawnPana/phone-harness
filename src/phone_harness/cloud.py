@@ -17,6 +17,7 @@ Stdlib only. API reference: https://phone-harness.com/docs
 """
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -31,7 +32,7 @@ from . import config
 
 
 def _dashboard():
-    return ENVS[env_name()]["dashboard"]
+    return _target("dashboard")
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
 READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
 LOW_TIME = 120        # warn the script when the session has less than this left
@@ -47,32 +48,32 @@ class CloudError(RuntimeError):
         super().__init__(self.body.get("error") or f"HTTP {status}")
 
 
-# Each environment is its own API, its own sign-in system and its own users;
-# a token from one is refused by the other. `cloud.env` picks one, and the
-# sign-in and the attached phone are kept per env so switching never sends a
-# token to the wrong place.
-ENVS = {
-    "prod": {"api": "https://api.phone-harness.com",
-             "oauth_issuer": "https://clerk.phone-harness.com",
-             "oauth_client_id": "Fu2QHJcGewhL7uKh",
-             "dashboard": "https://phone-harness.com/dashboard"},
-    "dev": {"api": "https://phone-harness-development.exe.xyz",
-            "oauth_issuer": "https://assured-hagfish-1875.clerk.accounts.dev",
-            "oauth_client_id": "2hdhbfwpBu8cbjvL",
-            "dashboard": "https://phone-harness-development.exe.xyz/dashboard"},
-}
+# Where the cloud is comes from config (`phone-harness config`): the defaults
+# are the public Phone Harness Cloud, and every piece can be overridden.
+# `cloud.env` names which cloud this machine talks to. It is `prod` unless
+# you run a cloud of your own, in which case you set cloud.api,
+# cloud.oauth_issuer and cloud.oauth_client_id for it; the sign-in and the
+# attached phone are kept under that name, so switching never sends a token
+# to the wrong place.
+_CLOUD_KEYS = ("api", "oauth_issuer", "oauth_client_id")
 
 
 def env_name():
     name = str(config.get("cloud.env") or "prod").lower()
-    if name not in ENVS:
-        sys.exit(f"cloud.env must be one of {', '.join(ENVS)}, not {name!r}")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", name):
+        sys.exit(f"cloud.env must be a short lowercase name, not {name!r}")
     return name
 
 
 def _target(key):
-    """A piece of the chosen env, unless overridden (`cloud.api` etc.)."""
-    return str(config.get(f"cloud.{key}") or ENVS[env_name()][key]).rstrip("/")
+    """A piece of the chosen cloud. The built-in defaults describe the public
+    cloud only, so another cloud.env must set its own."""
+    value, source = config.lookup(f"cloud.{key}")
+    if env_name() != "prod" and source == "default" and key in _CLOUD_KEYS:
+        sys.exit(f"cloud.env is {env_name()!r}: set cloud.api, cloud.oauth_issuer and "
+                 "cloud.oauth_client_id for that cloud (`phone-harness config set cloud.api https://…`), "
+                 "or `phone-harness config unset cloud.env` for the public one.")
+    return str(value or "").rstrip("/")
 
 
 def _suffix():
@@ -809,9 +810,10 @@ CLI_USAGE = """Usage:
   phone-harness cloud keys [create [LABEL] | revoke HASH]   API keys, for CI
   phone-harness cloud history [-n NUM]
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
-PHONE_HARNESS_CLOUD_ENV=dev (or `config set cloud.env dev`) talks to the development
-cloud instead; its sign-in and attached phone are kept apart from prod's. That cloud
-sits behind exe.dev's gate: set PHONE_HARNESS_CLOUD_PROXY_TOKEN to get through it.
+cloud.env names the cloud this machine talks to (default prod). Another name is a cloud
+you configure yourself: set cloud.api, cloud.oauth_issuer and cloud.oauth_client_id
+(and cloud.proxy_token if a gate sits in front of it); its sign-in and attached
+phone are kept apart from prod's.
 """
 
 _COMMANDS = {"login": _login, "logout": _logout, "whoami": _whoami, "start": _start,

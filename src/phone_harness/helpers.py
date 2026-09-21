@@ -147,7 +147,13 @@ def ocr(min_confidence=0.3):
     """All visible text with tap-ready centers: [{text, confidence, source,
     x, y, w, h}]. Prefer this over eyeballing screenshots for anything with a
     text label. `source` is "pixels" when a recogniser inferred the string and
-    "tree" when the OS reported it exactly."""
+    "tree" when the OS reported it exactly.
+
+    Nothing is filtered. `min_confidence` is accepted and ignored: every box
+    carries its own `confidence`, and what counts as trustworthy depends on
+    the screen and the script -- Chinese text scores lower than English, and a
+    cutoff tuned on one silently drops the other.
+    """
     return send("screen.text", min_confidence=min_confidence)
 
 
@@ -364,15 +370,16 @@ def scroll(direction="down", amount=0.3, at=None):
 # as "done" — only the content going still (after a settle window that lets
 # lazy-loaded content arrive) means the end.
 
-def _content_texts(min_conf=0.4, top_frac=0.06, bottom_frac=0.92):
-    """Visible text within the scrollable band, excluding the volatile status
-    bar (clock/battery) at top and the nav/home strip at bottom — a clock that
-    ticks over would read as movement and stop end-detection ever firing."""
-    win = _win()
-    top = win["y"] + win["h"] * top_frac
-    bot = win["y"] + win["h"] * bottom_frac
-    return [o for o in ocr()
-            if top < o["y"] < bot and o["confidence"] >= min_conf]
+def _content_texts():
+    """Every visible text box. Nothing cropped, nothing filtered.
+
+    This used to crop the status bar and home strip and drop low-confidence
+    boxes, to keep a ticking clock from tripping the old movement test. That
+    test is gone. scroll_collect de-dupes, so a clock ticking over costs at
+    most one spurious item a minute -- while the crop was hiding nav bars and
+    tab bars from every walk, and the cutoff was dropping Chinese rows.
+    """
+    return ocr()
 
 
 def _text_set(boxes):

@@ -177,12 +177,12 @@ def _doctor_coredevice():
     from . import coredevice, coredevice_daemon as D
     serial = config.get("coredevice.serial") or config.devices_of("coredevice").get("primary")
     info = asyncio.run(D.probe(serial))
-    _check("USB device service reachable (usbmuxd / Apple Mobile Device)", info["usbmuxd"],
+    _check("USB device service present (usbmuxd / Apple Mobile Device)", info["usbmuxd"],
            _USBMUXD_INSTALL)
     if not info["usbmuxd"]:
         return
     _check(f"an iPhone on USB ({', '.join(info['devices']) or 'none'})", bool(info["udid"]),
-           "plug the phone in with a data cable and unlock it"
+           "plug the phone in with a data cable and unlock it (on Linux usbmuxd starts when it appears)"
            if info["error"] != "several-devices" else
            "several phones: phone-harness config set coredevice.serial UDID")
     if not info["udid"]:

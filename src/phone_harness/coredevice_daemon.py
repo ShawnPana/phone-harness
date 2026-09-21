@@ -129,6 +129,13 @@ async def probe(serial=None):
     try:
         devices = [d for d in await list_devices() if d.is_usb]
     except (E.ConnectionFailedToUsbmuxdError, OSError) as e:
+        # On Linux, usbmuxd is installed but idle until a phone is plugged in:
+        # its socket does not exist yet. That is "no device", not "no service".
+        import shutil
+        if sys.platform.startswith("linux") and shutil.which("usbmuxd"):
+            out["usbmuxd"] = True
+            out["error"] = "no-device"
+            return out
         out["error"] = f"usbmuxd: {e}"
         return out
     out["usbmuxd"] = True

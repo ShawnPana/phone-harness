@@ -12,6 +12,9 @@ USAGE = """Usage:
   print(screen_info())
   PY
 
+The script is read from stdin. A single quoted argument that is clearly
+Python (has a newline or a call) is run as the script too.
+
 Commands:
   phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
   phone-harness skill       print the phone-harness skill text
@@ -97,7 +100,33 @@ def _telemetry_command(args):
         return "doctor"
     if first in {"android", "cloud", "config", "skill"}:
         return first
+    if _argv_script(args) is not None:
+        return "script-argv"
     return "usage"
+
+
+def _argv_script(args):
+    """The script body when the whole argv is one argument that can only be
+    Python: it spans lines or calls something. Agents (codex, opencode,
+    hermes) generate `phone-harness "<script>"` often enough that refusing it
+    was the top first-run failure. A lone word such as a mistyped subcommand
+    is not a script; it gets the usage text and a hint instead."""
+    if len(args) != 1:
+        return None
+    body = args[0]
+    if "\n" in body or "(" in body:
+        return body
+    return None
+
+
+def _usage_for_unknown(args):
+    """USAGE, led by what went wrong: the argument was not a command, and a
+    script belongs on stdin (the heredoc form) rather than in argv."""
+    shown = " ".join(args)
+    if len(shown) > 60:
+        shown = shown[:57] + "..."
+    return (f"phone-harness: {shown!r} is not a command.\n"
+            "A script goes on stdin, not as an argument:\n\n" + USAGE)
 
 
 _INTENT_KEYS = ("task", "step")
@@ -144,7 +173,7 @@ def main():
     _helper_call_count = 0
     start_time = time.monotonic()
     command = _telemetry_command(args)
-    task = None
+    task = _argv_script(args) if command == "script-argv" else None
     if not args and not sys.stdin.isatty():
         task = sys.stdin.read()
         sys.stdin = io.StringIO(task)
@@ -230,9 +259,13 @@ def _run(args):
     if args and args[0] == "skill":
         print(_skill_text(), end="")
         return
-    if args or sys.stdin.isatty():
-        sys.exit(USAGE)
-    code = sys.stdin.read()
+    code = _argv_script(args)
+    if code is None:
+        if args:
+            sys.exit(_usage_for_unknown(args))
+        if sys.stdin.isatty():
+            sys.exit(USAGE)
+        code = sys.stdin.read()
     if not code.strip():
         sys.exit(USAGE)
     from . import helpers

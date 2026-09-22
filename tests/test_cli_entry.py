@@ -9,7 +9,7 @@ from pathlib import Path
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
-class Invocation(unittest.TestCase):
+class _Cli(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
@@ -20,6 +20,9 @@ class Invocation(unittest.TestCase):
         return subprocess.run([sys.executable, "-m", "phone_harness.run", *args], input=stdin,
                               capture_output=True, text=True, env=self.env)
 
+
+
+class Invocation(_Cli):
     def test_the_script_on_stdin_runs(self):
         r = self.run_cli(stdin='print("via stdin")')
         self.assertEqual((r.returncode, r.stdout), (0, "via stdin\n"), r.stderr)
@@ -53,6 +56,37 @@ class Invocation(unittest.TestCase):
         r = self.run_cli("skill")
         self.assertEqual(r.returncode, 0)
         self.assertTrue(r.stdout.startswith("---"), r.stdout[:40])
+
+
+class ConsoleEncoding(_Cli):
+    """A Chinese or Korean Windows console encodes its pipes as cp936/cp949. Seen in
+    the field: a tap fired, then the run died printing OCR text with an emoji in it.
+    PYTHONIOENCODING=gbk gives that console on any OS."""
+
+    def run_gbk(self, script, *args):
+        env = {**self.env, "PYTHONIOENCODING": "gbk"}
+        r = subprocess.run([sys.executable, "-m", "phone_harness.run", *args],
+                           input=script.encode("utf-8"), capture_output=True, env=env)
+        return r.returncode, r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace")
+
+    def test_output_with_an_emoji_does_not_crash_a_gbk_pipe(self):
+        code, out, err = self.run_gbk('rows = [{"text": "Close \u2705"}]\nprint("tapped", rows[0]["text"])')
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("UnicodeEncodeError", err)
+        self.assertEqual(out.strip(), "tapped Close \u2705")     # pipes are UTF-8, so the glyph survives
+
+    def test_a_script_with_non_ascii_text_is_read_as_utf8(self):
+        # The agent writes UTF-8. Decoded as gbk, an emoji or a CJK string in the script
+        # itself raised UnicodeDecodeError before a single line ran.
+        code, out, err = self.run_gbk('print("tap \u2705 done")\nprint("\u5fae\u4fe1 \ud55c\uae00")')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.split("\n")[:2], ["tap \u2705 done", "\u5fae\u4fe1 \ud55c\uae00"])
+
+    def test_pipes_are_utf8_with_replacement(self):
+        code, out, err = self.run_gbk("import sys; print(sys.stdout.encoding.lower(), sys.stdout.errors, "
+                                      "sys.stderr.encoding.lower(), sys.stderr.errors)")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.split(), ["utf-8", "replace", "utf-8", "replace"])
 
 
 if __name__ == "__main__":

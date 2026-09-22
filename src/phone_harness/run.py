@@ -166,8 +166,33 @@ def _exit_code(code):
     return 1
 
 
+def _portable_streams():
+    """UTF-8 on the pipes, and never a crash over one character.
+
+    Off macOS the console encoding is whatever the locale says: cp936 on a
+    Chinese Windows box, cp949 on a Korean one. Python then decodes the piped
+    script and encodes our output with it, and the first emoji in OCR text
+    (or the first CJK character in the agent's own script) raised. Agents
+    write and read UTF-8, so a pipe is UTF-8. A terminal keeps its own
+    encoding so the human's text still renders; a glyph it cannot show
+    becomes '?' rather than a traceback. Only the wrapped std streams are
+    touched, and stdin before anything reads it."""
+    for name in ("stdin", "stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            if stream.isatty():
+                stream.reconfigure(errors="replace")
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass    # closed, or already read from: leave it be
+
+
 def main():
     global _helper_call_count
+    _portable_streams()
     args = sys.argv[1:]
     _helper_trace.clear()
     _helper_call_count = 0

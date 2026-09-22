@@ -81,11 +81,22 @@ def find_window():
     return send("screen.bounds")
 
 
+def _png_size(path):
+    """(width, height) from a PNG header: the IHDR chunk always comes first,
+    so both are at fixed offsets. Both backends capture PNG (`screencapture`,
+    `screencap -p`). Kept free of Quartz on purpose: an Android host on
+    Windows or Linux has no Apple frameworks, and this was crashing there."""
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        raise RuntimeError(f"cannot read image {path}: not a PNG")
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
 def screen_info():
     """{window, frontmost, img_px} — bounds, focus state, capture size."""
-    from . import ocr as _vision
     path, win = send("screen.capture")
-    w, h = _vision.image_size(path)
+    w, h = _png_size(path)
     return {"window": win, "frontmost": bool(send("focus.probe")[0]),
             "img_px": [w, h]}
 

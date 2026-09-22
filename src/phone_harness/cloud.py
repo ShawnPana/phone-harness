@@ -451,7 +451,7 @@ def _logout(args):
             try:
                 _form_post(f"{issuer}/oauth/token/revoke", {
                     "client_id": client_id, "token": record[kind], "token_type_hint": kind})
-            except OSError:
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
                 pass
     _auth_path().unlink(missing_ok=True)
     print("Signed out.")

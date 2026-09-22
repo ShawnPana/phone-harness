@@ -123,8 +123,8 @@ def _form_post(url, fields):
             return e.code, {"error": f"HTTP {e.code}"}
 
 
-def _store_tokens(tok, email=None):
-    old = config._read(_auth_path(), {})
+def _store_tokens(tok, email=None, *, refresh=False):
+    old = config._read(_auth_path(), {}) if refresh else {}
     _save_auth({"access_token": tok["access_token"],
                 # a refresh may or may not rotate the refresh token
                 "refresh_token": tok.get("refresh_token") or old.get("refresh_token"),
@@ -143,7 +143,7 @@ def _refresh(record):
         "refresh_token": record["refresh_token"]})
     if status != 200 or not tok.get("access_token"):
         return None
-    return _store_tokens(tok)
+    return _store_tokens(tok, refresh=True)
 
 
 def _bearer(required=True, force_refresh=False):
@@ -430,10 +430,15 @@ def _login(args):
         me = _api("GET", "/me", token=tok["access_token"])
     except CloudError as e:
         sys.exit(f"Signed in, but the Phone Harness API refused the sign-in: {_explain(e)}")
-    _store_tokens(tok, email=me.get("email"))
     state = _load_state()
-    state["profile_id"] = (me.get("profile") or {}).get("id")
+    profile_id = (me.get("profile") or {}).get("id")
+    # A fresh grant only proves ownership of the returned saved profile.
+    # Clear an unverified attachment locally; its remote session stays alive.
+    if not profile_id or (state.get("session") or {}).get("profile") != profile_id:
+        state.pop("session", None)
+    state["profile_id"] = profile_id
     _save_state(state)
+    _store_tokens(tok, email=me.get("email"))
     print(f"✓ Signed in as {me.get('email') or me.get('uid')}")
     _print_account(me)
     print("\nStart your phone with: phone-harness cloud start")

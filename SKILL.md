@@ -135,6 +135,9 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
 - **`Not signed in`** means the user runs `phone-harness cloud login` and
   approves it in a browser. Relay that; you cannot do it for them. A user
   without an account is pointed at phone-harness.com by the CLI itself.
+- After a fresh sign-in, an attachment is kept only when it matches the
+  verified saved profile. Other attachments are cleared locally without
+  stopping their sessions; use `cloud ls` and `cloud use SID` to reattach.
 - **Watching versus controlling.** `cloud start` opens the phone's live view
   in the user's browser so they can watch you work; it is read-only and
   `cloud watch` reopens it. When the user wants to drive themselves — a

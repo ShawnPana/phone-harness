@@ -81,7 +81,12 @@ Set up each as above; `phone-harness config set platform …` picks the default,
 `PHONE_HARNESS_PLATFORM=…` picks per call. The two never interfere — the
 iPhone is driven through the mirroring window, the Android over adb.
 
-`phone-harness config set telemetry false` turns off anonymous usage telemetry.
+`phone-harness config set telemetry false` turns off anonymous usage telemetry
+(`PHONE_HARNESS_TELEMETRY=0` disables it for one call). Events contain an anonymous
+install ID, runtime and OS versions, command and phone type, agent/client/model
+labels, exit status, duration, step count, script/output lengths, and whether the
+cloud waitlist was shown. Script source, task/step comments, screen output, helper
+arguments, and error text are never sent.
 
 ## If It Fails
 

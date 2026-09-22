@@ -540,9 +540,13 @@ def _start(args):
         except CloudError:
             live = None
         if live and live["state"] in ("provisioning", "ready"):
-            print(f"Already attached to session {live['id']}; reusing it.")
-            return _report(_wait_ready(live["id"]), watch=False)   # its view is already open
-        _detach()
+            if not temp or not live.get("profile"):
+                print(f"Already attached to session {live['id']}; reusing it.")
+                return _report(_wait_ready(live["id"]), watch=False)   # its view is already open
+            print(f"Your saved phone (session {live['id']}) remains running; "
+                  "starting the requested temporary phone.")
+        else:
+            _detach()
 
     body = {"timeout_seconds": minutes * 60}
     profile_id = None

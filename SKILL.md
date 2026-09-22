@@ -141,9 +141,11 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
   password, a 2FA prompt, or just to take over — run `phone-harness cloud open`
   (the dashboard, behind their own sign-in) and wait for them to say they are
   done before you touch the phone again.
-- The connection is handled for you, including reconnecting after a drop. The
-  adb address the CLI shows is not a secret; the unlock code is, and you never
-  need it — do not look for it, print it, or ask the user for it.
+- The connection is checked before each command and repaired after a drop.
+  A failed command is not automatically repeated: it may have partly applied,
+  so inspect the phone before retrying. The adb address the CLI shows is not a
+  secret; the unlock code is, and you never need it — do not look for it, print
+  it, or ask the user for it.
 
 ## Android
 

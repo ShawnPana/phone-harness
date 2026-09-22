@@ -499,7 +499,9 @@ def _wait_for_profile():
         if state == "running" and profile.get("session"):
             try:
                 live = _api("GET", f"/sessions/{profile['session']}")
-            except CloudError:
+            except CloudError as e:
+                if e.status != 404:
+                    raise
                 live = None
             if live and live["state"] in ("provisioning", "ready"):
                 print(f"Your phone is already running (session {live['id']}). Attaching to it.")
@@ -537,7 +539,9 @@ def _start(args):
     if current:
         try:
             live = _api("GET", f"/sessions/{current['sid']}")
-        except CloudError:
+        except CloudError as e:
+            if e.status != 404:
+                raise
             live = None
         if live and live["state"] in ("provisioning", "ready"):
             print(f"Already attached to session {live['id']}; reusing it.")
@@ -660,7 +664,9 @@ def _status(args):
     if sess:
         try:
             live = _api("GET", f"/sessions/{sess['sid']}")
-        except CloudError:
+        except CloudError as e:
+            if e.status != 404:
+                raise
             live = None
     # Just after `stop`, the API still says the profile is `running` while its
     # session is `closing`; the truth for the user is that it is being saved.

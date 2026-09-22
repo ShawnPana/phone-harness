@@ -13,7 +13,7 @@ live inside one backend each, behind the ops documented in transport.py, so
 `nav.home` and `screen.text` mean the same thing everywhere even though an
 iPhone answers them with a Cmd+1 keystroke and Vision OCR.
 """
-import hashlib, importlib.util, os, time
+import hashlib, importlib.util, os, tempfile, time
 from pathlib import Path
 
 from . import transport
@@ -590,14 +590,16 @@ def wait_stable(timeout=6.0, interval=0.5, settle=2):
     The status-bar clock ticks once a minute, so near-misses are rare."""
     prev, same = None, 0
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        path, _ = send("screen.capture")
-        digest = hashlib.md5(Path(path).read_bytes()).hexdigest()
-        same = same + 1 if digest == prev else 0
-        if same >= settle - 1:
-            return True
-        prev = digest
-        time.sleep(interval)
+    with tempfile.TemporaryDirectory(prefix="phone-stable-") as directory:
+        capture_path = str(Path(directory) / "screen.png")
+        while time.time() < deadline:
+            path, _ = send("screen.capture", path=capture_path)
+            digest = hashlib.md5(Path(path).read_bytes()).hexdigest()
+            same = same + 1 if digest == prev else 0
+            if same >= settle - 1:
+                return True
+            prev = digest
+            time.sleep(interval)
     return False
 
 

@@ -12,6 +12,9 @@ USAGE = """Usage:
   print(screen_info())
   PY
 
+The script is read from stdin. A single quoted argument that is clearly
+Python (has a newline or a call) is run as the script too.
+
 Commands:
   phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
   phone-harness skill       print the phone-harness skill text
@@ -97,7 +100,33 @@ def _telemetry_command(args):
         return "doctor"
     if first in {"android", "cloud", "config", "skill"}:
         return first
+    if _argv_script(args) is not None:
+        return "script-argv"
     return "usage"
+
+
+def _argv_script(args):
+    """The script body when the whole argv is one argument that can only be
+    Python: it spans lines or calls something. Agents (codex, opencode,
+    hermes) generate `phone-harness "<script>"` often enough that refusing it
+    was the top first-run failure. A lone word such as a mistyped subcommand
+    is not a script; it gets the usage text and a hint instead."""
+    if len(args) != 1:
+        return None
+    body = args[0]
+    if "\n" in body or "(" in body:
+        return body
+    return None
+
+
+def _usage_for_unknown(args):
+    """USAGE, led by what went wrong: the argument was not a command, and a
+    script belongs on stdin (the heredoc form) rather than in argv."""
+    shown = " ".join(args)
+    if len(shown) > 60:
+        shown = shown[:57] + "..."
+    return (f"phone-harness: {shown!r} is not a command.\n"
+            "A script goes on stdin, not as an argument:\n\n" + USAGE)
 
 
 _INTENT_KEYS = ("task", "step")
@@ -137,14 +166,39 @@ def _exit_code(code):
     return 1
 
 
+def _portable_streams():
+    """UTF-8 on the pipes, and never a crash over one character.
+
+    Off macOS the console encoding is whatever the locale says: cp936 on a
+    Chinese Windows box, cp949 on a Korean one. Python then decodes the piped
+    script and encodes our output with it, and the first emoji in OCR text
+    (or the first CJK character in the agent's own script) raised. Agents
+    write and read UTF-8, so a pipe is UTF-8. A terminal keeps its own
+    encoding so the human's text still renders; a glyph it cannot show
+    becomes '?' rather than a traceback. Only the wrapped std streams are
+    touched, and stdin before anything reads it."""
+    for name in ("stdin", "stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            if stream.isatty():
+                stream.reconfigure(errors="replace")
+            else:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass    # closed, or already read from: leave it be
+
+
 def main():
     global _helper_call_count
+    _portable_streams()
     args = sys.argv[1:]
     _helper_trace.clear()
     _helper_call_count = 0
     start_time = time.monotonic()
     command = _telemetry_command(args)
-    task = None
+    task = _argv_script(args) if command == "script-argv" else None
     if not args and not sys.stdin.isatty():
         task = sys.stdin.read()
         sys.stdin = io.StringIO(task)
@@ -230,9 +284,13 @@ def _run(args):
     if args and args[0] == "skill":
         print(_skill_text(), end="")
         return
-    if args or sys.stdin.isatty():
-        sys.exit(USAGE)
-    code = sys.stdin.read()
+    code = _argv_script(args)
+    if code is None:
+        if args:
+            sys.exit(_usage_for_unknown(args))
+        if sys.stdin.isatty():
+            sys.exit(USAGE)
+        code = sys.stdin.read()
     if not code.strip():
         sys.exit(USAGE)
     from . import helpers

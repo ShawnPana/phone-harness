@@ -132,6 +132,10 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
 - **A session the user started is theirs.** `cloud start` attaches to a phone
   that is already running instead of starting another; leave it running unless
   they ask you to stop it.
+- **`cloud start --temp` selects a throwaway phone.** If a saved phone is
+  attached, it stays running and billing while the temporary phone starts.
+  Repeating `--temp` reuses an attached temporary phone. `cloud ls` shows both;
+  stop a session only when the user is done with it.
 - **`Not signed in`** means the user runs `phone-harness cloud login` and
   approves it in a browser. Relay that; you cannot do it for them. A user
   without an account is pointed at phone-harness.com by the CLI itself.

@@ -140,6 +140,12 @@ class CloudCli(unittest.TestCase):
         adb = Path(self.home.name) / "adb"
         adb.write_text(FAKE_ADB)
         adb.chmod(adb.stat().st_mode | stat.S_IEXEC)
+        # `cloud start` opens the live view in a browser by default, and `webbrowser` honours
+        # $BROWSER. Point it at a no-op so a test run never opens real tabs on the developer's
+        # machine; the one test about browser behaviour overrides this with a recording stub.
+        no_browser = Path(self.home.name) / "no-browser"
+        no_browser.write_text("#!/bin/sh\nexit 0\n")
+        no_browser.chmod(0o755)
         FakeCloud.sessions, FakeCloud.polls, FakeCloud.posts = {}, {}, []
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
@@ -152,6 +158,7 @@ class CloudCli(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.env = {**os.environ, "PYTHONPATH": SRC, "PHONE_HARNESS_HOME": self.home.name,
                     "PHONE_HARNESS_ADB": str(adb), "PHONE_HARNESS_TELEMETRY": "0",
+                    "BROWSER": str(no_browser),
                     "PHONE_HARNESS_CLOUD_API": f"http://127.0.0.1:{self.server.server_port}",
                     "PHONE_HARNESS_CLOUD_OAUTH_ISSUER": f"http://127.0.0.1:{self.server.server_port}",
                     "PHONE_HARNESS_CLOUD_OAUTH_CLIENT_ID": "cli-client"}

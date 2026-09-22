@@ -194,16 +194,10 @@ class Android(Backend):
         rented = cloud.attached()
         if not rented or os.environ.get("ANDROID_SERIAL") != cloud.serial_of(rented):
             return _run(*args, binary=binary, timeout=timeout)
-        # A rented phone is reached over the internet, and every new connection
-        # to it starts locked (commands answer "locked"): reconnect once, and
-        # only then is a failure real.
-        try:
-            out = _run(*args, binary=binary, timeout=timeout)
-            if out.strip() not in ("locked", b"locked"):
-                return out
-        except RuntimeError:
-            pass
-        cloud.ensure_connected(rented)
+        # Recover through a fixed read-only probe before dispatch. A failed
+        # command may already have changed the phone, and even a successful
+        # command may legitimately print "locked". Neither is safe to replay.
+        cloud.ensure_connected(rented, quiet=True)
         return _run(*args, binary=binary, timeout=timeout)
 
     def _sh(self, cmd, timeout=60):

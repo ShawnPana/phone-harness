@@ -418,8 +418,14 @@ class Android(Backend):
                          f"sleep 0.2 && input motionevent UP {int(x2)} {int(y2)}")
                 self._motionevents = True
                 return
-            except RuntimeError:
-                if self._motionevents:            # it has worked before: a real failure
+            except RuntimeError as e:
+                # Only the known unsupported-command diagnostic establishes
+                # capability. A disconnect or command failure must not send
+                # a second gesture or change future gesture behavior.
+                diagnostic = str(e).rsplit(" failed: ", 1)[-1].strip().lower()
+                unsupported = diagnostic in ("error: unknown command: motionevent",
+                                              "unknown command: motionevent")
+                if self._motionevents or not unsupported:
                     raise
                 self._motionevents = False        # an older Android without `motionevent`
         # The fallback still lifts a moving finger; slow enough that it coasts little.

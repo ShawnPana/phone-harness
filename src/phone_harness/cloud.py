@@ -360,7 +360,8 @@ def _resolve_sid(given):
     return hits[0]
 
 
-def _wait_ready(sid):
+def _wait_ready(sid, *, release_on_timeout=False):
+    """Wait for readiness; release on timeout only when this call created it."""
     deadline = time.monotonic() + READY_WAIT
     shown = None
     while True:
@@ -370,12 +371,15 @@ def _wait_ready(sid):
         if session["state"] in ("error", "closing"):
             sys.exit(f"The phone did not start: {session.get('error') or session['state']}")
         if time.monotonic() >= deadline:
-            try:
-                _api("DELETE", f"/sessions/{sid}")
-            except (CloudError, OSError):
-                pass
-            sys.exit(f"Gave up after {READY_WAIT}s waiting for the phone; asked the service "
-                     f"to end session {sid}.")
+            if release_on_timeout:
+                try:
+                    _api("DELETE", f"/sessions/{sid}")
+                except (CloudError, OSError):
+                    pass
+                sys.exit(f"Gave up after {READY_WAIT}s waiting for the phone; asked the service "
+                         f"to end session {sid}.")
+            sys.exit(f"Gave up after {READY_WAIT}s waiting for the phone. "
+                     f"Session {sid} was left running; `phone-harness cloud ls` shows its state.")
         prog = session.get("progress") or {}
         line = prog.get("phase") or "provisioning"
         if prog.get("queue_position"):
@@ -568,7 +572,7 @@ def _start(args):
         created = _api("GET", f"/sessions/requests/{request_key}")
         if created.get("cleanup_complete") or not created.get("id"):
             raise
-    return _report(_wait_ready(created["id"]), profile_id, watch)
+    return _report(_wait_ready(created["id"], release_on_timeout=True), profile_id, watch)
 
 
 def _report(session, profile_id=None, watch=True):

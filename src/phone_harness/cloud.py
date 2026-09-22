@@ -18,6 +18,7 @@ Stdlib only. API reference: https://phone-harness.com/docs
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -239,10 +240,14 @@ def serial_of(sess):
 def ensure_connected(sess, quiet=False):
     """adb connect + unlock, skipped when the link is already up. Every new
     adb connection starts locked, so this runs once per process and again
-    after a drop. -> the adb serial."""
+    after a drop. -> the adb serial. The five subprocess waits during recovery
+    are individually bounded (80 seconds total, plus local overhead)."""
     from .android import _run
     serial = serial_of(sess)
-    probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
+    try:
+        probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
+    except subprocess.TimeoutExpired:
+        probe = ""             # only this read-only probe may enter recovery
     if "ph-ok" not in probe:
         # A link that went `offline` still counts as connected to adb, and
         # `connect` would answer "already connected": drop it first.

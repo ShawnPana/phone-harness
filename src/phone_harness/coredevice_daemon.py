@@ -892,6 +892,18 @@ class Session:
         await self._keys(set())
         return None
 
+    async def op_clipboard(self, **_):
+        """The phone's clipboard as text, or None. Read on explicit request
+        only; never logged."""
+        from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardService
+        svc = PasteboardService(self.rsd)
+        await asyncio.wait_for(svc.connect(), CONNECT_TIMEOUT)
+        try:
+            return await asyncio.wait_for(svc.get_text(), 10)
+        finally:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(svc.close(), 1)
+
     async def op_home(self, **_):
         await self._home_press()
         return None

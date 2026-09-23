@@ -66,6 +66,12 @@ nothing in common — so the shared layer is this vocabulary instead.
         annoyance, covering the screen is not, and a backend that reaches the
         device directly does neither.
 
+    clipboard.read                      -> str or None, the phone's clipboard text
+
+        Where the device exposes its pasteboard (CoreDevice). Lets an agent
+        tap "Copy" on the phone and read the value exactly instead of OCRing
+        it off the screen — the way to move a password without misreading.
+
     tree                                -> [node]   where the device has one
     raw                 ...             backend-specific escape hatch
 
@@ -94,6 +100,7 @@ OP_NAMES = (
     "apps.launch", "apps.current", "apps.list",
     "session.state", "session.require", "session.refocus", "session.detail",
     "focus.probe", "focus.diff",
+    "clipboard.read",
     "tree", "raw",
 )
 

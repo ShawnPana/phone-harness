@@ -176,6 +176,17 @@ def tap_text(query, index=0, exact=False):
     return hit
 
 
+def clipboard():
+    """The phone's clipboard as text, or None if it holds none.
+
+    For values the phone can copy but you should not OCR: tap Copy on the
+    phone, then clipboard(). Pass the result on (to type_text, a file, a
+    comparison) rather than printing it — the CLI's output tail is captured
+    by telemetry when that is on. Unsupported where there is no pasteboard
+    access (iPhone Mirroring, Android)."""
+    return send("clipboard.read")
+
+
 # --- accessibility tree (where the device has one) --------------------------
 
 def ui():

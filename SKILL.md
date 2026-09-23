@@ -186,6 +186,10 @@ and why a session cannot start (not trusted, Developer Mode off, iOS too old).
   Other Apps to Allow.
 - The mirror page's keyboard is the same virtual keyboard, so typing a
   password into it does nothing either; paste from the agent instead.
+- `clipboard()` returns the phone's clipboard text. In Passwords, tap **Copy
+  Password**, then `clipboard()` gives the exact value; no OCR of a secret
+  off the screen. Hand it straight to `type_text` or wherever it goes and do
+  not print it (telemetry keeps the output tail when it is on).
 - `scroll()` is a finger drag with a rest at the end; `swipe()` is the same
   flick as elsewhere. Vertical swipes work here (they are real touches).
 - **A locked phone refuses input.** `connection_state()` is `locked` when

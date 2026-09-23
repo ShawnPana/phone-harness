@@ -205,6 +205,9 @@ class CoreDevice(Backend):
         request("text", s=s, delay=delay, keystrokes=keystrokes,
                 timeout=max(30.0, 0.2 * len(s) + 10))
 
+    def _clipboard_read(self):
+        return request("clipboard")
+
     # --- navigation -----------------------------------------------------
 
     def _nav_home(self):

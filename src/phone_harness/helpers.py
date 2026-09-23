@@ -409,13 +409,18 @@ def scroll_screen(direction="down", amount=0.6, settle=2.5, moved_thresh=None,
     # Settle: wait until two reads of the content are IDENTICAL, or the
     # caller's window runs out. Exact equality, so there is nothing to tune --
     # a screen that never settles (a playing video) simply uses its budget.
-    boxes, prev_set, deadline = _content_texts(), None, time.time() + settle
-    while time.time() < deadline:
+    boxes, prev_set, deadline = _content_texts(), None, time.monotonic() + settle
+    while time.monotonic() < deadline:
         cur_set = _text_set(boxes)
         if cur_set == prev_set:
             break
         prev_set = cur_set
-        time.sleep(0.25)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.25, remaining))
+        if time.monotonic() >= deadline:
+            break
         boxes = _content_texts()
 
     return {"before": before, "after": _text_set(boxes), "boxes": boxes}
@@ -562,42 +567,54 @@ def wait_for_text(query, timeout=10.0, exact=False, interval=0.5):
     """Poll until `query` is visible; -> its box or None. The verify step
     after an action: wait for the thing you expect to appear rather than
     sleeping and hoping. Cheap where the device has a tree, a capture+OCR
-    per poll where it doesn't."""
-    deadline = time.time() + timeout
+    per poll where it doesn't. The timeout bounds polling; an active backend
+    call retains its own execution bound."""
+    deadline = time.monotonic() + timeout
     while True:
         hits = find_text(query, exact=exact)
         if hits:
             return hits[0]
-        if time.time() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             return None
-        time.sleep(interval)
+        time.sleep(min(interval, remaining))
+        if time.monotonic() >= deadline:
+            return None
 
 
 def wait_for_app(app_id, timeout=10.0, interval=0.3):
     """Poll until `app_id` is the foreground app; -> True/False. A ~0.1s check
-    on Android; Unsupported where the device exposes no foreground app."""
-    deadline = time.time() + timeout
+    on Android; Unsupported where the device exposes no foreground app.
+    An active backend call retains its own execution bound."""
+    deadline = time.monotonic() + timeout
     while True:
         if send("apps.current") == app_id:
             return True
-        if time.time() >= deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             return False
-        time.sleep(interval)
+        time.sleep(min(interval, remaining))
+        if time.monotonic() >= deadline:
+            return False
 
 
 def wait_stable(timeout=6.0, interval=0.5, settle=2):
     """Wait until `settle` consecutive captures are identical (animation done).
-    The status-bar clock ticks once a minute, so near-misses are rare."""
+    The status-bar clock ticks once a minute, so near-misses are rare.
+    An active capture retains its own execution bound."""
     prev, same = None, 0
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         path, _ = send("screen.capture")
         digest = hashlib.md5(Path(path).read_bytes()).hexdigest()
         same = same + 1 if digest == prev else 0
         if same >= settle - 1:
             return True
         prev = digest
-        time.sleep(interval)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(interval, remaining))
     return False
 
 

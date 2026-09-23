@@ -313,7 +313,7 @@ async def mount_ddi(udid, remount=False):
         await ld.close()
 
 
-def wifi_tunnel(identifier, endpoints):
+def wifi_tunnel(identifier, endpoints, on_connect=None):
     """A userspace RSD tunnel over Wi-Fi to a phone we hold a RemotePairing
     record for. pymobiledevice3's UserspaceRsdTunnel has no provider hook,
     so its provider factory is swapped while this tunnel opens (its own
@@ -329,6 +329,8 @@ def wifi_tunnel(identifier, endpoints):
             try:
                 await asyncio.wait_for(svc.connect(autopair=False), 8)
                 log.info("wifi tunnel: connected to %s:%s", host, port)
+                if on_connect is not None:
+                    on_connect(host, port)
                 return svc, None
             except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError,
                     ConnectionError) as e:
@@ -361,6 +363,7 @@ class Session:
         self.info = info                # name/model/ios from probe()
         self.connection = connection    # "usb" | "wifi"
         self.endpoints = list(endpoints)
+        self.endpoint = None            # (host, port) actually used over Wi-Fi
         # Mirror mode: pymobiledevice3's screen-stream server owns the video
         # stream (and so the HID auth gate) and serves our page on loopback.
         self.mirror_port = mirror_port  # None = no mirror; 0 = pick a free port
@@ -392,7 +395,9 @@ class Session:
 
         phase("connecting")
         if self.connection == "wifi":
-            self.tunnel = wifi_tunnel(self.udid, self.endpoints)
+            def remember(host, port):
+                self.endpoint = (host, port)
+            self.tunnel = wifi_tunnel(self.udid, self.endpoints, remember)
         else:
             self.tunnel = UserspaceRsdTunnel(serial=self.udid, autopair=False,
                                              remotepairing_fallback=False)
@@ -486,7 +491,8 @@ class Session:
         import html as _html
         for key, value in (("__DEVICE__", self.info.get("name") or "iPhone"),
                            ("__MODEL__", self.info.get("model") or "iPhone"),
-                           ("__IOS__", self.info.get("ios") or "?")):
+                           ("__IOS__", self.info.get("ios") or "?"),
+                           ("__TRANSPORT__", self.transport_label())):
             page = page.replace(key, _html.escape(str(value)))
         SS.VIEWER_HTML = page.encode("utf-8")
         self.mirror = SS.ScreenStreamServer(self.rsd, bind="127.0.0.1",
@@ -502,6 +508,13 @@ class Session:
             self.mirror._hid_worker(), self.mirror._stall_watchdog(),
             self.mirror._decoder_refresh_loop())]
         await asyncio.sleep(0.3)                # backboardd re-matches HID surfaces
+
+    def transport_label(self):
+        if self.connection == "wifi":
+            host, port = self.endpoint or ("?", "")
+            host = f"[{host}]" if ":" in str(host) else host
+            return f"Wi-Fi {host}:{port}" if port else "Wi-Fi"
+        return "USB"
 
     def mirror_url(self):
         return f"http://127.0.0.1:{self.mirror_port}/" if self.mirror is not None else None
@@ -1078,6 +1091,7 @@ async def run(serial, mirror_port=None, connection="auto", address=None):
         await session.open(phase)
         server, endpoint = await _serve(session, stop)
         state.update(endpoint=endpoint, w=session.w, h=session.h, mirror_url=session.mirror_url(),
+                     transport=session.transport_label(),
                      **{k: session.info[k] for k in ("name", "model", "ios")})
         phase("ready")
         while not stop.is_set() and not session.dead:

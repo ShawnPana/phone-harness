@@ -470,7 +470,7 @@ def cli(args):
         st = _state() or {}
         _remember(st)
         print(f"awake: {st.get('name')} ({st.get('model')}, iOS {st.get('ios')}) over "
-              f"{st.get('connection') or 'usb'}, screen {st.get('w')}x{st.get('h')} px")
+              f"{st.get('transport') or st.get('connection') or 'usb'}, screen {st.get('w')}x{st.get('h')} px")
         if st.get("mirror_url"):
             print(f"mirror: {st['mirror_url']}")
         if "--bg" in args:

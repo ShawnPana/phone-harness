@@ -120,7 +120,7 @@ import Foundation
 """
 
 
-def _connected_iphone():
+def _paired_iphones():
     result = subprocess.run(
         ["xcrun", "devicectl", "list", "devices", "--quiet",
          "--json-output", "-"], capture_output=True, text=True, timeout=15)
@@ -130,11 +130,31 @@ def _connected_iphone():
         listed = json.loads(result.stdout)["result"]["devices"]
     except (json.JSONDecodeError, KeyError) as error:
         raise RuntimeError("devicectl returned an invalid device list") from error
-    devices = [
+    return [
         item for item in listed
         if item.get("properties", {}).get("hardware", {}).get("reality") == "physical"
         and item.get("properties", {}).get("hardware", {}).get("platform") == "iOS"
-        and item.get("properties", {}).get("connection", {}).get("state") == "connected"
+        and item.get("properties", {}).get("connection", {}).get("pairingState") == "paired"
+    ]
+
+
+def _is_connected(item):
+    return item.get("properties", {}).get("connection", {}).get("state") == "connected"
+
+
+def _connected_iphone():
+    phones = _paired_iphones()
+    if len(phones) == 1 and not _is_connected(phones[0]):
+        # CoreDevice drops an idle tunnel (the phone then lists as "available
+        # (paired)"); any devicectl request to the phone brings it back up.
+        subprocess.run(
+            ["xcrun", "devicectl", "device", "info", "details", "--device",
+             phones[0]["identifier"], "--quiet", "--json-output", os.devnull],
+            capture_output=True, timeout=30)
+        phones = _paired_iphones()
+    devices = [
+        item for item in phones
+        if _is_connected(item)
         and any(cap.get("featureIdentifier") ==
                 "com.apple.coredevice.feature.remote.hid.keyboard"
                 for cap in item.get("capabilities", []))

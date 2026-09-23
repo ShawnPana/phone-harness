@@ -339,7 +339,13 @@ class Session:
         stream healthy (RTCP, PLI, stall watchdog) and answers /touch, /key,
         /button and /rotate. We replace only its page with ours."""
         from pymobiledevice3.remote.core_device import screen_stream as SS
-        SS.VIEWER_HTML = (Path(__file__).with_name("coredevice_mirror.html")).read_bytes()
+        page = (Path(__file__).with_name("coredevice_mirror.html")).read_text(encoding="utf-8")
+        import html as _html
+        for key, value in (("__DEVICE__", self.info.get("name") or "iPhone"),
+                           ("__MODEL__", self.info.get("model") or "iPhone"),
+                           ("__IOS__", self.info.get("ios") or "?")):
+            page = page.replace(key, _html.escape(str(value)))
+        SS.VIEWER_HTML = page.encode("utf-8")
         self.mirror = SS.ScreenStreamServer(self.rsd, bind="127.0.0.1",
                                             http_port=self.mirror_port or 0,
                                             audio_default_on=False)

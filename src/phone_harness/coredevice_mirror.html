@@ -5,72 +5,153 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>iPhone</title>
 <style>
-  :root { color-scheme: dark; }
-  html, body { margin: 0; height: 100%; background: #111; overflow: hidden;
-               font: 13px -apple-system, system-ui, sans-serif; color: #ddd; }
-  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
-  /* The phone: a bezel exactly around the live screen. Nothing else. */
-  #phone { position: relative; background: #000; padding: 10px;
-           border-radius: 44px; box-shadow: 0 30px 80px rgba(0,0,0,.6);
-           outline: 1px solid #2a2a2a; }
-  #screen { display: block; border-radius: 34px; background: #000; cursor: default;
+  /* Tokens and rules copied from phone-cloud's globals.css so the two read
+     as one product. Keep in step with frontend/src/styles/globals.css. */
+  :root {
+    --bg: #f6f7f1; --fg: #20231e; --muted: #72766d; --line: #c7cbc0; --soft: #eceee6;
+    --accent: var(--fg);
+    --danger: #924c43; --danger-soft: #f2e5e1; --positive: #42694f; --positive-soft: #e5ede4;
+    --space: 24px;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Arial, Helvetica, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #191c19; --fg: #e5e9df; --muted: #9da598; --line: #42483e; --soft: #252a24;
+      --danger: #eaa49b; --danger-soft: #372925; --positive: #a5c5aa; --positive-soft: #25342a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #191c19; --fg: #e5e9df; --muted: #9da598; --line: #42483e; --soft: #252a24;
+    --danger: #eaa49b; --danger-soft: #372925; --positive: #a5c5aa; --positive-soft: #25342a;
+    color-scheme: dark;
+  }
+  :root[data-theme="amber"] {
+    --bg: #1c1911; --fg: #e3bf71; --muted: #b0996b; --line: #665836; --soft: #292316;
+    --danger: #e1a089; --danger-soft: #392a20; --positive: #b7c28a; --positive-soft: #2b3020;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg);
+               font-family: var(--sans); font-size: 13px; }
+  body { height: 100dvh; overflow: hidden; background: var(--bg); }
+  button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+           outline-offset: 4px; touch-action: manipulation; }
+  button:disabled { cursor: default; opacity: 0.45; }
+  :focus-visible { outline: 2px solid var(--fg); }
+  h1 { font-weight: 500; margin: 0; font-size: 23px; letter-spacing: -0.7px; }
+  p { line-height: 1.6; margin: 0; }
+  small { font-size: 11px; }
+  svg { flex-shrink: 0; }
+
+  .button { border: 1px solid var(--line); background: transparent; min-height: 38px; padding: 9px 13px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+            transition: background 140ms, color 140ms, border-color 140ms; font-size: 12px; border-radius: 0; }
+  .button:hover:not(:disabled) { background: var(--soft); border-color: var(--fg); }
+  .button[aria-pressed="true"] { background: var(--soft); }
+
+  .brand { display: inline-flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 600;
+           letter-spacing: -0.8px; white-space: nowrap; color: inherit; text-decoration: none; }
+  .brand-mark { width: 32px; height: 32px; color: var(--accent); }
+
+  .standalone-watch { height: 100dvh; display: flex; flex-direction: column; padding: var(--space); gap: var(--space); }
+  .standalone-watch-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; min-height: 40px; }
+  .standalone-watch-header p { color: var(--muted); }
+  .standalone-watch-content { min-height: 0; flex: 1; display: flex; }
+  .standalone-watch-content > .phone-viewer { width: 100%; }
+
+  .phone-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; width: 100%; height: 100%; position: relative; }
+  .viewer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
+                    margin-bottom: 10px; min-height: 28px; }
+  .viewer-toolbar .button, .viewer-toolbar button { font-size: 10px; }
+  .viewer-actions .button { min-height: 30px; padding: 6px 10px; }
+  .viewer-label { font: 10px var(--mono); color: var(--muted); }
+  .viewer-actions { display: flex; align-items: center; gap: 8px; }
+  .viewer-notice { font: 11px/1.5 var(--mono); color: var(--muted); padding: 10px 0; margin: 0; }
+  .viewer-notice[hidden] { display: none; }
+
+  /* The stage: phone-cloud's viewer frame — a full-width black area with
+     small mono captions in its corners and the phone centred inside. */
+  .viewer-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center;
+                  justify-content: center; background: #0a0a0a; padding: 40px 24px 24px; }
+  .stage-caption { position: absolute; top: 12px; font: 10px var(--mono); color: #9da598; letter-spacing: 0.2px; }
+  .stage-caption.left { left: 12px; } .stage-caption.right { right: 12px; }
+  #screen { display: block; background: #000; max-width: 100%; max-height: 100%; outline: 1px solid #1f1f1f;
             touch-action: none; user-select: none; -webkit-user-select: none; }
-  #screen:focus { outline: none; }
-  #status { position: absolute; inset: 10px; display: grid; place-items: center;
-            color: #888; border-radius: 34px; pointer-events: none; text-align: center; }
-  #status.hidden { display: none; }
-  /* Slim hover bar under the screen. Fades unless the mouse moves. */
-  #bar { position: absolute; left: 50%; bottom: -46px; transform: translateX(-50%);
-         display: flex; gap: 6px; padding: 5px; border-radius: 12px;
-         background: rgba(30,30,30,.92); border: 1px solid #333;
-         opacity: 0; transition: opacity .25s; }
-  #bar.show { opacity: 1; }
-  #bar button { all: unset; width: 34px; height: 30px; border-radius: 8px; display: grid;
-                place-items: center; cursor: pointer; color: #ccc; }
-  #bar button:hover { background: #333; color: #fff; }
-  #bar button:active { background: #444; }
-  #bar svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
-             stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #screen:focus { outline-color: #9da598; }
+
+  @media (max-width: 760px) { :root { --space: 20px; } }
+  @media (max-width: 560px) { :root { --space: 16px; } .brand { font-size: 16px; gap: 8px; }
+                              .brand-mark { width: 27px; height: 27px; } .viewer-label { font-size: 9px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 </style>
 </head>
 <body>
-<div id="stage">
-  <div id="phone">
-    <canvas id="screen" width="750" height="1334" tabindex="0"></canvas>
-    <div id="status">Connecting to iPhone…</div>
-    <div id="bar">
-      <button data-act="home" title="Home"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="4"/></svg></button>
-      <button data-act="rotate" title="Rotate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg></button>
-      <button data-act="shot" title="Save screenshot"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-      <button data-act="volume-down" title="Volume down"><svg viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10z"/></svg></button>
-      <button data-act="volume-up" title="Volume up"><svg viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg></button>
-      <button data-act="lock" title="Lock"><svg viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/></svg></button>
+<main class="standalone-watch">
+  <header class="standalone-watch-header">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">
+        <path d="M3 2h2v1H3zM11 2h2v1h-2zM2 3h2v1H2zM5 3h1v1H5zM10 3h1v1h-1zM12 3h2v1h-2zM2 4h1v1H2zM6 4h4v1H6zM13 4h1v1h-1zM2 5h1v1H2zM13 5h1v1h-1zM3 6h2v1H3zM11 6h2v1h-2zM6 7h4v1H6zM5 8h6v1H5zM4 9h8v1H4zM4 10h8v1H4zM7 10h2v1H7zM4 11h8v1H4zM3 12h10v1H3zM3 13h10v1H3z"/>
+        <rect x="6" y="9" width="4" height="4" fill="var(--bg)"/>
+        <path d="M6 9h4v1H6zM6 12h4v1H6zM6 9h1v4H6zM9 9h1v4H9z"/>
+      </svg>
+      <span>phone-harness <small>local</small></span>
+    </a>
+    <div>
+      <h1 id="device">__DEVICE__</h1>
+      <p><span class="viewer-label" id="headline">__MODEL__ · iOS __IOS__ · <span id="state">connecting</span></span></p>
+    </div>
+  </header>
+  <div class="standalone-watch-content">
+    <div class="phone-viewer">
+      <div class="viewer-toolbar">
+        <span class="viewer-label" id="label">Local · 127.0.0.1 · click to tap, drag to swipe, scroll to scroll, type to type</span>
+        <div class="viewer-actions">
+          <button class="button" type="button" data-act="home">Home</button>
+          <button class="button" type="button" data-act="rotate">Rotate</button>
+          <button class="button" type="button" data-act="shot">Screenshot</button>
+          <button class="button" type="button" data-act="volume-down">Vol −</button>
+          <button class="button" type="button" data-act="volume-up">Vol +</button>
+          <button class="button" type="button" data-act="lock">Lock</button>
+        </div>
+      </div>
+      <p class="viewer-notice" id="notice" role="status">Connecting to the iPhone…</p>
+      <div class="viewer-stage">
+        <span class="stage-caption left">USB · __MODEL__ · iOS __IOS__</span>
+        <span class="stage-caption right" id="caption">connecting</span>
+        <canvas id="screen" width="750" height="1334" tabindex="0" aria-label="Live iPhone screen"></canvas>
+      </div>
     </div>
   </div>
-</div>
+</main>
 <script>
 (() => {
+  // ?theme=dark|light|amber pins a theme; otherwise the system setting decides.
+  const theme = new URLSearchParams(location.search).get('theme');
+  if (theme) document.documentElement.dataset.theme = theme;
+
   const canvas = document.getElementById('screen');
   const ctx = canvas.getContext('2d');
-  const status = document.getElementById('status');
-  const phone = document.getElementById('phone');
-  const bar = document.getElementById('bar');
+  const notice = document.getElementById('notice');
+  const stateEl = document.getElementById('state');
+  const stage = canvas.parentElement;
   const post = (path, body) => fetch(path, { method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+  const captionEl = document.getElementById('caption');
+  const setState = (s, note) => { stateEl.textContent = s; captionEl.textContent = s;
+    if (note === undefined) notice.hidden = true; else { notice.textContent = note; notice.hidden = false; } };
 
-  // ---- layout: the canvas keeps the phone's aspect and fills the window ----
-  let vw = 750, vh = 1334;                       // video dimensions
+  // ---- layout: keep the phone's aspect inside the stage ----
+  let vw = 750, vh = 1334;
   function layout() {
-    const pad = 20, barRoom = 60;
-    const maxW = innerWidth - pad * 2 - 20, maxH = innerHeight - pad * 2 - barRoom;
-    const s = Math.min(maxW / vw, maxH / vh);
-    canvas.style.width = Math.round(vw * s) + 'px';
-    canvas.style.height = Math.round(vh * s) + 'px';
-    const r = Math.round(Math.min(vw, vh) * s * 0.12);
-    phone.style.borderRadius = (r + 10) + 'px';
-    canvas.style.borderRadius = status.style.borderRadius = r + 'px';
+    const r = stage.getBoundingClientRect();
+    const s = Math.min((r.width - 48) / vw, (r.height - 64) / vh);
+    canvas.style.width = Math.max(1, Math.floor(vw * s)) + 'px';
+    canvas.style.height = Math.max(1, Math.floor(vh * s)) + 'px';
   }
-  addEventListener('resize', layout); layout();
+  addEventListener('resize', layout); requestAnimationFrame(layout);
 
   // ---- video: /codec then /stream.bin (length-prefixed NALUs) → VideoDecoder → canvas ----
   async function codecInfo() {
@@ -85,7 +166,7 @@
       } catch (e) {}
       await new Promise(r => setTimeout(r, 500));
     }
-    throw new Error('the stream did not start');
+    throw new Error('The stream did not start. Is the phone unlocked and plugged in?');
   }
   let decoder, decoderConfig, needKey = true;
   function newDecoder() {
@@ -96,9 +177,9 @@
           canvas.width = vw; canvas.height = vh; layout();
         }
         ctx.drawImage(frame, 0, 0, vw, vh); frame.close();
-        status.classList.add('hidden');
+        if (stateEl.textContent !== 'streaming') setState('streaming');
       },
-      error: e => { needKey = true; },
+      error: () => { needKey = true; },
     });
     decoder.configure(decoderConfig);
   }
@@ -106,7 +187,7 @@
     const info = await codecInfo();
     decoderConfig = { codec: info.codec, description: info.description, optimizeForLatency: true };
     const sup = await VideoDecoder.isConfigSupported(decoderConfig);
-    if (!sup.supported) { status.textContent = 'This browser cannot decode HEVC. Try Safari or Chrome.'; return; }
+    if (!sup.supported) { setState('unsupported', 'This browser cannot decode HEVC. Safari or Chrome with hardware video works.'); return; }
     newDecoder();
     let ts = 0;
     for (;;) {
@@ -115,7 +196,7 @@
         try { const r = await fetch('/stream.bin', { cache: 'no-store' }); if (r.ok) resp = r; } catch (e) {}
         if (!resp) await new Promise(r => setTimeout(r, 500));
       }
-      if (!resp) { status.textContent = 'Lost the stream. Is the phone still connected?'; status.classList.remove('hidden'); return; }
+      if (!resp) { setState('disconnected', 'Lost the stream. Is the phone still connected? `phone-harness ios` shows the session.'); return; }
       const reader = resp.body.getReader();
       let buf = new Uint8Array(0);
       for (;;) {
@@ -135,10 +216,10 @@
           catch (e) { needKey = true; }
         }
       }
-      needKey = true;                            // the server restarted; wait for a key
+      needKey = true; setState('reconnecting', 'The stream restarted; picking it back up…');
     }
   }
-  video().catch(e => { status.textContent = e.message; status.classList.remove('hidden'); });
+  video().catch(e => setState('unavailable', e.message));
 
   // ---- the phone is the interface ----
   const hid = (e) => {
@@ -177,7 +258,7 @@
     })();
   }, { passive: false });
 
-  // Keyboard → HID usages (full set held down, as the server expects).
+  // Keyboard → HID usages (the full set held down, as the server expects).
   const CODES = { Enter: 40, Escape: 41, Backspace: 42, Tab: 43, Space: 44, Minus: 45, Equal: 46,
     BracketLeft: 47, BracketRight: 48, Backslash: 49, Semicolon: 51, Quote: 52, Backquote: 53,
     Comma: 54, Period: 55, Slash: 56, CapsLock: 57, Delete: 76, Home: 74, End: 77, PageUp: 75, PageDown: 78,
@@ -195,12 +276,8 @@
     e.preventDefault(); if (held.delete(u)) sendKeys(); });
   canvas.addEventListener('blur', () => { if (held.size) { held.clear(); sendKeys(); } });
 
-  // ---- hover bar ----
-  let hideTimer;
-  addEventListener('pointermove', () => { bar.classList.add('show'); clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => bar.classList.remove('show'), 1800); });
-  bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
-  bar.addEventListener('click', e => {
+  // ---- toolbar ----
+  document.querySelector('.viewer-actions').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const act = b.dataset.act;
     if (act === 'rotate') return post('/rotate', { direction: 'left' });

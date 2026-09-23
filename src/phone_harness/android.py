@@ -50,6 +50,9 @@ _VISION = importlib.util.find_spec("Vision") is not None
 # second later gets the same answer.
 _TREE_BUSY_FOR = 20
 
+_ASLEEP_MESSAGE = ("The Android phone is still asleep after a wake attempt. "
+                   "Wake it on the device, then retry.")
+
 
 def _adb_bin():
     return str(config.get("android.adb"))
@@ -300,6 +303,8 @@ class Android(Backend):
                 "then retry — I won't enter a PIN. It re-locks after its screen "
                 "timeout; `phone-harness android awake` keeps it awake for the "
                 "session without changing any setting.")
+        if not awake:
+            raise RuntimeError(_ASLEEP_MESSAGE)
         self._gate_at = time.time()
 
     # --- screen -------------------------------------------------------------
@@ -544,7 +549,7 @@ class Android(Backend):
     # --- session ------------------------------------------------------------
 
     def _session_state(self):
-        """'ready' | 'locked' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
+        """'ready' | 'locked' | 'asleep' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
         try:
             if self._resolve() is not None:
                 try:
@@ -552,6 +557,8 @@ class Android(Backend):
                 except RuntimeError as e:
                     if "locked" in str(e):
                         return "locked"
+                    if str(e) == _ASLEEP_MESSAGE:
+                        return "asleep"
                     raise
                 return "ready"
             states = [st for _, st, _ in _attached()]
@@ -582,6 +589,8 @@ class Android(Backend):
         if state == "locked":
             self._gate_at = 0.0
             self._gate()                       # raises with the unlock message
+        if state == "asleep":
+            raise RuntimeError(_ASLEEP_MESSAGE)
         if state == "no-adb":
             raise RuntimeError(
                 "adb isn't available. Install Android platform-tools "

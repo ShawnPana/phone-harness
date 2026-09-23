@@ -151,6 +151,10 @@ The phone is reached over adb — a USB phone if plugged in, else the paired
 Wi-Fi phone, else the attached cloud phone — so there is nothing to select.
 `phone-harness android` shows known phones and what is attached.
 
+If `connection_state()` reports `asleep`, the automatic wake attempt did not
+succeed. Ask the user to wake the phone and retry; input helpers refuse to
+send taps or typing while the phone remains asleep.
+
 ```bash
 PHONE_HARNESS_PLATFORM=android phone-harness <<'PY'
 open_app("chrome"); wait_for_app("com.android.chrome")

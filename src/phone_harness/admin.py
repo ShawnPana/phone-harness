@@ -124,6 +124,7 @@ def _doctor_android():
         "unauthorized": "tap Allow on the phone's 'Allow USB debugging?' prompt",
         "offline": "unplug/replug, or toggle Wireless debugging off and on",
         "locked": "unlock the phone (`phone-harness android awake` keeps it so)",
+        "asleep": "the wake attempt did not wake the phone; wake it on the device and retry",
         "no-adb": "adb did not answer",
     }
     _check(f"a phone is reachable and ready (state: {state})",

@@ -76,11 +76,16 @@
      small mono captions in its corners and the phone centred inside. */
   .viewer-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center;
                   justify-content: center; background: #0a0a0a; padding: 40px 24px 24px; }
-  .stage-caption { position: absolute; top: 12px; font: 10px var(--mono); color: #9da598; letter-spacing: 0.2px; }
+  .stage-caption { position: absolute; top: 12px; font: 10px var(--mono); color: #a3aaa6; letter-spacing: 0.2px; }
   .stage-caption.left { left: 12px; } .stage-caption.right { right: 12px; }
-  #screen { display: block; background: #000; max-width: 100%; max-height: 100%; outline: 1px solid #1f1f1f;
+  /* The bezel phone-cloud's fixture viewer draws: dark frame, thin highlight,
+     corners that follow the screen's shape. Sized by script to the stream. */
+  .phone { flex: none; border: 3px solid #111415; outline: 1px solid #59615d; border-radius: 10% / 4.5%;
+           background: #111415; overflow: hidden; }
+  #screen { display: block; width: 100%; height: 100%; background: #000;
             touch-action: none; user-select: none; -webkit-user-select: none; }
-  #screen:focus { outline-color: #9da598; }
+  #screen:focus { outline: none; }
+  .phone:has(#screen:focus-visible) { outline-color: #a3aaa6; }
 
   @media (max-width: 760px) { :root { --space: 20px; } }
   @media (max-width: 560px) { :root { --space: 16px; } .brand { font-size: 16px; gap: 8px; }
@@ -121,7 +126,9 @@
       <div class="viewer-stage">
         <span class="stage-caption left">USB · __MODEL__ · iOS __IOS__</span>
         <span class="stage-caption right" id="caption">connecting</span>
-        <canvas id="screen" width="750" height="1334" tabindex="0" aria-label="Live iPhone screen"></canvas>
+        <div class="phone" id="phone">
+          <canvas id="screen" width="750" height="1334" tabindex="0" aria-label="Live iPhone screen"></canvas>
+        </div>
       </div>
     </div>
   </div>
@@ -136,7 +143,8 @@
   const ctx = canvas.getContext('2d');
   const notice = document.getElementById('notice');
   const stateEl = document.getElementById('state');
-  const stage = canvas.parentElement;
+  const phone = document.getElementById('phone');
+  const stage = phone.parentElement;
   const post = (path, body) => fetch(path, { method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
   const captionEl = document.getElementById('caption');
@@ -148,8 +156,8 @@
   function layout() {
     const r = stage.getBoundingClientRect();
     const s = Math.min((r.width - 48) / vw, (r.height - 64) / vh);
-    canvas.style.width = Math.max(1, Math.floor(vw * s)) + 'px';
-    canvas.style.height = Math.max(1, Math.floor(vh * s)) + 'px';
+    phone.style.width = Math.max(1, Math.floor(vw * s)) + 6 + 'px';    // + the 3px bezel each side
+    phone.style.height = Math.max(1, Math.floor(vh * s)) + 6 + 'px';
   }
   addEventListener('resize', layout); requestAnimationFrame(layout);
 

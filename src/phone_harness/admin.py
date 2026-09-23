@@ -176,34 +176,50 @@ def _doctor_coredevice():
 
     from . import coredevice, coredevice_daemon as D
     serial = config.get("coredevice.serial") or config.devices_of("coredevice").get("primary")
-    info = asyncio.run(D.probe(serial))
-    _check("USB device service present (usbmuxd / Apple Mobile Device)", info["usbmuxd"],
-           _USBMUXD_INSTALL)
-    if not info["usbmuxd"]:
-        return
-    _check(f"an iPhone on USB ({', '.join(info['devices']) or 'none'})", bool(info["udid"]),
-           "plug the phone in with a data cable and unlock it (on Linux usbmuxd starts when it appears)"
-           if info["error"] != "several-devices" else
-           "several phones: phone-harness config set coredevice.serial UDID")
-    if not info["udid"]:
-        return
-    _check("this computer is trusted by the phone", bool(info["paired"]),
-           "phone-harness ios pair — then tap Trust and enter the passcode on the phone")
-    if not info["paired"]:
-        return
-    _check(f"{info['name']} ({info['model']}) on iOS {info['ios']}: 27 or later",
-           D.ios_at_least(info["ios"], 27, 0),
-           "screen streaming has only been seen working on iOS 27; older phones report no media features")
-    _check("Developer Mode on", bool(info["developer_mode"]),
-           "on the phone: Settings > Privacy & Security > Developer Mode "
-           "(`phone-harness ios reveal` if it is not listed)")
-    if not info["developer_mode"]:
-        return
-    _check("developer image mounted (awake mounts it if not)", bool(info["ddi_mounted"]),
-           "`phone-harness ios awake` will download and mount it", fatal=False)
+    connection = str(config.get("coredevice.connection") or "auto")
+    info = asyncio.run(D.probe(serial, connection))
+    if info.get("connection") == "wifi":
+        _check(f"a Wi-Fi pairing is saved ({', '.join(info['wifi_records']) or 'none'})",
+               bool(info["wifi_records"]),
+               "plug the phone in once and run `phone-harness ios pair --wifi`")
+        if not info["wifi_records"]:
+            return
+        eps = ", ".join(f"{h}:{p}" for h, p in info["wifi_endpoints"])
+        _check(f"the phone advertises on this Wi-Fi ({eps or 'not found'})", bool(info["wifi_endpoints"]),
+               "same network as this computer, Wi-Fi on, unlocked; or `awake --address IP:PORT`")
+        if not info["wifi_endpoints"]:
+            return
+        _check("Developer Mode and the developer image cannot be checked over Wi-Fi; "
+               "awake reports them if they are missing", True)
+    else:
+        _check("USB device service present (usbmuxd / Apple Mobile Device)", info["usbmuxd"],
+               _USBMUXD_INSTALL)
+        if not info["usbmuxd"]:
+            return
+        _check(f"an iPhone on USB ({', '.join(info['devices']) or 'none'})", bool(info["udid"]),
+               "plug the phone in with a data cable and unlock it (on Linux usbmuxd starts when it appears)"
+               if info["error"] != "several-devices" else
+               "several phones: phone-harness config set coredevice.serial UDID")
+        if not info["udid"]:
+            return
+        _check("this computer is trusted by the phone", bool(info["paired"]),
+               "phone-harness ios pair — then tap Trust and enter the passcode on the phone")
+        if not info["paired"]:
+            return
+        _check(f"{info['name']} ({info['model']}) on iOS {info['ios']}: 27 or later",
+               D.ios_at_least(info["ios"], 27, 0),
+               "screen streaming has only been seen working on iOS 27; older phones report no media features")
+        _check("Developer Mode on", bool(info["developer_mode"]),
+               "on the phone: Settings > Privacy & Security > Developer Mode "
+               "(`phone-harness ios reveal` if it is not listed)")
+        if not info["developer_mode"]:
+            return
+        _check("developer image mounted (awake mounts it if not)", bool(info["ddi_mounted"]),
+               "`phone-harness ios awake` will download and mount it", fatal=False)
 
     st = coredevice._state()
-    _check("USB session running (phone-harness ios awake)", bool(st and st.get("ready")),
+    _check(f"session running over {(st or {}).get('connection') or connection} (phone-harness ios awake)",
+           bool(st and st.get("ready")),
            "run `phone-harness ios awake --bg` and re-run the doctor")
     if not (st and st.get("ready")):
         return

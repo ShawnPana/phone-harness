@@ -10,7 +10,7 @@ os.environ.setdefault("PHONE_HARNESS_HOME", tempfile.mkdtemp())
 
 from phone_harness import ocr  # noqa: E402
 from phone_harness.coredevice_daemon import (  # noqa: E402
-    ios_at_least, png_size, to_touch, KEY_NAMES, MODIFIERS)
+    ios_at_least, png_size, to_touch, wifi_endpoints, KEY_NAMES, MODIFIERS)
 
 try:
     import pymobiledevice3  # noqa: F401
@@ -57,6 +57,26 @@ class Images(unittest.TestCase):
     def test_not_a_png(self):
         with self.assertRaises(ValueError):
             png_size(b"hello")
+
+
+class WifiEndpoints(unittest.TestCase):
+    class _Addr:
+        def __init__(self, ip): self.full_ip = ip
+
+    class _Answer:
+        def __init__(self, port, ips): self.port, self.addresses = port, [WifiEndpoints._Addr(i) for i in ips]
+
+    def test_explicit_address_wins(self):
+        self.assertEqual(wifi_endpoints([], "10.0.0.5:49152"), [("10.0.0.5", 49152)])
+        self.assertEqual(wifi_endpoints([], "[fd00::1]:49152"), [("fd00::1", 49152)])
+        self.assertEqual(wifi_endpoints([], "10.0.0.5"), [("10.0.0.5", 49152)])
+
+    def test_ipv4_lan_first_hotspot_and_link_local_last(self):
+        answers = [self._Answer(49152, ["fe80::1%lo0", "172.20.10.1", "2600:1::2", "10.0.0.120"]),
+                   self._Answer(49152, ["10.0.0.120"])]           # duplicate advertisement
+        self.assertEqual(wifi_endpoints(answers),
+                         [("10.0.0.120", 49152), ("172.20.10.1", 49152),
+                          ("2600:1::2", 49152), ("fe80::1%lo0", 49152)])
 
 
 class Versions(unittest.TestCase):

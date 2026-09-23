@@ -117,13 +117,97 @@ def to_touch(x, y, w, h):
 
 # --- lockdown-side checks (USB, no tunnel) ---------------------------------
 
-async def probe(serial=None):
+CONNECTIONS = ("usb", "wifi", "auto")
+
+
+def _blank_probe():
+    return {"usbmuxd": False, "devices": [], "udid": None, "paired": None,
+            "name": None, "model": None, "ios": None, "developer_mode": None,
+            "ddi_mounted": None, "error": None, "connection": None,
+            "wifi_records": [], "wifi_endpoints": []}
+
+
+async def probe(serial=None, connection="auto", address=None):
     """What the doctor and `awake` need to know before opening a tunnel.
     Every field is filled as far as the ladder got; `error` names the rung
-    that failed. Never pairs, never mounts."""
-    out = {"usbmuxd": False, "devices": [], "udid": None, "paired": None,
-           "name": None, "model": None, "ios": None, "developer_mode": None,
-           "ddi_mounted": None, "error": None}
+    that failed. Never pairs, never mounts.
+
+    connection: "usb" (the cable), "wifi" (a saved RemotePairing record and
+    the phone on this network), or "auto" (USB if a phone is cabled, else
+    Wi-Fi). `address` is an optional "IP:PORT" to dial instead of mDNS."""
+    if connection not in CONNECTIONS:
+        raise ValueError(f"connection must be one of {CONNECTIONS}")
+    if connection in ("usb", "auto"):
+        out = await _probe_usb(serial)
+        if out["udid"] or connection == "usb":
+            if out["udid"]:
+                out["connection"] = "usb"
+            return out
+        usb_error = out["error"]
+        out = await _probe_wifi(serial, address)
+        if out["error"]:
+            out["error"] = f"{out['error']} (no USB phone either: {usb_error})"
+        return out
+    return await _probe_wifi(serial, address)
+
+
+def wifi_endpoints(answers, address=None):
+    """(host, port) candidates, IPv4 first, link-local last. With an explicit
+    address, just that one."""
+    if address:
+        address = address.strip()
+        if address.startswith("["):                       # [v6]:port or [v6]
+            host, _, rest = address[1:].partition("]")
+            port = rest[1:] if rest.startswith(":") else ""
+        elif address.count(":") == 1:                     # v4:port or name:port
+            host, _, port = address.partition(":")
+        else:                                             # bare v4 or bare v6
+            host, port = address, ""
+        return [(host, int(port or 49152))]
+    seen, out = set(), []
+    for answer in answers:
+        for a in answer.addresses:
+            ip = a.full_ip
+            if (ip, answer.port) in seen:
+                continue
+            seen.add((ip, answer.port))
+            out.append((ip, answer.port))
+    def rank(ep):
+        ip = ep[0]
+        return (":" in ip, ip.lower().startswith("fe80"), ip.startswith("172.20.10."), ip)
+    return sorted(out, key=rank)
+
+
+async def _probe_wifi(serial, address=None):
+    out = _blank_probe()
+    out["connection"] = "wifi"
+    from pymobiledevice3.remote.tunnel_service import (
+        browse_remotepairing, iter_remote_paired_identifiers)
+    records = list(iter_remote_paired_identifiers())
+    if serial:
+        records = [r for r in records if r.replace("-", "") == serial.replace("-", "")]
+    out["wifi_records"] = records
+    if not records:
+        out["error"] = "not-paired-wifi"
+        return out
+    if len(records) > 1:
+        out["error"] = "several-records"
+        return out
+    out["udid"] = records[0]
+    out["paired"] = True
+    try:
+        answers = [] if address else await browse_remotepairing(timeout=4)
+    except Exception as e:
+        out["error"] = f"mdns: {type(e).__name__}"
+        return out
+    out["wifi_endpoints"] = wifi_endpoints(answers, address)
+    if not out["wifi_endpoints"]:
+        out["error"] = "wifi-not-found"
+    return out
+
+
+async def _probe_usb(serial=None):
+    out = _blank_probe()
     from pymobiledevice3 import exceptions as E
     from pymobiledevice3.usbmux import list_devices
     try:
@@ -229,12 +313,54 @@ async def mount_ddi(udid, remount=False):
         await ld.close()
 
 
+def wifi_tunnel(identifier, endpoints):
+    """A userspace RSD tunnel over Wi-Fi to a phone we hold a RemotePairing
+    record for. pymobiledevice3's UserspaceRsdTunnel has no provider hook,
+    so its provider factory is swapped while this tunnel opens (its own
+    process-wide lock is held there) and restored afterwards — the same
+    approach the Omarchy iPhone mirror takes (MIT)."""
+    from pymobiledevice3.remote import userspace_tunnel as ut
+    from pymobiledevice3.remote.tunnel_service import RemotePairingTunnelService
+
+    async def provider(serial, autopair, remotepairing_fallback=True):
+        last = None
+        for host, port in endpoints:
+            svc = RemotePairingTunnelService(identifier, host, port)
+            try:
+                await asyncio.wait_for(svc.connect(autopair=False), 8)
+                log.info("wifi tunnel: connected to %s:%s", host, port)
+                return svc, None
+            except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError,
+                    ConnectionError) as e:
+                last = e
+                log.info("wifi tunnel: %s:%s failed (%s)", host, port, type(e).__name__)
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(svc.close(), 1)
+        raise RuntimeError(
+            "the paired iPhone was not reachable over Wi-Fi"
+            + (f" ({type(last).__name__})" if last else " (no addresses)")
+            + ". Is it on this network, unlocked, with Wi-Fi on?")
+
+    class WifiTunnel(ut.UserspaceRsdTunnel):
+        async def _aopen_locked(self):
+            original = ut._create_no_root_tunnel_provider
+            ut._create_no_root_tunnel_provider = provider
+            try:
+                return await super()._aopen_locked()
+            finally:
+                ut._create_no_root_tunnel_provider = original
+
+    return WifiTunnel(serial=identifier, autopair=False, remotepairing_fallback=False)
+
+
 # --- the session -----------------------------------------------------------
 
 class Session:
-    def __init__(self, udid, info, mirror_port=None):
+    def __init__(self, udid, info, mirror_port=None, connection="usb", endpoints=()):
         self.udid = udid
         self.info = info                # name/model/ios from probe()
+        self.connection = connection    # "usb" | "wifi"
+        self.endpoints = list(endpoints)
         # Mirror mode: pymobiledevice3's screen-stream server owns the video
         # stream (and so the HID auth gate) and serves our page on loopback.
         self.mirror_port = mirror_port  # None = no mirror; 0 = pick a free port
@@ -265,9 +391,21 @@ class Session:
         from pymobiledevice3.remote.core_device.hid_service import UniversalHIDServiceService
 
         phase("connecting")
-        self.tunnel = UserspaceRsdTunnel(serial=self.udid, autopair=False,
-                                         remotepairing_fallback=False)
+        if self.connection == "wifi":
+            self.tunnel = wifi_tunnel(self.udid, self.endpoints)
+        else:
+            self.tunnel = UserspaceRsdTunnel(serial=self.udid, autopair=False,
+                                             remotepairing_fallback=False)
         self.rsd = await self.tunnel.aopen()
+        # Over Wi-Fi there was no lockdown to ask; the RSD handshake knows.
+        if not self.info.get("model"):
+            self.info["model"] = getattr(self.rsd, "product_type", None)
+        if not self.info.get("ios"):
+            with contextlib.suppress(Exception):
+                self.info["ios"] = self.rsd.product_version
+        if not self.info.get("name"):
+            with contextlib.suppress(Exception):
+                self.info["name"] = self.rsd.peer_info["Properties"].get("Name")
 
         # A session an earlier run never stopped (cable pulled, process
         # killed) keeps the phone's screen-sharing indicator on. Clear it
@@ -300,6 +438,11 @@ class Session:
                         f"the phone's display service is not answering ({type(e).__name__}), "
                         "even after remounting the developer image. Reboot the iPhone and "
                         "run `phone-harness ios awake` again.") from None
+                if self.connection != "usb":
+                    raise RuntimeError(
+                        f"the phone's display service is not answering over Wi-Fi ({type(e).__name__}). "
+                        "If the phone rebooted, its developer image is gone: plug it in once and run "
+                        "`phone-harness ios mount`, or reboot it and retry.") from None
                 phase("recovering")
                 log.warning("display service unresponsive (%s); remounting the developer image",
                             type(e).__name__)
@@ -649,6 +792,7 @@ class Session:
 
     async def op_ping(self, **_):
         return {"udid": self.udid, "w": self.w, "h": self.h, "pid": os.getpid(),
+                "connection": self.connection,
                 "uptime": round(time.time() - self.started, 1), **self.info}
 
     async def op_capture(self, path, **_):
@@ -873,7 +1017,7 @@ async def _serve(session, stop):
     return server, endpoint
 
 
-async def run(serial, mirror_port=None):
+async def run(serial, mirror_port=None, connection="auto", address=None):
     p = paths()
     p["state"].parent.mkdir(parents=True, exist_ok=True)
     state = {"pid": os.getpid(), "phase": "probing", "ready": False, "error": None,
@@ -885,12 +1029,21 @@ async def run(serial, mirror_port=None):
         log.info("phase: %s", name)
 
     phase("probing")
-    info = await probe(serial)
+    info = await probe(serial, connection, address)
     if info["error"]:
         hints = {
             "no-device": "no iPhone is connected by USB. Plug it in and unlock it.",
             "several-devices": "several iPhones are connected; pass --serial UDID.",
+            "not-paired-wifi": "no saved Wi-Fi pairing for this phone. Plug it in once and run "
+                               "`phone-harness ios pair --wifi`.",
+            "several-records": "several phones are paired for Wi-Fi; pass --serial UDID.",
+            "wifi-not-found": "the paired iPhone is not advertising on this Wi-Fi. Same network, "
+                              "Wi-Fi on, screen unlocked? Or pass --address IP:PORT.",
         }
+        key = str(info["error"]).split(" (")[0]
+        if key in hints:
+            raise RuntimeError(hints[key] + ("" if key == info["error"] else
+                                             f" [{info['error'][len(key):].strip()}]"))
         msg = hints.get(info["error"], info["error"])
         if str(info["error"]).startswith("not-paired"):
             msg = "this computer is not trusted by the phone yet: run `phone-harness ios pair`."
@@ -901,19 +1054,20 @@ async def run(serial, mirror_port=None):
                     "Install iTunes or the Apple Devices app so the Apple Mobile Device service runs."
                     if sys.platform == "win32" else "Is the phone plugged in?"))
         raise RuntimeError(msg)
-    if not ios_at_least(info["ios"], 17, 4):
+    if info["ios"] and not ios_at_least(info["ios"], 17, 4):
         raise RuntimeError(f"iOS {info['ios']} is too old: the USB tunnel needs 17.4 and screen "
                            "streaming has only been seen working on iOS 27.")
     if info["developer_mode"] is False:
         raise RuntimeError("Developer Mode is off. On the phone: Settings > Privacy & Security > "
                            "Developer Mode (run `phone-harness ios reveal` first if it is not listed).")
-    state.update({k: info[k] for k in ("udid", "name", "model", "ios")})
-    if not info["ddi_mounted"]:
+    state.update({k: info[k] for k in ("udid", "name", "model", "ios")}, connection=info["connection"])
+    if info["connection"] == "usb" and not info["ddi_mounted"]:
         phase("mounting")
         await mount_ddi(info["udid"])
 
     session = Session(info["udid"], {k: info[k] for k in ("name", "model", "ios")},
-                      mirror_port=mirror_port)
+                      mirror_port=mirror_port, connection=info["connection"],
+                      endpoints=info["wifi_endpoints"])
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -923,7 +1077,8 @@ async def run(serial, mirror_port=None):
     try:
         await session.open(phase)
         server, endpoint = await _serve(session, stop)
-        state.update(endpoint=endpoint, w=session.w, h=session.h, mirror_url=session.mirror_url())
+        state.update(endpoint=endpoint, w=session.w, h=session.h, mirror_url=session.mirror_url(),
+                     **{k: session.info[k] for k in ("name", "model", "ios")})
         phase("ready")
         while not stop.is_set() and not session.dead:
             with contextlib.suppress(asyncio.TimeoutError):
@@ -943,6 +1098,10 @@ async def run(serial, mirror_port=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="phone-harness CoreDevice session daemon")
     ap.add_argument("--serial", default=None)
+    ap.add_argument("--connection", choices=CONNECTIONS, default="auto",
+                    help="usb (cable), wifi (saved pairing, same network) or auto (USB if cabled)")
+    ap.add_argument("--address", default=None, metavar="IP:PORT",
+                    help="wifi: dial this address instead of finding the phone with mDNS")
     ap.add_argument("--mirror", nargs="?", const=0, default=None, type=int, metavar="PORT",
                     help="also serve the live mirror page on 127.0.0.1 (PORT, default: any free port)")
     ap.add_argument("--log", default=None, help="log file (default: the state dir)")
@@ -954,7 +1113,8 @@ def main(argv=None):
     logging.getLogger("pymobiledevice3").setLevel(logging.WARNING)
     p["pid"].write_text(str(os.getpid()))
     try:
-        asyncio.run(run(args.serial, mirror_port=args.mirror))
+        asyncio.run(run(args.serial, mirror_port=args.mirror, connection=args.connection,
+                        address=args.address))
         return 0
     except Exception as e:
         log.error("daemon failed: %s", e)

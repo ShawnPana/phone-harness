@@ -281,15 +281,21 @@ class CoreDevice(Backend):
 
 CLI_USAGE = """Usage:
   phone-harness ios                       what is plugged in, trust, Developer Mode, session
-  phone-harness ios awake [--bg] [--mirror] [--serial UDID]
-        open the USB session every action needs: mounts the developer image if
+  phone-harness ios awake [--bg] [--mirror] [--connection usb|wifi|auto] [--address IP:PORT] [--serial UDID]
+        open the session every action needs: mounts the developer image if
         the phone dropped it (it does on every reboot), then holds the tunnel
         and screen stream. Ends with rest or Ctrl-C. --bg detaches.
         --mirror also serves the live phone screen on 127.0.0.1.
-  phone-harness ios mirror                start (or reuse) the session with the mirror
+        --connection: usb = the cable; wifi = no cable, using the pairing
+        `ios pair --wifi` saved and the phone on this network; auto (default)
+        = USB if a phone is cabled, else Wi-Fi. --address dials the phone
+        directly instead of finding it with mDNS.
+  phone-harness ios mirror [same flags]   start (or reuse) the session with the mirror
                                           and open it in the browser
   phone-harness ios rest                  end the session
   phone-harness ios pair [--serial UDID]  trust this computer (approve on the phone; once)
+  phone-harness ios pair --wifi           also save the Wi-Fi (RemotePairing) pairing; over
+                                          the cable, promptless; needed once per computer
   phone-harness ios reveal                make the Developer Mode switch visible in Settings
   phone-harness ios mount [--remount]     mount the developer image now (awake does this itself)
 """
@@ -401,14 +407,22 @@ def cli(args):
 
     if cmd is None:
         try:
-            info = _run(D.probe(_serial(args)))
+            info = _run(D.probe(_serial(args), _arg(args, "--connection") or "auto", _arg(args, "--address")))
         except ImportError as e:
             print(f"pymobiledevice3 is not installed: pip install 'phone-harness[iphone]' ({e})")
             return 1
         reg = config.devices_of("coredevice")
         print(f"remembered: {', '.join(reg['phones']) or 'none'}   primary: {reg['primary'] or 'none'}")
         print(f"usb devices: {', '.join(info['devices']) or 'none'}")
-        if info["udid"]:
+        try:
+            from pymobiledevice3.remote.tunnel_service import iter_remote_paired_identifiers
+            print(f"wifi pairings: {', '.join(iter_remote_paired_identifiers()) or 'none'}")
+        except Exception:
+            pass
+        if info.get("connection") == "wifi":
+            print(f"wifi: {info['udid']} at "
+                  f"{', '.join(f'{h}:{p}' for h, p in info['wifi_endpoints']) or 'no address found'}")
+        if info["udid"] and info.get("connection") == "usb":
             print(f"phone: {info.get('name') or '?'} ({info.get('model')}, iOS {info.get('ios')})  "
                   f"trusted: {info['paired']}  developer mode: {info['developer_mode']}  "
                   f"developer image mounted: {info['ddi_mounted']}")
@@ -416,7 +430,8 @@ def cli(args):
             print(f"problem: {info['error']}")
         st = _state()
         if st:
-            print(f"session: {st.get('phase')} (pid {st['pid']}) — `phone-harness ios rest` to end")
+            print(f"session: {st.get('phase')} over {st.get('connection') or '?'} (pid {st['pid']}) — "
+                  "`phone-harness ios rest` to end")
             if st.get("mirror_url"):
                 print(f"mirror: {st['mirror_url']}")
         else:
@@ -434,8 +449,11 @@ def cli(args):
             print(f"already awake (pid {_daemon_pid()}); `phone-harness ios rest` to end")
             return 0
         serial = _serial(args)
-        argv = [sys.executable, "-m", "phone_harness.coredevice_daemon"] + \
+        connection = _arg(args, "--connection") or str(config.get("coredevice.connection") or "auto")
+        address = _arg(args, "--address")
+        argv = [sys.executable, "-m", "phone_harness.coredevice_daemon", "--connection", connection] + \
                (["--serial", serial] if serial else []) + \
+               (["--address", address] if address else []) + \
                (["--mirror"] if "--mirror" in args else [])
         D.paths()["state"].parent.mkdir(parents=True, exist_ok=True)
         D.paths()["state"].unlink(missing_ok=True)          # never trust a stale run
@@ -451,8 +469,8 @@ def cli(args):
             return 1
         st = _state() or {}
         _remember(st)
-        print(f"awake: {st.get('name')} ({st.get('model')}, iOS {st.get('ios')}), "
-              f"screen {st.get('w')}x{st.get('h')} px")
+        print(f"awake: {st.get('name')} ({st.get('model')}, iOS {st.get('ios')}) over "
+              f"{st.get('connection') or 'usb'}, screen {st.get('w')}x{st.get('h')} px")
         if st.get("mirror_url"):
             print(f"mirror: {st['mirror_url']}")
         if "--bg" in args:
@@ -480,7 +498,7 @@ def cli(args):
             _stop_daemon(st["pid"])
             st = None
         if not (st and st.get("ready")):
-            code = cli(["awake", "--bg", "--mirror"] + [a for a in args[1:] if a != "--mirror"])
+            code = cli(["awake", "--bg", "--mirror"] + [a for a in args[1:] if a not in ("--mirror", "--bg")])
             if code:
                 return code
             st = _state() or {}
@@ -499,6 +517,31 @@ def cli(args):
             print("no session running")
             return 0
         print("session ended" if _stop_daemon(pid) else f"pid {pid} is still stopping")
+        return 0
+
+    if cmd == "pair" and "--wifi" in args:
+        serial = _arg(args, "--serial")
+
+        async def pair_wifi():
+            from pymobiledevice3.lockdown import create_using_usbmux
+            from pymobiledevice3.remote.tunnel_service import RemotePairingLockdownService
+            ld = await create_using_usbmux(serial=serial, autopair=False)
+            try:
+                svc = await RemotePairingLockdownService.create(ld)
+                try:
+                    await svc.connect(autopair=True)      # promptless over the trusted cable
+                finally:
+                    await svc.close()
+                return ld.udid
+            finally:
+                await ld.close()
+        try:
+            udid = _run(pair_wifi())
+        except Exception as e:
+            print(f"Wi-Fi pairing failed: {type(e).__name__}: {e}")
+            return 1
+        print(f"Wi-Fi pairing saved for {udid}. Unplug, keep the phone on this Wi-Fi, then "
+              "`phone-harness ios awake --connection wifi`.")
         return 0
 
     if cmd == "pair":

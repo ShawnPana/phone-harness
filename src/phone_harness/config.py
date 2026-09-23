@@ -46,6 +46,7 @@ DEFAULTS = {
     },
     "coredevice": {
         "serial": None,               # the iPhone's UDID when several are plugged in
+        "connection": "auto",         # usb | wifi | auto (USB if cabled, else Wi-Fi)
     },
 }
 

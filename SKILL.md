@@ -171,6 +171,17 @@ and why a session cannot start (not trusted, Developer Mode off, iOS too old).
   takes chords (`"cmd+a"`, `"return"`, `"delete"`). `type_text` pastes by
   default through the phone's pasteboard (exact, Unicode fine);
   `keystrokes=True` types ASCII through the virtual keyboard.
+- **Password fields refuse keystrokes.** iOS drops synthesized key events
+  into secure text fields (observed on iOS 27; ordinary fields take them),
+  and no on-screen keyboard appears because a hardware keyboard is attached.
+  Use the default paste path for passwords: `type_text(secret)` with no
+  `keystrokes`. The first paste into an app from another device makes the
+  phone show **Allow Paste**; it is on the phone screen, so `tap_text("Allow
+  Paste")` clears it, once per app. Tell the user it happened. If the prompt
+  keeps returning, the user can set Settings → Apps → *that app* → Paste from
+  Other Apps to Allow.
+- The mirror page's keyboard is the same virtual keyboard, so typing a
+  password into it does nothing either; paste from the agent instead.
 - `scroll()` is a finger drag with a rest at the end; `swipe()` is the same
   flick as elsewhere. Vertical swipes work here (they are real touches).
 - **A locked phone refuses input.** `connection_state()` is `locked` when

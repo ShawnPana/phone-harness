@@ -83,6 +83,19 @@ sudo apt install usbmuxd                                   # Linux only: the USB
   downloads the image from Apple), opens the USB tunnel and the screen stream
   that authorises input, then waits. `phone-harness ios rest` ends it. Every
   helper needs the session: without it they raise "no CoreDevice session".
+- **No cable, over Wi-Fi.** Once, with the phone plugged in:
+  `phone-harness ios pair --wifi` (promptless). Then with the phone on the
+  same Wi-Fi as the computer: `phone-harness ios awake --connection wifi`
+  (or `mirror --connection wifi`). The default `auto` uses the cable when a
+  phone is plugged in and Wi-Fi otherwise. The developer image cannot be
+  mounted over Wi-Fi, so after a phone reboot plug in once and run
+  `phone-harness ios mount`. `--address IP:PORT` dials the phone directly
+  when mDNS is blocked (the phone advertises `_remotepairing._tcp`, port
+  49152 in testing).
+- **Live mirror.** `phone-harness ios mirror` starts the session (USB or
+  Wi-Fi) and opens the phone's screen in your browser on 127.0.0.1: click to
+  tap, drag to swipe, scroll to scroll, type to type. Safari or Chrome with
+  hardware HEVC.
 - `phone-harness config set platform ios` (off a Mac, `ios` means this
   backend; on a Mac use `coredevice` to pick it over iPhone Mirroring), then
   `phone-harness --doctor` walks the ladder: Python, library, USB service,
@@ -149,6 +162,11 @@ is driven through the mirroring window or the USB tunnel, the Android over adb.
   rest`. A phone restart also clears it.
 - **iPhone over USB — `locked`**: unlock the phone on the phone. Taps and
   typing refuse while the lock screen is showing; `screenshot()` still works.
+- **iPhone over USB — typing a password does nothing**: iOS ignores
+  synthesized keystrokes in secure fields. `type_text` without `keystrokes`
+  pastes instead, and the phone asks **Allow Paste** the first time an app
+  receives a paste from another device; tap it on the phone, or let the agent
+  tap it, once per app.
   The phone auto-locks on its own idle timeout; set Auto-Lock to Never for a
   long session if you want (Settings → Display & Brightness).
 - **Android — `unauthorized`**: unlock the phone and tap Allow on the "Allow

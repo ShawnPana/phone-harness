@@ -17,7 +17,7 @@ of you.
 | --- | --- | --- | --- | --- |
 | **Cloud Android** — rented from Phone Harness Cloud, the user's own saved phone | `phone-harness cloud start` connects it; nothing to export | accessibility tree (exact), Vision OCR fallback on a Mac | adb `input` | Working method, then **Cloud phones** and **Android** |
 | **Android on the desk** — USB or paired Wi-Fi | the harness finds it | accessibility tree (exact), Vision OCR fallback on a Mac | adb `input` | Working method, then **Android** |
-| **iPhone** — through the Mac's iPhone Mirroring window | the user connects it | screenshots + Vision OCR | HID-level CGEvents into the window | Working method, then **iPhone** |
+| **iPhone** — through the Mac's iPhone Mirroring window | the user connects it | screenshots + Vision OCR | touch records into the window, CoreDevice HID keys to the phone | Working method, then **iPhone** |
 
 `phone-harness config` shows the default platform (`ios` on a Mac, `android`
 elsewhere) and every other setting. `phone-harness cloud` shows whether a cloud
@@ -209,17 +209,21 @@ PY
 ## iPhone (iPhone Mirroring)
 
 The Mac's iPhone Mirroring app renders the phone as a window; the harness
-captures that window and OCRs it with Vision for eyes, and posts HID-level
-events into it for hands. All coordinates are global macOS screen points.
+captures that window and OCRs it with Vision for eyes. For hands, touches are
+event records delivered straight to the window and keys go straight to the
+iPhone through CoreDevice. All coordinates are global macOS screen points.
 
 - `ensure_mirroring()` launches the window and gates on connection. The
-  default build works the phone **without taking the user's focus**: capture
-  is by window id and taps and keystrokes are event records delivered straight
-  to the app. Scrolling is the exception — macOS routes a scroll to whichever
+  harness works the phone **without taking the user's focus**: capture is by
+  window id, taps are event records delivered straight to the app, and
+  keyboard input (`type_text`, `press`, `home()`, `app_switcher()`,
+  `open_app()`) goes straight to the iPhone through CoreDevice or Mirroring's
+  own menu. Scrolling is the exception — macOS routes a scroll to whichever
   window sits under the pointer, so a scroll raises the mirroring window for
   the length of the gesture and hands focus straight back. Expect a brief
-  flicker on scrolls and nothing on anything else. `PHONE_HARNESS_BACKGROUND=0`
-  forces the classic path, which focuses before every action.
+  flicker on scrolls and nothing on anything else. The focus-taking classic
+  path is disabled: `PHONE_HARNESS_BACKGROUND=0` raises instead of falling
+  back to it.
 - **Icons without labels:** `screenshot()`, view the image, and use
   `tap_image_point(x, y, image_size=...)` with coordinates measured in the
   screenshot. Do **not** pass screenshot pixel coordinates to `tap()`: it
@@ -237,10 +241,10 @@ events into it for hands. All coordinates are global macOS screen points.
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works
   for in-app buttons and list rows.
-- **`type_text` pastes; it does not type.** The keystroke path runs through
-  iOS autocorrect, which rewrites words as they land ("Thu" becomes "thru").
-  Pass `keystrokes=True` for fields that need real key events. The typed text
-  stays on the Mac clipboard afterwards. If a tap will not take focus,
+- **`type_text` sends real US-layout HID keys.** It leaves both clipboards
+  alone and never focuses Mirroring. A character outside that layout raises
+  before anything is sent. iOS autocorrect still applies ("Thu" can become
+  "thru"), so verify the field with `ocr()`. If a tap will not take focus,
   `press("tab")` moves between fields.
 - **Connecting is the user's job, and so is resuming.** `ensure_mirroring()`
   raises a clear message when the phone is not connected (`connection_state()`
@@ -250,14 +254,14 @@ events into it for hands. All coordinates are global macOS screen points.
   connecting the phone. **Unlocking the physical phone pauses the session**
   ("iPhone in Use") — do not tap through the resume screen.
 - **Unfocused input is swallowed silently — for events you post yourself.**
-  The helpers are immune in the background build, but raw CGEvents and the
-  `PHONE_HARNESS_BACKGROUND=0` path need the window frontmost: `activate()`
-  before posting, and re-activate if a click steals focus. The failure looks
+  The helpers are immune, but raw CGEvents need the window frontmost, and raw
+  keyboard CGEvents are dropped by an unfocused Mirroring window. Use the
+  helpers rather than activating Mirroring as a fallback. The failure looks
   exactly like "scrolling is broken" or "the list already ended" — when a
   gesture changes nothing on screen, check focus before inventing another
   theory.
 - **The window is a video stream.** macOS accessibility sees nothing inside
-  it; AppleScript `click at` fails silently. Only HID-level CGEvents work.
+  it; AppleScript `click at` fails silently. Use the provided input helpers.
 - **The window moves.** Never cache coordinates across calls; `ocr()` and
   `swipe()` re-query bounds every time.
 - Mouse taps map to touches 1:1, but there is no multi-touch: no pinch, no

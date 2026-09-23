@@ -38,18 +38,18 @@ _BLOCKED_MARKERS = ("iphone in use", "lock your iphone", "mirroring ended",
 
 def _load_transport():
     """background drives iPhone Mirroring without ever taking the window to the
-    front (SkyLight event records) and is the default: not covering the user's
-    screen is what you want unless something is broken. Its private SkyLight
-    symbols are not guaranteed across macOS builds, so fall back rather than
-    leaving the harness unusable."""
-    want_bg = os.environ.get("PHONE_HARNESS_BACKGROUND", "1").lower() not in (
-        "0", "false", "no")
-    if want_bg:
-        try:
-            return importlib.import_module(".background", __package__), True
-        except Exception:
-            pass
-    return importlib.import_module(".mirror", __package__), False
+    front (SkyLight event records). The classic backend is intentionally not
+    selectable: it moves the user's pointer and takes macOS focus."""
+    if os.environ.get("PHONE_HARNESS_BACKGROUND", "1").lower() in (
+            "0", "false", "no"):
+        raise RuntimeError(
+            "focus-taking iPhone input is disabled; remove "
+            "PHONE_HARNESS_BACKGROUND=0")
+    try:
+        return importlib.import_module(".background", __package__), True
+    except Exception as exc:
+        raise RuntimeError(
+            "focus-free iPhone input is unavailable on this Mac.") from exc
 
 
 class IPhone(Backend):
@@ -116,12 +116,10 @@ class IPhone(Backend):
     def _apps_launch(self, name):
         """Spotlight (Cmd+3): type the name, let results populate, commit."""
         self.mirror.press("cmd+3")
-        _sleep(0.9)
-        # Keystrokes on purpose: Spotlight is the load-bearing path behind
-        # open_app and demonstrably works this way. Move it to paste only once
-        # that path has miles on it.
+        _sleep(0.25)
+        # Spotlight accepts the same direct HID key stream as other iOS fields.
         self.mirror.type_text(name, keystrokes=True)
-        _sleep(1.2)
+        _sleep(0.45)
         self.mirror.press("return")
         return name
 

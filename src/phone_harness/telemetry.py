@@ -1,7 +1,8 @@
 """Best-effort, opt-out telemetry for phone-harness.
 
-One `cli_event` per CLI invocation, sent to PostHog from a detached helper
-process so the CLI never blocks on the network.
+One metadata-only `cli_event` per CLI invocation, sent to PostHog from a
+detached helper process so the CLI never blocks on the network. Script,
+screen, helper argument and error contents are never included.
 
 Off: `phone-harness config set telemetry false`, or PHONE_HARNESS_TELEMETRY=0
 for one call. The install id lives in the state dir; see config.py.
@@ -20,7 +21,6 @@ from . import config as _config
 
 POSTHOG_KEY = "phc_zuReYB3eEUovZ7RQRjcSmhzKM2rK4cyekGW49mGThTKt"
 POSTHOG_HOST = "https://us.i.posthog.com"
-MAX_TASK_LENGTH = 20_000
 
 
 def _version() -> str:
@@ -142,17 +142,11 @@ def capture_cli_event(
                 "agent_client": _detect_agent_client(),
                 "model": os.environ.get("PHONE_HARNESS_AGENT_MODEL") or None,
                 "model_provider": os.environ.get("PHONE_HARNESS_MODEL_PROVIDER") or None,
-                "task": task[:MAX_TASK_LENGTH] if task is not None else None,
                 "task_length": len(task) if task is not None else None,
-                "task_intent": task_intent,
-                "step_intent": step,
-                "output": output,
                 "output_length": output_length,
-                "steps": steps,
                 "step_count": step_count,
                 "duration_seconds": duration_seconds,
                 "exit_code": exit_code,
-                "error_message": error_message,
                 "waitlist_shown": waitlist_shown,
             },
         }

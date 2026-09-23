@@ -281,10 +281,13 @@ class CoreDevice(Backend):
 
 CLI_USAGE = """Usage:
   phone-harness ios                       what is plugged in, trust, Developer Mode, session
-  phone-harness ios awake [--bg] [--serial UDID]
+  phone-harness ios awake [--bg] [--mirror] [--serial UDID]
         open the USB session every action needs: mounts the developer image if
         the phone dropped it (it does on every reboot), then holds the tunnel
         and screen stream. Ends with rest or Ctrl-C. --bg detaches.
+        --mirror also serves the live phone screen on 127.0.0.1.
+  phone-harness ios mirror                start (or reuse) the session with the mirror
+                                          and open it in the browser
   phone-harness ios rest                  end the session
   phone-harness ios pair [--serial UDID]  trust this computer (approve on the phone; once)
   phone-harness ios reveal                make the Developer Mode switch visible in Settings
@@ -414,6 +417,8 @@ def cli(args):
         st = _state()
         if st:
             print(f"session: {st.get('phase')} (pid {st['pid']}) — `phone-harness ios rest` to end")
+            if st.get("mirror_url"):
+                print(f"mirror: {st['mirror_url']}")
         else:
             print("session: off — `phone-harness ios awake` to start")
         return 0
@@ -430,7 +435,8 @@ def cli(args):
             return 0
         serial = _serial(args)
         argv = [sys.executable, "-m", "phone_harness.coredevice_daemon"] + \
-               (["--serial", serial] if serial else [])
+               (["--serial", serial] if serial else []) + \
+               (["--mirror"] if "--mirror" in args else [])
         D.paths()["state"].parent.mkdir(parents=True, exist_ok=True)
         D.paths()["state"].unlink(missing_ok=True)          # never trust a stale run
         with open(D.paths()["log"], "ab") as logf:
@@ -447,6 +453,8 @@ def cli(args):
         _remember(st)
         print(f"awake: {st.get('name')} ({st.get('model')}, iOS {st.get('ios')}), "
               f"screen {st.get('w')}x{st.get('h')} px")
+        if st.get("mirror_url"):
+            print(f"mirror: {st['mirror_url']}")
         if "--bg" in args:
             print("running in the background; `phone-harness ios rest` to end")
             return 0
@@ -462,6 +470,27 @@ def cli(args):
                 if child.poll() is None:
                     child.kill()
         print("session ended")
+        return 0
+
+    if cmd == "mirror":
+        import webbrowser
+        st = _state()
+        if st and st.get("ready") and not st.get("mirror_url"):
+            print("a session without the mirror is running; restarting it with the mirror")
+            _stop_daemon(st["pid"])
+            st = None
+        if not (st and st.get("ready")):
+            code = cli(["awake", "--bg", "--mirror"] + [a for a in args[1:] if a != "--mirror"])
+            if code:
+                return code
+            st = _state() or {}
+        url = st.get("mirror_url")
+        if not url:
+            print("the session has no mirror URL; see `phone-harness ios`")
+            return 1
+        print(f"mirror: {url}")
+        if "--no-open" not in args:
+            webbrowser.open(url)
         return 0
 
     if cmd == "rest":

@@ -214,9 +214,16 @@ async def mount_ddi(udid, remount=False):
 # --- the session -----------------------------------------------------------
 
 class Session:
-    def __init__(self, udid, info):
+    def __init__(self, udid, info, mirror_port=None):
         self.udid = udid
         self.info = info                # name/model/ios from probe()
+        # Mirror mode: pymobiledevice3's screen-stream server owns the video
+        # stream (and so the HID auth gate) and serves our page on loopback.
+        self.mirror_port = mirror_port  # None = no mirror; 0 = pick a free port
+        self.mirror = None
+        self.mirror_tasks = []
+        self.http = None
+        self.keep_awake = None
         self.rsd = None
         self.tunnel = None
         self.display = None
@@ -262,7 +269,11 @@ class Session:
         # remount of the developer image, one retry, then give up loudly.
         for attempt in (1, 2):
             try:
-                await self._open_stream(phase)
+                await self._check_features()
+                if self.mirror_port is None:
+                    await self._open_stream(phase)
+                else:
+                    await self._open_mirror(phase)
                 break
             except (asyncio.TimeoutError, OSError, asyncio.IncompleteReadError) as e:
                 await self._close_stream()
@@ -277,15 +288,15 @@ class Session:
                 await mount_ddi(self.udid, remount=True)
                 await asyncio.sleep(1.0)
 
+        self.keep_awake = asyncio.create_task(self._keep_awake_loop())
         self.hid = UniversalHIDServiceService(self.rsd)
         await self.hid.connect()
         img = await self._capture_bytes()
         self.w, self.h = png_size(img)
         phase("ready")
 
-    async def _open_stream(self, phase):
+    async def _check_features(self):
         from pymobiledevice3.remote.core_device.display_service import DisplayService
-        from pymobiledevice3.remote.core_device.screen_stream import open_media_receiver
         # One connection per request: the support query and the stream do not
         # share a channel (the phone drops a stream request on a reused one).
         probe = DisplayService(self.rsd)
@@ -302,6 +313,61 @@ class Session:
                 "reports no screen-streaming features from its display service. "
                 "iOS 27 is the earliest version seen to work; older phones cannot be "
                 "driven this way.")
+
+    async def _open_mirror(self, phase):
+        """Mirror mode: run pymobiledevice3's screen-stream server in-process.
+        It owns the video stream (which also satisfies the HID auth gate),
+        depacketizes RTP to length-prefixed HEVC for the browser, keeps the
+        stream healthy (RTCP, PLI, stall watchdog) and answers /touch, /key,
+        /button and /rotate. We replace only its page with ours."""
+        from pymobiledevice3.remote.core_device import screen_stream as SS
+        SS.VIEWER_HTML = (Path(__file__).with_name("coredevice_mirror.html")).read_bytes()
+        self.mirror = SS.ScreenStreamServer(self.rsd, bind="127.0.0.1",
+                                            http_port=self.mirror_port or 0,
+                                            audio_default_on=False)
+        phase("streaming")
+        await asyncio.wait_for(self.mirror._ensure_fresh_stream(force=True), STREAM_TIMEOUT)
+        await asyncio.wait_for(self.mirror._stream_ready.wait(), STREAM_TIMEOUT)
+        self.http = await asyncio.start_server(self.mirror._handle_http, "127.0.0.1",
+                                               self.mirror_port or 0)
+        self.mirror_port = self.http.sockets[0].getsockname()[1]
+        self.mirror_tasks = [asyncio.create_task(c) for c in (
+            self.mirror._hid_worker(), self.mirror._stall_watchdog(),
+            self.mirror._decoder_refresh_loop())]
+        await asyncio.sleep(0.3)                # backboardd re-matches HID surfaces
+
+    def mirror_url(self):
+        return f"http://127.0.0.1:{self.mirror_port}/" if self.mirror is not None else None
+
+    def _stream_alive(self):
+        task = self.mirror._active_recv_task if self.mirror is not None else self.drain
+        return task is not None and not task.done()
+
+    async def _keep_awake_loop(self):
+        """Hold a PreventUserIdleSystemSleep assertion on the phone so it does
+        not auto-lock mid-session (renewed well inside its timeout). The same
+        trick pymobiledevice3's serve-web uses; without it the phone locks
+        after its Auto-Lock timer and every action starts refusing."""
+        from pymobiledevice3.services.power_assertion import PowerAssertionService
+        while True:
+            try:
+                svc = PowerAssertionService(self.rsd)
+                async with svc.create_power_assertion(
+                        "PreventUserIdleSystemSleep", "phone-harness", 300,
+                        "phone-harness is driving this phone"):
+                    pass
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                log.debug("keep-awake renew failed; retrying later", exc_info=True)
+            try:
+                await asyncio.sleep(120)
+            except asyncio.CancelledError:
+                return
+
+    async def _open_stream(self, phase):
+        from pymobiledevice3.remote.core_device.display_service import DisplayService
+        from pymobiledevice3.remote.core_device.screen_stream import open_media_receiver
         phase("streaming")
         self.display = DisplayService(self.rsd)
         await asyncio.wait_for(self.display.connect(), CONNECT_TIMEOUT)
@@ -397,13 +463,33 @@ class Session:
                                   why="ours", send_stop=not stopped)
 
     async def _close_stream(self):
+        if self.mirror is not None:
+            for t in self.mirror_tasks:
+                t.cancel()
+            for t in self.mirror_tasks:
+                with contextlib.suppress(BaseException):
+                    await t
+            self.mirror_tasks = []
+            if self.http is not None:
+                self.http.close()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self.http.wait_closed(), 2)
+                self.http = None
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(self.mirror._stop_hid(), 3)
+            with contextlib.suppress(Exception):
+                async with self.mirror._stream_lock:
+                    await asyncio.wait_for(self.mirror._stop_active_stream(), 6)
+            self.mirror = None
         if self.drain is not None:
             self.drain.cancel()
             with contextlib.suppress(BaseException):
                 await self.drain
             self.drain = None
-        await self._stop_stream_verified()
         if self.display is not None:
+            if self.stream_id is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self.display.stop_media_stream(self.stream_id), 4)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(self.display.close(), 1)
         if self.transport is not None:
@@ -431,6 +517,10 @@ class Session:
                 await quiet(self.hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, *self.contact), 1)
             if self.keyboard is not None:
                 await quiet(self.hid.send_keyboard(self.keyboard, ()), 1)
+        if self.keep_awake is not None:
+            self.keep_awake.cancel()
+            with contextlib.suppress(BaseException):
+                await self.keep_awake
         # Tell the phone the stream is over. Skipping this is what wedges the
         # display service for the next session.
         await self._close_stream()
@@ -456,19 +546,40 @@ class Session:
                 await asyncio.wait_for(svc.close(), 1)
         return r["image"]
 
+    async def _reconnect_hid(self):
+        from pymobiledevice3.remote.core_device.hid_service import UniversalHIDServiceService
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(self.hid.close(), 1)
+        self.hid = UniversalHIDServiceService(self.rsd)
+        await asyncio.wait_for(self.hid.connect(), CONNECT_TIMEOUT)
+        self.keyboard = None
+
     async def _touch(self, state, x, y):
-        await self.hid.send_touchscreen(state, x, y)
+        try:
+            await self.hid.send_touchscreen(state, x, y)
+        except (OSError, asyncio.IncompleteReadError, ConnectionError):
+            if not self._stream_alive():
+                raise
+            await self._reconnect_hid()          # stream restarted under us
+            await self.hid.send_touchscreen(state, x, y)
 
     async def _keys(self, usages):
         """Send one full-bitmap keyboard report, modifiers in a report of
         their own first so a letter is never processed before its Shift."""
-        if self.keyboard is None:
-            self.keyboard = await self.hid.create_keyboard_service()
-        mods = {u for u in usages if 224 <= u <= 231}
-        if mods and mods != set(usages):
-            await self.hid.send_keyboard(self.keyboard, mods)
-            await asyncio.sleep(0.005)
-        await self.hid.send_keyboard(self.keyboard, set(usages))
+        for attempt in (1, 2):
+            try:
+                if self.keyboard is None:
+                    self.keyboard = await self.hid.create_keyboard_service()
+                mods = {u for u in usages if 224 <= u <= 231}
+                if mods and mods != set(usages):
+                    await self.hid.send_keyboard(self.keyboard, mods)
+                    await asyncio.sleep(0.005)
+                await self.hid.send_keyboard(self.keyboard, set(usages))
+                return
+            except (OSError, asyncio.IncompleteReadError, ConnectionError):
+                if attempt == 2 or not self._stream_alive():
+                    raise
+                await self._reconnect_hid()
 
     async def _chord(self, usages, hold=0.05):
         await self._keys(usages)
@@ -691,7 +802,7 @@ class Session:
                 result = await fn(**kw)
             return {"ok": True, "result": result}
         except (OSError, asyncio.IncompleteReadError, ConnectionError) as e:
-            if self.drain is None or self.drain.done() or self.tunnel is None or self.tunnel.rsd is None:
+            if not self._stream_alive() or self.tunnel is None or self.tunnel.rsd is None:
                 self.dead = True
                 return {"ok": False, "kind": "RuntimeError",
                         "error": f"lost the phone ({type(e).__name__}); run `phone-harness ios awake` again"}
@@ -738,7 +849,7 @@ async def _serve(session, stop):
     return server, endpoint
 
 
-async def run(serial):
+async def run(serial, mirror_port=None):
     p = paths()
     p["state"].parent.mkdir(parents=True, exist_ok=True)
     state = {"pid": os.getpid(), "phase": "probing", "ready": False, "error": None,
@@ -777,7 +888,8 @@ async def run(serial):
         phase("mounting")
         await mount_ddi(info["udid"])
 
-    session = Session(info["udid"], {k: info[k] for k in ("name", "model", "ios")})
+    session = Session(info["udid"], {k: info[k] for k in ("name", "model", "ios")},
+                      mirror_port=mirror_port)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -787,7 +899,7 @@ async def run(serial):
     try:
         await session.open(phase)
         server, endpoint = await _serve(session, stop)
-        state.update(endpoint=endpoint, w=session.w, h=session.h)
+        state.update(endpoint=endpoint, w=session.w, h=session.h, mirror_url=session.mirror_url())
         phase("ready")
         while not stop.is_set() and not session.dead:
             with contextlib.suppress(asyncio.TimeoutError):
@@ -807,6 +919,8 @@ async def run(serial):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="phone-harness CoreDevice session daemon")
     ap.add_argument("--serial", default=None)
+    ap.add_argument("--mirror", nargs="?", const=0, default=None, type=int, metavar="PORT",
+                    help="also serve the live mirror page on 127.0.0.1 (PORT, default: any free port)")
     ap.add_argument("--log", default=None, help="log file (default: the state dir)")
     args = ap.parse_args(argv)
     p = paths()
@@ -816,7 +930,7 @@ def main(argv=None):
     logging.getLogger("pymobiledevice3").setLevel(logging.WARNING)
     p["pid"].write_text(str(os.getpid()))
     try:
-        asyncio.run(run(args.serial))
+        asyncio.run(run(args.serial, mirror_port=args.mirror))
         return 0
     except Exception as e:
         log.error("daemon failed: %s", e)

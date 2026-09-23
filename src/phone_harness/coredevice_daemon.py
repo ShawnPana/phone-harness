@@ -145,11 +145,29 @@ async def probe(serial=None):
     if not devices:
         out["error"] = "no-device"
         return out
-    if len(devices) > 1 and not serial:
-        out["error"] = "several-devices"
-        return out
-    out["udid"] = devices[0].serial
     from pymobiledevice3.lockdown import create_using_usbmux
+    if len(devices) > 1 and not serial:
+        # A Virtual Research VM (Apple's virtual iPhone, ProductType iPhone99,x)
+        # shows up on usbmuxd next to the real phone. It has no screen stream,
+        # so when it is the only other device, pick the real one.
+        real = []
+        for d in devices:
+            try:
+                ld = await create_using_usbmux(serial=d.serial, autopair=False)
+                try:
+                    ptype = str((await ld.get_value(key="ProductType")) or "")
+                finally:
+                    await ld.close()
+            except Exception:
+                ptype = ""
+            if not ptype.startswith("iPhone99,"):
+                real.append(d)
+        if len(real) == 1:
+            devices = real
+        else:
+            out["error"] = "several-devices"
+            return out
+    out["udid"] = devices[0].serial
     try:
         ld = await create_using_usbmux(serial=out["udid"], autopair=False)
     except (E.NotPairedError, E.PairingError) as e:

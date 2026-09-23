@@ -16,6 +16,7 @@ is no one to click Approve.
 Stdlib only. API reference: https://phone-harness.com/docs
 """
 import json
+import math
 import os
 import shutil
 import sys
@@ -220,15 +221,33 @@ def _explain(e):
 
 def attached():
     """The session the helpers should drive, or None. Read by transport.py and
-    android.py on every run, so: no network, and never raises."""
+    android.py on every run, so: no network, and never raises. Malformed or
+    expired optional cache records are treated as absent."""
     try:
         sess = _load_state().get("session")
     except Exception:
         return None
-    if not isinstance(sess, dict) or not sess.get("host") or not sess.get("code"):
+    if not isinstance(sess, dict):
         return None
-    if sess.get("expires_at") and time.time() >= sess["expires_at"]:
+    if any(not isinstance(sess.get(key), str) or not sess[key].strip()
+           for key in ("sid", "host", "code")):
         return None
+    port = sess.get("port")
+    if isinstance(port, str) and port.isascii() and port.isdigit():
+        try:
+            port = int(port)
+        except ValueError:
+            return None
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        return None
+    expires = sess.get("expires_at")
+    if expires is not None:
+        if isinstance(expires, bool) or not isinstance(expires, (int, float)):
+            return None
+        if isinstance(expires, float) and not math.isfinite(expires):
+            return None
+        if time.time() >= expires:
+            return None
     return sess
 
 

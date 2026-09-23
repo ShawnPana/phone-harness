@@ -804,7 +804,11 @@ def _history(args):
     as_json = _flag(args, "--json")
     limit = _int(_option(args, "-n", "--limit") or 20, "-n")
     items, cursor = [], None
+    seen = set()
     while len(items) < limit:
+        if cursor in seen:
+            sys.exit("History pagination repeated a cursor; please retry later.")
+        seen.add(cursor)
         q = {"limit": min(100, limit - len(items)), **({"cursor": cursor} if cursor else {})}
         page = _api("GET", "/history/page?" + urllib.parse.urlencode(q))
         items += page.get("items") or []

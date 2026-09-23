@@ -148,9 +148,13 @@ Mac `PHONE_HARNESS_PLATFORM=coredevice` picks it over iPhone Mirroring. The
 session daemon must be running first:
 
 ```bash
-phone-harness ios awake --bg     # opens the USB tunnel + screen stream; ~2s when the image is mounted
+phone-harness ios awake --bg     # opens the tunnel + screen stream; ~2s when the image is mounted
+phone-harness ios mirror         # the same session, plus the phone's live screen in the browser
 phone-harness ios rest           # ends it
 ```
+
+`phone-harness ios mirror` is the preview the user can watch (and click) while
+you work; `awake --connection wifi` needs no cable once `ios pair --wifi` ran.
 
 Every helper raises "no CoreDevice session" until awake has run — relay that
 to the user rather than retrying. `phone-harness ios` shows what is plugged in

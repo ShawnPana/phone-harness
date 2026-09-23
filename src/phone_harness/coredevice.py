@@ -382,7 +382,7 @@ def _wait_ready(pid, timeout=300):
             continue
         phase = st.get("phase")
         if phase != last and phase:
-            notes = {"probing": "checking the phone over USB",
+            notes = {"probing": "finding the phone (USB, then Wi-Fi if none is cabled)",
                      "mounting": "mounting the developer image (downloads it the first time)",
                      "connecting": "opening the USB tunnel",
                      "recovering": "display service stalled; remounting the developer image",

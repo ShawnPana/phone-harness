@@ -185,7 +185,8 @@ def _doctor_coredevice():
         if not info["wifi_records"]:
             return
         eps = ", ".join(f"{h}:{p}" for h, p in info["wifi_endpoints"])
-        _check(f"the phone advertises on this Wi-Fi ({eps or 'not found'})", bool(info["wifi_endpoints"]),
+        _check(f"an iPhone advertises remotepairing on this Wi-Fi ({eps or 'none found'}); "
+               "awake finds out whether it is the paired one", bool(info["wifi_endpoints"]),
                "same network as this computer, Wi-Fi on, unlocked; or `awake --address IP:PORT`")
         if not info["wifi_endpoints"]:
             return

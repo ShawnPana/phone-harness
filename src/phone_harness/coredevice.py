@@ -402,7 +402,7 @@ def _wait_ready(pid, timeout=300):
 
 
 def cli(args):
-    cmd = args[0] if args else None
+    cmd = args[0] if args and not args[0].startswith("--") else None   # `ios --connection wifi` is status
     from . import coredevice_daemon as D
 
     if cmd is None:

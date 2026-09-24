@@ -190,6 +190,10 @@ step it names.
   where it was; `open_app(name, fresh=True)` quits it first so it opens on
   its first screen — use it when an app resumed on a view whose back button
   ignores taps (Apple Passwords' entry detail does).
+- **iOS popovers attach above the row you tapped.** A single tap on a list
+  row (Apple Passwords' Codes list, for one) shows a small button popup
+  drawn just above that row, so in a screenshot it sits next to the row
+  *before* the one you tapped. It belongs to the row you tapped; tap it.
 - `home()` is a real Home-button event; `app_switcher()` double-clicks Home
   on a Home-button phone and does the swipe-and-hold on the rest. `press()`
   takes chords (`"cmd+a"`, `"return"`, `"delete"`). `type_text` pastes by

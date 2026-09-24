@@ -985,13 +985,21 @@ class Session:
             # Quit the running instance, then launch again plainly: a
             # kill+launch alone leaves the new process behind SpringBoard
             # (seen with Passwords on iOS 27); the plain launch foregrounds it.
-            await launch(kill=True)
-            await asyncio.sleep(0.8)
+            # The quit is best effort: the app service sometimes refuses the
+            # kill (a CoreDeviceError, seen intermittently on iOS 27), and a
+            # resumed app is far better than no app, so fall through.
+            try:
+                await launch(kill=True)
+                await asyncio.sleep(0.8)
+            except Exception as e:                # noqa: BLE001
+                log.warning("fresh quit of %s failed (%s); launching without it",
+                            bid, str(e).split("{")[0].strip()[:160])
+                fresh = False
         for attempt in (1, 2):
             try:
                 await launch(kill=False)
                 break
-            except (asyncio.IncompleteReadError, OSError, asyncio.TimeoutError):
+            except Exception:                     # noqa: BLE001
                 if attempt == 2:
                     raise
                 await asyncio.sleep(0.5)          # the phone is still settling after the quit

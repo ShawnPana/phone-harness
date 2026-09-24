@@ -58,6 +58,12 @@ AWAKE_HINT = ("no iPhone session could be started. `phone-harness ios` shows wha
 # the developer image downloads. PHONE_HARNESS_NO_AUTOSTART=1 turns that off
 # (the daemon's own process, tests). PHONE_HARNESS_AUTOSTART_TIMEOUT caps the
 # wait in seconds.
+_MISSING_PMD3 = (
+    "this Python ({exe}) has no pymobiledevice3, so it cannot probe the phone or start a "
+    "session ({e}). Do NOT reinstall phone-harness from PyPI (that build has no USB backend). "
+    "Add the extra to this install instead: `{exe} -m pip install -e '<checkout>[iphone]'`, "
+    "or run the `phone-harness` from a venv that has it. A session already running keeps working.")
+
 AUTOSTART = os.environ.get("PHONE_HARNESS_NO_AUTOSTART") != "1"
 AUTOSTART_TIMEOUT = float(os.environ.get("PHONE_HARNESS_AUTOSTART_TIMEOUT") or 240)
 
@@ -467,11 +473,17 @@ def cli(args):
     from . import coredevice_daemon as D
 
     if cmd is None:
+        st = _state()
+        if st:
+            print(f"session: {st.get('phase')} over {st.get('connection') or '?'} (pid {st['pid']}) — "
+                  "`phone-harness ios rest` to end")
+            if st.get("mirror_url"):
+                print(f"mirror: {st['mirror_url']}")
         try:
             info = _run(D.probe(_serial(args), _arg(args, "--connection") or "auto", _arg(args, "--address")))
         except ImportError as e:
-            print(f"pymobiledevice3 is not installed: pip install 'phone-harness[iphone]' ({e})")
-            return 1
+            print(_MISSING_PMD3.format(exe=sys.executable, e=e))
+            return 0 if st else 1
         reg = config.devices_of("coredevice")
         print(f"remembered: {', '.join(reg['phones']) or 'none'}   primary: {reg['primary'] or 'none'}")
         print(f"usb devices: {', '.join(info['devices']) or 'none'}")
@@ -489,22 +501,16 @@ def cli(args):
                   f"developer image mounted: {info['ddi_mounted']}")
         if info["error"]:
             print(f"problem: {info['error']}")
-        st = _state()
-        if st:
-            print(f"session: {st.get('phase')} over {st.get('connection') or '?'} (pid {st['pid']}) — "
-                  "`phone-harness ios rest` to end")
-            if st.get("mirror_url"):
-                print(f"mirror: {st['mirror_url']}")
-        else:
-            print("session: off — `phone-harness ios awake` to start")
+        if not st:
+            print("session: off — it starts itself on the first helper call "
+                  "(`phone-harness ios mirror` to start it with the live screen)")
         return 0
 
     if cmd == "awake":
         try:
             import pymobiledevice3  # noqa: F401
-        except ImportError:
-            print("pymobiledevice3 is not installed: pip install 'phone-harness[iphone]' "
-                  "(Python 3.13 or newer)")
+        except ImportError as e:
+            print(_MISSING_PMD3.format(exe=sys.executable, e=e))
             return 1
         if _daemon_pid():
             print(f"already awake (pid {_daemon_pid()}); `phone-harness ios rest` to end")

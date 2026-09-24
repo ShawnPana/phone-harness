@@ -16,12 +16,17 @@ config` shows which is the default. For task-specific edits, use
 `agent-workspace/agent_helpers.py`. For setup or permission problems, read
 `install.md`.
 
-Setup is yours to do. Installing, starting or restarting a session, mounting
-the developer image, opening the mirror, rerunning a doctor: do these
-yourself without asking, and only come back to the user for what needs their
-hands — plugging the phone in, unlocking it, tapping Trust, entering a
-passcode. When something fails, read the error and try the next fix before
-reporting.
+Setup is yours to do. Starting or restarting a session, mounting the
+developer image, opening the mirror, rerunning a doctor: do these yourself
+without asking, and only come back to the user for what needs their hands —
+plugging the phone in, unlocking it, tapping Trust, entering a passcode. When
+something fails, read the error and try the next fix before reporting.
+
+Two things never fix a phone problem, so never do them mid-task: reinstalling
+or upgrading phone-harness (if `phone-harness` runs, it is installed; the PyPI
+build lacks the USB backend), and changing `platform`. On a Mac `platform
+coredevice` is the USB backend and `platform ios` is the iPhone Mirroring
+window; whichever `phone-harness config` shows is the one the user set up.
 
 ## When Not to Use
 

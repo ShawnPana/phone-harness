@@ -540,9 +540,14 @@ def app_switcher():
     return send("nav.recents")
 
 
-def open_app(name):
-    """Launch an app. Returns the app id that was launched."""
-    result = send("apps.launch", name=name)
+def open_app(name, fresh=False):
+    """Launch an app. Returns the app id that was launched.
+
+    By default a running app resumes where it left off. fresh=True quits it
+    first so it opens on its first screen — the way out when it resumed on a
+    view you cannot navigate back from. Where the device cannot quit an app
+    (iPhone Mirroring), fresh raises Unsupported."""
+    result = send("apps.launch", name=name, **({"fresh": True} if fresh else {}))
     wait_stable()
     return result
 

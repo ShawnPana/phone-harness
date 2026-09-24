@@ -956,7 +956,7 @@ class Session:
                 out.append(bid)
         return sorted(set(out))
 
-    async def op_launch(self, name, **_):
+    async def op_launch(self, name, fresh=False, **_):
         q = name.lower()
         apps = await self._app_list()
         def pick(items):
@@ -973,7 +973,8 @@ class Session:
         svc = await self._app_service()
         t1 = time.monotonic()
         try:
-            await asyncio.wait_for(svc.launch_application(bid, kill_existing=False), 20)
+            # fresh: quit a running instance so the app opens on its first screen
+            await asyncio.wait_for(svc.launch_application(bid, kill_existing=bool(fresh)), 20)
             log.info("launch %s: connect %.2fs, launch %.2fs", bid, t1 - t0, time.monotonic() - t1)
         finally:
             with contextlib.suppress(Exception):

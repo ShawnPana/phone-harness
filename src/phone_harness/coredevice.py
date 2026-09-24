@@ -221,9 +221,9 @@ class CoreDevice(Backend):
 
     # No _nav_back: iOS has no system Back button.
 
-    def _apps_launch(self, name):
+    def _apps_launch(self, name, fresh=False):
         self._gate()
-        bid = request("launch", name=name, timeout=60)
+        bid = request("launch", name=name, fresh=bool(fresh), timeout=60)
         time.sleep(0.8)
         return bid
 

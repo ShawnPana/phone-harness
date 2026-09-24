@@ -352,9 +352,11 @@ class Android(Backend):
 
     # --- apps ---------------------------------------------------------------
 
-    def _apps_launch(self, name):
+    def _apps_launch(self, name, fresh=False):
         """A package id, or a name matched against installed package ids
-        ('chrome' -> com.android.chrome). Returns the package launched."""
+        ('chrome' -> com.android.chrome). Returns the package launched.
+        fresh=True force-stops the package first so it opens on its first
+        screen."""
         self._gate()
         pkg = name if "." in name else None
         if pkg is None:
@@ -365,6 +367,8 @@ class Android(Backend):
             # shortest match is the least-qualified, e.g. com.android.chrome
             # over com.android.chrome.helper
             pkg = sorted(hits, key=len)[0]
+        if fresh:
+            self._sh(f"am force-stop {shlex.quote(pkg)}")
         out = self._sh("cmd package resolve-activity --brief "
                        f"-c android.intent.category.LAUNCHER {shlex.quote(pkg)}")
         comp = next((l.strip() for l in reversed(out.splitlines())

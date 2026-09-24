@@ -113,8 +113,12 @@ class IPhone(Backend):
 
     # No _nav_back: iOS has no system Back button.
 
-    def _apps_launch(self, name):
+    def _apps_launch(self, name, fresh=False):
         """Spotlight (Cmd+3): type the name, let results populate, commit."""
+        if fresh:
+            from .transport import Unsupported
+            raise Unsupported("iPhone Mirroring cannot quit an app; swipe it away in the "
+                              "app switcher instead")
         self.mirror.press("cmd+3")
         _sleep(0.9)
         # Keystrokes on purpose: Spotlight is the load-bearing path behind

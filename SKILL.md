@@ -169,7 +169,10 @@ and why a session cannot start (not trusted, Developer Mode off, iOS too old).
   contract as iPhone Mirroring. No `ui()`/`tree`.
 - `open_app("Settings")` launches by app name or bundle id through the app
   service, no Spotlight; `list_apps()` exists (`include_system=True` for
-  Apple's built-ins). `current_app()` is Unsupported.
+  Apple's built-ins). `current_app()` is Unsupported. A running app resumes
+  where it was; `open_app(name, fresh=True)` quits it first so it opens on
+  its first screen — use it when an app resumed on a view whose back button
+  ignores taps (Apple Passwords' entry detail does).
 - `home()` is a real Home-button event; `app_switcher()` double-clicks Home
   on a Home-button phone and does the swipe-and-hold on the rest. `press()`
   takes chords (`"cmd+a"`, `"return"`, `"delete"`). `type_text` pastes by

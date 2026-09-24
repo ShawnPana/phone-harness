@@ -44,7 +44,7 @@ nothing in common — so the shared layer is this vocabulary instead.
         rows between captures. Abstracting it away would cost behaviour.
 
     nav.home / nav.back / nav.recents
-    apps.launch  name -> app id
+    apps.launch  name, fresh=False -> app id   fresh quits a running app first
     apps.current      -> app id or None
     apps.list    include_system=False -> [app id]
 

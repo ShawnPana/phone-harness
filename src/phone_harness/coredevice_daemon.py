@@ -969,22 +969,33 @@ class Session:
         if not hits:
             raise RuntimeError(f"no installed app matches {name!r}")
         bid = hits[0]["bundleIdentifier"]
+
+        async def launch(kill):
+            # One request per connection: the app service, like the other
+            # CoreDevice request/reply services, drops a reused channel.
+            svc = await self._app_service()
+            try:
+                await asyncio.wait_for(svc.launch_application(bid, kill_existing=kill), 20)
+            finally:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(svc.close(), 1)
+
         t0 = time.monotonic()
-        svc = await self._app_service()
-        t1 = time.monotonic()
-        try:
-            if fresh:
-                # Quit the running instance, then launch again plainly: a
-                # kill+launch alone leaves the new process behind SpringBoard
-                # (seen with Passwords on iOS 27); the second launch is what
-                # brings it to the foreground, like tapping its icon.
-                await asyncio.wait_for(svc.launch_application(bid, kill_existing=True), 20)
-                await asyncio.sleep(0.8)
-            await asyncio.wait_for(svc.launch_application(bid, kill_existing=False), 20)
-            log.info("launch %s: connect %.2fs, launch %.2fs", bid, t1 - t0, time.monotonic() - t1)
-        finally:
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(svc.close(), 1)
+        if fresh:
+            # Quit the running instance, then launch again plainly: a
+            # kill+launch alone leaves the new process behind SpringBoard
+            # (seen with Passwords on iOS 27); the plain launch foregrounds it.
+            await launch(kill=True)
+            await asyncio.sleep(0.8)
+        for attempt in (1, 2):
+            try:
+                await launch(kill=False)
+                break
+            except (asyncio.IncompleteReadError, OSError, asyncio.TimeoutError):
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.5)          # the phone is still settling after the quit
+        log.info("launch %s%s in %.2fs", bid, " (fresh)" if fresh else "", time.monotonic() - t0)
         return bid
 
     async def op_stop(self, **_):

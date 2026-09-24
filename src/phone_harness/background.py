@@ -291,32 +291,32 @@ def scroll_wheel(dy, x, y, steps=6, dx=0):
 
 
 def press(combo):
-    titles = {"cmd+1": "Home Screen", "cmd+2": "App Switcher",
-              "cmd+3": "Spotlight"}
-    if combo.lower() in titles:
+    # Home Screen, App Switcher and Spotlight are Mirroring's own cmd+1/2/3 menu
+    # items. Matched by shortcut, not title, so a non-English Mac works too.
+    if combo.lower() in ("cmd+1", "cmd+2", "cmd+3"):
         app = _AS.AXUIElementCreateApplication(running_app().processIdentifier())
         error, menu = _AS.AXUIElementCopyAttributeValue(app, "AXMenuBar", None)
         if error:
             raise RuntimeError(f"cannot read iPhone Mirroring menu ({error})")
-        item = _find_ax_menu_item(menu, titles[combo.lower()])
+        item = _find_ax_menu_item(menu, combo[-1])
         if item is None:
-            raise RuntimeError(f"iPhone Mirroring has no {titles[combo.lower()]!r} action")
+            raise RuntimeError(f"iPhone Mirroring has no {combo} menu item")
         error = _AS.AXUIElementPerformAction(item, "AXPress")
         if error:
-            raise RuntimeError(f"cannot invoke {titles[combo.lower()]!r} ({error})")
+            raise RuntimeError(f"cannot invoke iPhone Mirroring's {combo} ({error})")
         return
     device_hid.press(combo)
 
 
-def _find_ax_menu_item(node, title):
-    error, value = _AS.AXUIElementCopyAttributeValue(node, "AXTitle", None)
-    if not error and value == title:
+def _find_ax_menu_item(node, char):
+    """The menu item whose shortcut is cmd+char (modifier mask 0 means cmd only)."""
+    def value(name):
+        error, v = _AS.AXUIElementCopyAttributeValue(node, name, None)
+        return None if error else v
+    if value("AXMenuItemCmdChar") == char and value("AXMenuItemCmdModifiers") == 0:
         return node
-    error, children = _AS.AXUIElementCopyAttributeValue(node, "AXChildren", None)
-    if error:
-        return None
-    for child in children or []:
-        item = _find_ax_menu_item(child, title)
+    for child in value("AXChildren") or []:
+        item = _find_ax_menu_item(child, char)
         if item is not None:
             return item
     return None

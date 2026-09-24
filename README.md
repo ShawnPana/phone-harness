@@ -78,7 +78,9 @@ nothing to export or select. `phone-harness cloud` lists the rest: `ls`,
 mouse and keyboard as touches. The harness captures that window, OCRs it with
 Apple's Vision framework for text with tap-ready coordinates, delivers taps
 and swipes straight to that window, and sends typing straight to the iPhone
-through Xcode's CoreDevice keyboard service, so your Mac's focus never moves.
+through Xcode's CoreDevice keyboard service, so your Mac's focus stays put.
+Scrolling is the one exception: it borrows the pointer and focus for the
+length of the gesture.
 
 **Android.** adb is the transport. `screencap` is the capture, the phone's
 accessibility tree is the text source, `input` is the hands. Works over USB or

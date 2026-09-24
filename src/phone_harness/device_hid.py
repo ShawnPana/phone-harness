@@ -16,7 +16,7 @@ _KEYS = {
     **{str(i): 0x1D + i for i in range(1, 10)},
     "0": 0x27,
     "return": 0x28, "enter": 0x28, "escape": 0x29, "esc": 0x29,
-    "backspace": 0x2A, "tab": 0x2B, " ": 0x2C,
+    "backspace": 0x2A, "delete": 0x2A, "tab": 0x2B, " ": 0x2C, "space": 0x2C,
     "-": 0x2D, "=": 0x2E, "[": 0x2F, "]": 0x30, "\\": 0x31,
     ";": 0x33, "'": 0x34, "`": 0x35, ",": 0x36, ".": 0x37,
     "/": 0x38, "right": 0x4F, "left": 0x50, "down": 0x51, "up": 0x52,
@@ -168,18 +168,23 @@ def _connected_iphone():
 
 
 def _binary():
-    digest = hashlib.sha256((_INTERFACE + _SOURCE).encode()).hexdigest()[:12]
+    framework = _FRAMEWORKS / "CoreDevice.framework/CoreDevice"
+    if not framework.exists():
+        raise Unsupported("headless iPhone keys require Xcode's CoreDevice framework")
+    # An Xcode update replaces CoreDevice; rebuild against the new one.
+    stamp = str(framework.stat().st_mtime_ns)
+    digest = hashlib.sha256((_INTERFACE + _SOURCE + stamp).encode()).hexdigest()[:12]
     root = _TMP / f"coredevice-hid-{digest}"
     binary = root / "phone-harness-hid"
     if binary.exists():
         return binary
-    if not (_FRAMEWORKS / "CoreDevice.framework/CoreDevice").exists():
-        raise Unsupported("headless iPhone keys require Xcode's CoreDevice framework")
     module = root / "CoreDevice.swiftmodule"
     module.mkdir(parents=True, exist_ok=True)
     arch = platform.machine()
-    (module / f"{arch}-apple-macos.swiftinterface").write_text(
-        _INTERFACE.replace("arm64-apple-macos", f"{arch}-apple-macos"))
+    interface = module / f"{arch}-apple-macos.swiftinterface"
+    staged = interface.with_suffix(f".{os.getpid()}")
+    staged.write_text(_INTERFACE.replace("arm64-apple-macos", f"{arch}-apple-macos"))
+    os.replace(staged, interface)
     candidate = root / f"phone-harness-hid.{os.getpid()}"
     result = subprocess.run(
         ["xcrun", "swiftc", "-parse-as-library", "-I", str(root),
@@ -211,7 +216,7 @@ def _events_for_text(text):
     events = []
     for char in text:
         base = _SHIFTED.get(char, char)
-        key = "return" if char == "\n" else base
+        key = {"\n": "return", "\t": "tab"}.get(char, base)
         if key not in _KEYS:
             raise ValueError(f"cannot type {char!r} via US-layout keycodes")
         if char in _SHIFTED:
@@ -227,7 +232,7 @@ def _send(events, delay=0, device=None):
     name = device or _connected_iphone()
     result = subprocess.run(
         [str(_binary()), name, str(max(delay, 0)), *events],
-        capture_output=True, timeout=30)
+        capture_output=True, timeout=30 + len(events) * (max(delay, 0) + 0.05))
     if result.returncode:
         detail = result.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"headless iPhone key delivery failed: {detail}")

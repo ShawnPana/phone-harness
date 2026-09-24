@@ -276,7 +276,7 @@ def is_frontmost():
     reported iPhone Mirroring true while the frontmost window still belonged
     to the user's terminal — that used to read here as "no change, still
     focused". It is not: the background backend's SkyLight path
-    (_SLPSSetFrontProcessWithOptions in background._post/_make_key) makes
+    (_SLPSSetFrontProcessWithOptions, which background._post used to call) makes
     iPhone Mirroring the front *process* without raising its *window*, and
     once that happens AXFrontmost reports true indefinitely even while the
     terminal's window stays on top and keeps receiving keyboard and scroll

@@ -50,9 +50,16 @@ _LOCKED_MARKERS = ("press home to open", "swipe up to open", "enter passcode",
                    "touch id or enter passcode", "face id or enter passcode",
                    "unlock iphone", "iphone unavailable")
 
-AWAKE_HINT = ("no CoreDevice session is running. Plug the iPhone in and run "
-              "`phone-harness ios awake` (it opens the USB tunnel that every "
-              "action needs), then retry.")
+AWAKE_HINT = ("no iPhone session could be started. `phone-harness ios` shows what "
+              "is plugged in and why (not cabled, not trusted, Developer Mode off).")
+
+# The first helper call of a task starts the session daemon itself and waits
+# for it: a few seconds normally, a minute or more the very first time while
+# the developer image downloads. PHONE_HARNESS_NO_AUTOSTART=1 turns that off
+# (the daemon's own process, tests). PHONE_HARNESS_AUTOSTART_TIMEOUT caps the
+# wait in seconds.
+AUTOSTART = os.environ.get("PHONE_HARNESS_NO_AUTOSTART") != "1"
+AUTOSTART_TIMEOUT = float(os.environ.get("PHONE_HARNESS_AUTOSTART_TIMEOUT") or 240)
 
 
 # --- talking to the daemon ---------------------------------------------------
@@ -91,11 +98,7 @@ def _connect(st, timeout):
 def request(op, timeout=30.0, **kw):
     """One round trip to the daemon. Raises RuntimeError with the user-facing
     message when there is no session, Unsupported when the daemon says so."""
-    st = _state()
-    if st is None or not st.get("ready"):
-        if st and st.get("phase") == "failed":
-            raise RuntimeError(f"the last `phone-harness ios awake` failed: {st.get('error')}")
-        raise RuntimeError(AWAKE_HINT)
+    st = _ensure_session()
     try:
         s = _connect(st, timeout)
     except OSError as e:
@@ -121,6 +124,46 @@ def request(op, timeout=30.0, **kw):
     raise RuntimeError(reply.get("error") or "CoreDevice request failed")
 
 
+def _spawn_daemon(serial=None, connection=None, address=None, mirror=True):
+    """Start the session daemon detached, logging to the run dir. Returns the
+    Popen. Any stale state file is removed first so nothing trusts an old run."""
+    from . import coredevice_daemon as D
+    serial = serial or os.environ.get("PHONE_HARNESS_IOS_SERIAL") \
+        or config.devices_of("coredevice").get("primary")
+    connection = connection or str(config.get("coredevice.connection") or "auto")
+    argv = [sys.executable, "-m", "phone_harness.coredevice_daemon", "--connection", connection] + \
+           (["--serial", serial] if serial else []) + \
+           (["--address", address] if address else []) + \
+           (["--mirror"] if mirror else [])
+    D.paths()["state"].parent.mkdir(parents=True, exist_ok=True)
+    D.paths()["state"].unlink(missing_ok=True)
+    with open(D.paths()["log"], "ab") as logf:
+        return subprocess.Popen(argv, stdout=logf, stderr=logf,
+                                start_new_session=(sys.platform != "win32"),
+                                creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                                               | getattr(subprocess, "DETACHED_PROCESS", 0))
+                                if sys.platform == "win32" else 0)
+
+
+def _ensure_session():
+    """A ready session, started on demand. Returns the daemon state. Raises
+    RuntimeError only when no session can come up (no phone on the cable,
+    not trusted, Developer Mode off), with the daemon's own reason."""
+    st = _state()
+    if st and st.get("ready"):
+        return st
+    if st is None:
+        if not AUTOSTART:
+            raise RuntimeError(AWAKE_HINT + " Run `phone-harness ios awake` first.")
+        pid = _spawn_daemon().pid
+    else:
+        pid = st["pid"]                      # already starting: join it
+    ok, err = _wait_ready(pid, timeout=AUTOSTART_TIMEOUT, quiet=True)
+    if not ok:
+        raise RuntimeError(f"could not start the iPhone session: {err}. {AWAKE_HINT}")
+    return _state() or {}
+
+
 # --- the backend -------------------------------------------------------------
 
 class CoreDevice(Backend):
@@ -142,10 +185,7 @@ class CoreDevice(Backend):
         return self._bounds_from(st) if st and st.get("ready") else None
 
     def _screen_require(self):
-        b = self._screen_bounds()
-        if b is None:
-            raise RuntimeError(AWAKE_HINT)
-        return b
+        return self._bounds_from(_ensure_session())
 
     def _screen_capture(self, path=None):
         TMP.mkdir(exist_ok=True)
@@ -178,7 +218,7 @@ class CoreDevice(Backend):
                 "The iPhone is locked. Unlock it on the phone, then retry — I won't "
                 "enter a passcode.")
         if state != "ready":
-            raise RuntimeError(AWAKE_HINT)
+            raise RuntimeError(self._session_detail())
 
     def _input_tap(self, x, y):
         self._gate()
@@ -234,25 +274,30 @@ class CoreDevice(Backend):
 
     # --- session --------------------------------------------------------
 
+    _start_error = None
+
     def _session_state(self):
-        """'ready' | 'locked' | 'not-running'."""
-        st = _state()
-        if st is None or not st.get("ready"):
-            return "not-running"
+        """'ready' | 'locked' | 'not-running'. Starts the session when none
+        is running; 'not-running' means it could not come up."""
         from . import ocr
         try:
+            _ensure_session()
+            self._start_error = None
             path, win = self._screen_capture()
             texts = " ".join(o["text"] for o in ocr.recognize(path, win)).lower()
-        except RuntimeError:
+        except RuntimeError as e:
+            self._start_error = str(e)
             return "not-running"
         return "locked" if any(m in texts for m in _LOCKED_MARKERS) else "ready"
 
     def _session_detail(self):
+        if self._start_error:
+            return self._start_error
         st = _state()
         if st is None:
-            return "no session daemon"
+            return AWAKE_HINT
         if st.get("phase") == "failed":
-            return f"awake failed: {st.get('error')}"
+            return f"the session failed to start: {st.get('error')}"
         return f"phase {st.get('phase')}"
 
     def _session_require(self):
@@ -263,10 +308,7 @@ class CoreDevice(Backend):
             raise RuntimeError(
                 "The iPhone is locked. Please unlock it on the phone, then retry — "
                 "I will not enter a passcode.")
-        st = _state()
-        if st and st.get("phase") == "failed":
-            raise RuntimeError(f"The last `phone-harness ios awake` failed: {st.get('error')}")
-        raise RuntimeError(AWAKE_HINT)
+        raise RuntimeError(self._session_detail())
 
     def _session_refocus(self):
         return None                    # nothing on this computer to focus
@@ -371,20 +413,29 @@ def _stop_daemon(pid, wait=45.0):
     return False
 
 
-def _wait_ready(pid, timeout=300):
-    """Follow the daemon's phases until ready or failed. Prints each phase.
-    Only this daemon's state counts: a stale file from an earlier run is
-    ignored until the new process has overwritten it."""
+def _wait_ready(pid, timeout=300, quiet=False):
+    """Follow the daemon's phases until ready or failed. Prints each phase
+    unless quiet. Only this daemon's state counts: a stale file from an
+    earlier run is ignored until the new process has overwritten it.
+    Returns (ok, error) when quiet, else ok."""
     from .coredevice_daemon import read_state
     last = None
     deadline = time.time() + timeout
+    result = None
     while time.time() < deadline:
         st = read_state() or {}
         if st.get("pid") != pid:
+            if quiet:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    from .coredevice_daemon import paths
+                    result = (False, f"the session daemon exited before reporting; see {paths()['log']}")
+                    break
             time.sleep(0.1)
             continue
         phase = st.get("phase")
-        if phase != last and phase:
+        if phase != last and phase and not quiet:
             notes = {"probing": "finding the phone (USB, then Wi-Fi if none is cabled)",
                      "mounting": "mounting the developer image (downloads it the first time)",
                      "connecting": "opening the USB tunnel",
@@ -395,13 +446,20 @@ def _wait_ready(pid, timeout=300):
             print(f"  {phase}: {notes.get(phase, '')}".rstrip(": "), flush=True)
             last = phase
         if st.get("ready"):
-            return True
+            result = (True, None)
+            break
         if phase == "failed":
-            print(f"awake failed: {st.get('error')}")
-            return False
+            result = (False, str(st.get("error")))
+            break
         time.sleep(0.25)
-    print("awake timed out before the session was ready; see `phone-harness ios`")
-    return False
+    if result is None:
+        result = (False, "timed out before the session was ready")
+    if quiet:
+        return result
+    if not result[0]:
+        print(f"awake failed: {result[1]}" if "timed out" not in result[1]
+              else "awake timed out before the session was ready; see `phone-harness ios`")
+    return result[0]
 
 
 def cli(args):
@@ -451,21 +509,8 @@ def cli(args):
         if _daemon_pid():
             print(f"already awake (pid {_daemon_pid()}); `phone-harness ios rest` to end")
             return 0
-        serial = _serial(args)
-        connection = _arg(args, "--connection") or str(config.get("coredevice.connection") or "auto")
-        address = _arg(args, "--address")
-        argv = [sys.executable, "-m", "phone_harness.coredevice_daemon", "--connection", connection] + \
-               (["--serial", serial] if serial else []) + \
-               (["--address", address] if address else []) + \
-               (["--mirror"] if "--mirror" in args else [])
-        D.paths()["state"].parent.mkdir(parents=True, exist_ok=True)
-        D.paths()["state"].unlink(missing_ok=True)          # never trust a stale run
-        with open(D.paths()["log"], "ab") as logf:
-            child = subprocess.Popen(argv, stdout=logf, stderr=logf,
-                                     start_new_session=(sys.platform != "win32"),
-                                     creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                                                    | getattr(subprocess, "DETACHED_PROCESS", 0))
-                                     if sys.platform == "win32" else 0)
+        child = _spawn_daemon(_serial(args), _arg(args, "--connection"), _arg(args, "--address"),
+                              mirror="--mirror" in args)
         print(f"awake: starting the session (pid {child.pid}); log at {D.paths()['log']}")
         ok = _wait_ready(child.pid)
         if not ok:

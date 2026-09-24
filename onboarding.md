@@ -99,7 +99,9 @@ instead.
 ## Rules
 
 Never type a PIN or passcode. Never change a phone setting without asking —
-including Developer Mode, which only the user turns on. Connecting the
-phone is the user's job — relay the doctor's message and wait; don't
-retry-loop. After this, day-to-day usage is `SKILL.md`; setup reference and
-troubleshooting are `install.md`.
+including Developer Mode, which only the user turns on. Cabling, unlocking
+and trusting the phone are the user's job — relay the doctor's message and
+wait; don't retry-loop. Everything after that (starting the USB session,
+mounting the developer image, opening the mirror) is yours: the helpers start
+the session themselves, so just proceed. After this, day-to-day usage is
+`SKILL.md`; setup reference and troubleshooting are `install.md`.

@@ -1,6 +1,7 @@
 """The phone-harness CLI: exec Python from stdin with helpers pre-imported."""
 import functools
 import io
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,9 @@ USAGE = """Usage:
 Commands:
   phone-harness --doctor [ios|android|coredevice]   diagnose the phone the helpers would drive
   phone-harness skill       print the phone-harness skill text
+  phone-harness skill install [claude|codex|hermes ...]
+                            write it verbatim where those agents load skills
+                            (no argument: every agent that has a home dir here)
   phone-harness ios ...     iPhone over USB (Linux/Windows/macOS): pair, awake, rest
   phone-harness android ... pair/connect/choose an Android phone
   phone-harness config ...  settings: `config set platform android`
@@ -33,6 +37,32 @@ def _skill_text():
         pass
     repo_root = Path(__file__).resolve().parent.parent.parent
     return (repo_root / "SKILL.md").read_text(encoding="utf-8")
+
+
+_SKILL_HOMES = {
+    "claude": lambda: Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"),
+    "codex": lambda: Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex"),
+    "hermes": lambda: Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes"),
+}
+
+
+def _skill_install(targets):
+    """Write SKILL.md, byte for byte, into each agent's skills directory.
+    Agents that register a skill through their own tooling tend to paraphrase
+    it and drop sections; the file on disk is what they actually load."""
+    unknown = [t for t in targets if t not in _SKILL_HOMES]
+    if unknown:
+        sys.exit(f"unknown agent(s): {', '.join(unknown)}; choose from {', '.join(_SKILL_HOMES)}")
+    if not targets:
+        targets = [t for t, home in _SKILL_HOMES.items() if home().is_dir()] or list(_SKILL_HOMES)
+    text = _skill_text()
+    for t in targets:
+        dest = _SKILL_HOMES[t]() / "skills" / "phone-harness" / "SKILL.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+        print(f"{t}: {dest} ({len(text.encode())} bytes)")
+    if "hermes" in targets:
+        print("hermes: run /reload-skills in an open session, or start a new one")
 
 
 _MAX_TRACED_STEPS = 500
@@ -216,6 +246,9 @@ def _run(args):
         from .config import cli
         sys.exit(cli(args[1:]))
     if args and args[0] == "skill":
+        if len(args) > 1 and args[1] == "install":
+            _skill_install(args[2:])
+            return
         print(_skill_text(), end="")
         return
     if args or sys.stdin.isatty():

@@ -13,12 +13,13 @@ git clone https://github.com/ShawnPana/phone-harness ~/.phone-harness   # canoni
 cd ~/.phone-harness
 pip install -e .                      # the global `phone-harness` command (pulls pyobjc on macOS only)
 
-# register as an agent skill so Claude Code / Codex reach for it automatically
-mkdir -p ~/.claude/skills/phone-harness
-phone-harness skill > ~/.claude/skills/phone-harness/SKILL.md
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness"
-phone-harness skill > "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness/SKILL.md"
+# register as an agent skill so Claude Code / Codex / Hermes reach for it automatically
+phone-harness skill install           # writes SKILL.md verbatim for every agent installed here
 ```
+
+`phone-harness skill install hermes` (or `claude`, `codex`) targets one agent.
+Use this rather than an agent's own "create a skill" tool, which rewrites the
+text and loses sections.
 
 - Python 3.10+, any OS (3.13+ for the USB iPhone path). **Android works on
   macOS, Linux and Windows** and is the default off a Mac. **iPhone** works on
@@ -34,8 +35,8 @@ phone-harness skill > "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness/SKILL.md
 - `phone-harness --doctor` checks the default phone; `--doctor ios` or
   `--doctor android` checks the other.
 
-Re-run the `phone-harness skill > …/SKILL.md` lines after pulling updates so
-the agent's copy matches the code.
+Re-run `phone-harness skill install` after pulling updates so the agent's copy
+matches the code.
 
 ## iPhone
 

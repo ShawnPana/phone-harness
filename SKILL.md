@@ -16,6 +16,13 @@ config` shows which is the default. For task-specific edits, use
 `agent-workspace/agent_helpers.py`. For setup or permission problems, read
 `install.md`.
 
+Setup is yours to do. Installing, starting or restarting a session, mounting
+the developer image, opening the mirror, rerunning a doctor: do these
+yourself without asking, and only come back to the user for what needs their
+hands — plugging the phone in, unlocking it, tapping Trust, entering a
+passcode. When something fails, read the error and try the next fix before
+reporting.
+
 ## When Not to Use
 
 If the task is doable on the Mac or the web — a website, an API, an app with a
@@ -145,20 +152,25 @@ PY
 
 Same helpers, no window. Off a Mac this is what `platform ios` means; on a
 Mac `PHONE_HARNESS_PLATFORM=coredevice` picks it over iPhone Mirroring. The
-session daemon must be running first:
+first helper call of a task starts the session itself and waits for it: a few
+seconds normally, a minute or more the very first time while the developer
+image downloads. Nothing to run beforehand.
 
 ```bash
-phone-harness ios awake --bg     # opens the tunnel + screen stream; ~2s when the image is mounted
-phone-harness ios mirror         # the same session, plus the phone's live screen in the browser
-phone-harness ios rest           # ends it
+phone-harness ios mirror         # the phone's live screen in the browser; the user can watch and click
+phone-harness ios                # what is plugged in, whether a session runs, its mirror URL
+phone-harness ios awake --bg     # start the session by hand (the helpers do this for you)
+phone-harness ios rest           # end it
 ```
 
-`phone-harness ios mirror` is the preview the user can watch (and click) while
-you work; `awake --connection wifi` needs no cable once `ios pair --wifi` ran.
+Open the mirror at the start of any task the user will want to watch. `awake
+--connection wifi` needs no cable once `ios pair --wifi` ran.
 
-Every helper raises "no CoreDevice session" until awake has run — relay that
-to the user rather than retrying. `phone-harness ios` shows what is plugged in
-and why a session cannot start (not trusted, Developer Mode off, iOS too old).
+A helper that raises "could not start the iPhone session" is telling you the
+phone itself is not reachable: no cable, not trusted, Developer Mode off, iOS
+too old. Run `phone-harness ios` to see which, fix what you can (`ios reveal`,
+`ios mount`, `--doctor coredevice`), and ask the user only for the physical
+step it names.
 
 - **Coordinates are screenshot pixels.** The capture is the phone's own PNG
   at native resolution and `tap(x, y)` takes the same pixel you saw in it, so
@@ -262,11 +274,13 @@ This is the user's real phone. Stop and ask before anything outward-facing or
 hard to reverse: sending a message, posting, purchasing, deleting, changing
 settings.
 
-## Connection is the user's job
+## Connection is the user's job (iPhone Mirroring only)
 
-The harness never connects the phone for you. Connecting or resuming mirroring
-is a physical action — opening the app, approving the prompt, and (crucially)
-**locking the iPhone when it says "iPhone in Use"** — that only the user can do.
+Over USB the harness connects the phone itself; see "iPhone over USB". This
+section is about the iPhone Mirroring window on a Mac, where connecting or
+resuming mirroring is a physical action — opening the app, approving the
+prompt, and (crucially) **locking the iPhone when it says "iPhone in Use"** —
+that only the user can do.
 
 `ensure_mirroring()` gates every task on this: if the phone isn't connected it
 raises a clear message (call `connection_state()` yourself to check —

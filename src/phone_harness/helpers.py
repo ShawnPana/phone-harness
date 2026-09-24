@@ -246,8 +246,9 @@ def type_text(text, delay=0.03, keystrokes=False):
     first — text sent before it has focus goes nowhere, silently, so check a
     capture afterwards.
 
-    Pastes by default so the text arrives exactly as written; keystrokes=True
-    sends real key events for fields that need them."""
+    Headless iPhone input always sends real US-layout HID keys and leaves both
+    clipboards alone. Other backends may use `keystrokes` to choose their input
+    path."""
     return send("input.text", s=text, delay=delay, keystrokes=keystrokes)
 
 

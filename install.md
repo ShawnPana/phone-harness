@@ -39,6 +39,11 @@ the agent's copy matches the code.
 
 - macOS Sequoia+ with **iPhone Mirroring** paired to the phone (open the app
   once and finish its pairing prompts — this needs the physical phone).
+- Xcode 26+ for CoreDevice's keyboard service, and the iPhone connected to
+  it (USB, or paired over Wi-Fi): `xcrun devicectl list devices` must show it
+  as `connected`, and it must be the only iPhone connected. Typing sends keys
+  straight to the phone this way, so the
+  Mirroring window never has to take focus.
 - Two permissions for your **terminal**, in System Settings → Privacy & Security:
   - **Accessibility** — taps and keystrokes. Takes effect immediately.
   - **Screen Recording** — seeing the phone. Takes effect after the terminal

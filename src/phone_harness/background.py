@@ -11,13 +11,10 @@ unfocused and another app frontmost:
   EYES  - CGWindowListCreateImage captures a specific window by id even when it
           is not the active app (and even when occluded).
 
-  HANDS - the input path macOS actually gates on is the app being *active*, not
-          merely its window being key. A normal CGEvent can't cross that. But
-          the window server accepts a synthesized event record delivered
-          straight to a process via SkyLight's SLPSPostEventRecordTo (the same
-          mechanism yabai uses to focus windows without raising them). Written
-          with a real location, it lands a positioned tap/drag in iPhone
-          Mirroring while your frontmost app never changes.
+  HANDS - a normal CGEvent cannot target an inactive app. The window server can
+          instead deliver a synthesized event record straight to a process via
+          SkyLight's SLPSPostEventRecordTo. The record names both the process and
+          window, so delivery no longer requests front-process activation.
 
 The event-record layout is yabai's (window_manager_make_key_window): a 0xf8
 buffer, length at 0x04, CGSEventType at 0x08 (1=down, 2=up, 6=dragged),
@@ -30,17 +27,17 @@ Select with PHONE_HARNESS_BACKGROUND=1. Coordinates use the same global
 screen-point convention as the mirror backend and ocr(), so every helper on
 top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
 
-Keyboard (type_text/press) still briefly activates the window: the keyboard
-event-record layout isn't implemented yet, so those fall back to the mirror
-path. Mouse actions are fully background.
+Keyboard input goes straight to the connected iPhone through CoreDevice's
+remote HID service. It never passes through the Mirroring window or macOS
+keyboard focus.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
-from contextlib import contextmanager
 from pathlib import Path
 
 import Quartz
-from AppKit import NSRunningApplication
+import ApplicationServices as _AS
 
+from . import device_hid
 from . import mirror
 
 APP_NAME = "iPhone Mirroring"
@@ -59,11 +56,9 @@ class _PSN(ctypes.Structure):
 
 _appserv.GetProcessForPID.argtypes = [ctypes.c_int, ctypes.POINTER(_PSN)]
 _appserv.GetProcessForPID.restype = ctypes.c_int
-_sky._SLPSSetFrontProcessWithOptions.argtypes = [
-    ctypes.POINTER(_PSN), ctypes.c_uint32, ctypes.c_uint32]
 _sky.SLPSPostEventRecordTo.argtypes = [ctypes.POINTER(_PSN), ctypes.c_void_p]
+_sky.SLPSPostEventRecordTo.restype = ctypes.c_int
 
-_KCPS_USER_GENERATED = 0x200
 # CGSEventType values (share the CGEventType numbering)
 _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
@@ -162,6 +157,23 @@ def _screencapture(win, path):
 
 # --- input (hands), no focus ---
 
+def _process_serial_number(pid):
+    psn = _PSN()
+    status = _appserv.GetProcessForPID(pid, ctypes.byref(psn))
+    if status != 0:
+        raise RuntimeError(
+            f"could not resolve iPhone Mirroring process {pid} "
+            f"to a process serial number (status {status})")
+    return psn
+
+
+def _post_record(psn, buf):
+    status = _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    if status != 0:
+        raise RuntimeError(
+            f"could not deliver an event to iPhone Mirroring (status {status})")
+
+
 def _post(pid, wid, etype, gx, gy, lx, ly):
     """Deliver one synthesized mouse event record to the process by pid."""
     buf = (ctypes.c_uint8 * 0xf8)()
@@ -171,10 +183,7 @@ def _post(pid, wid, etype, gx, gy, lx, ly):
     struct.pack_into("<dd", buf, 0x10, gx, gy)      # location (global points)
     struct.pack_into("<dd", buf, 0x20, lx, ly)      # windowLocation (local)
     buf[0x08] = etype
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
+    _post_record(_process_serial_number(pid), buf)
 
 
 def _ctx():
@@ -281,103 +290,38 @@ def scroll_wheel(dy, x, y, steps=6, dx=0):
             prev.activateWithOptions_(1 << 1)   # NSApplicationActivateIgnoringOtherApps
 
 
-# --- keyboard (background), via make-key + CGEventPostToPid ---
-#
-# Keyboard is delivered differently from mouse: the keystroke goes to the key
-# window's text responder. Making the window key (yabai's focus record: a
-# down/up pair with a blanked location) and then posting the key event to the
-# process by pid lands the text with no activation — verified by typing into
-# Spotlight while another app stayed frontmost.
-
-def _make_key(pid, wid):
-    buf = (ctypes.c_uint8 * 0xf8)()
-    buf[0x04] = 0xf8
-    buf[0x3a] = 0x10
-    struct.pack_into("<I", buf, 0x3c, wid)
-    for i in range(0x10):
-        buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
-    buf[0x08] = _LMOUSE_DOWN
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
-    buf[0x08] = _LMOUSE_UP
-    _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
-
-
-def _key_edge(pid, wid, code, down, flags=0):
-    _make_key(pid, wid)                 # keep the window key across the keystroke
-    ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
-    if flags:
-        # Mac-side consumers only. iPhone Mirroring forwards raw HID keycodes
-        # to iOS and drops the flag mask, so a modifier expressed as a flag
-        # never reaches the phone — it has to be a key that is held.
-        Quartz.CGEventSetFlags(ev, flags)
-    Quartz.CGEventPostToPid(pid, ev)
-    time.sleep(0.03)
-
-
-def _key(pid, wid, code, flags=0):
-    for down in (True, False):
-        _key_edge(pid, wid, code, down, flags)
-
-
-@contextmanager
-def _holding(pid, wid, mods):
-    """Hold real modifier keys down around the body. See mirror._holding."""
-    acc = 0
-    for m in mods:
-        acc |= mirror._MODIFIERS[m]
-        _key_edge(pid, wid, mirror._MOD_KEYCODES[m], True, acc)
-    try:
-        yield acc
-    finally:
-        # Unconditional: a latched modifier corrupts every later keystroke, and
-        # the damage surfaces somewhere else entirely.
-        for m in reversed(mods):
-            # Clear the bit *before* posting the release. A key-up still
-            # carrying its own flag reads as "still held", which latches shift
-            # on and turns the rest of the string into 1,200 -> !<@)).
-            acc &= ~mirror._MODIFIERS[m]
-            _key_edge(pid, wid, mirror._MOD_KEYCODES[m], False, acc)
-
-
 def press(combo):
-    """press('return'), press('cmd+1'), press('cmd+3') — no focus change."""
-    pid, win = _ctx()
-    parts = combo.lower().split("+")
-    key, mods = parts[-1], parts[:-1]
-    if key not in mirror._KEYCODES:
-        raise ValueError(f"unknown key {key!r}")
-    for m in mods:
-        if m not in mirror._MOD_KEYCODES:
-            raise ValueError(f"unknown modifier {m!r}")
-    with _holding(pid, win["id"], mods) as flags:
-        _key(pid, win["id"], mirror._KEYCODES[key], flags)
+    # Home Screen, App Switcher and Spotlight are Mirroring's own cmd+1/2/3 menu
+    # items. Matched by shortcut, not title, so a non-English Mac works too.
+    if combo.lower() in ("cmd+1", "cmd+2", "cmd+3"):
+        app = _AS.AXUIElementCreateApplication(running_app().processIdentifier())
+        error, menu = _AS.AXUIElementCopyAttributeValue(app, "AXMenuBar", None)
+        if error:
+            raise RuntimeError(f"cannot read iPhone Mirroring menu ({error})")
+        item = _find_ax_menu_item(menu, combo[-1])
+        if item is None:
+            raise RuntimeError(f"iPhone Mirroring has no {combo} menu item")
+        error = _AS.AXUIElementPerformAction(item, "AXPress")
+        if error:
+            raise RuntimeError(f"cannot invoke iPhone Mirroring's {combo} ({error})")
+        return
+    device_hid.press(combo)
 
 
-def _type_keystrokes(text, delay=0.03):
-    """Type via real keycodes, no focus change. Subject to iOS autocorrect,
-    which rewrites words as they are typed."""
-    pid, win = _ctx()
-    for i, line in enumerate(text.split("\n")):
-        if i:
-            _key(pid, win["id"], mirror._KEYCODES["return"])
-        for ch in line:
-            code, shifted = mirror._keycode_for(ch)
-            if code is None:
-                raise ValueError(f"cannot type {ch!r} via keycodes")
-            with _holding(pid, win["id"], ["shift"] if shifted else []) as flags:
-                _key(pid, win["id"], code, flags)
-            time.sleep(delay)
+def _find_ax_menu_item(node, char):
+    """The menu item whose shortcut is cmd+char (modifier mask 0 means cmd only)."""
+    def value(name):
+        error, v = _AS.AXUIElementCopyAttributeValue(node, name, None)
+        return None if error else v
+    if value("AXMenuItemCmdChar") == char and value("AXMenuItemCmdModifiers") == 0:
+        return node
+    for child in value("AXChildren") or []:
+        item = _find_ax_menu_item(child, char)
+        if item is not None:
+            return item
+    return None
 
 
 def type_text(text, delay=0.03, keystrokes=False):
-    """Type into the focused iOS field, no focus change.
-
-    Pastes by default so the text arrives exactly as written, past autocorrect
-    and keyboard layout both. keystrokes=True sends real key events instead.
-    """
-    if keystrokes or not text:
-        return _type_keystrokes(text, delay)
-    mirror.paste_with(press, text)
+    """Type into the focused iOS field without taking macOS focus."""
+    return device_hid.type_text(text, delay=delay, keystrokes=keystrokes)

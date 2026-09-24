@@ -4,8 +4,7 @@
 
 Connect Claude Code, Codex, or any agent to your real phone. **iPhone** through
 the Mac's iPhone Mirroring window, **Android** over adb from macOS, Linux or
-Windows. No jailbreak, no
-Xcode, nothing installed on the phone. The agent sees the screen, taps, types,
+Windows. No jailbreak, nothing installed on the phone. The agent sees the screen, taps, types,
 and reads the result.
 
 ```
@@ -77,8 +76,11 @@ nothing to export or select. `phone-harness cloud` lists the rest: `ls`,
 
 **iPhone.** iPhone Mirroring renders the phone as a Mac window and forwards
 mouse and keyboard as touches. The harness captures that window, OCRs it with
-Apple's Vision framework for text with tap-ready coordinates, and posts
-HID-level events for taps, swipes, and typing.
+Apple's Vision framework for text with tap-ready coordinates, delivers taps
+and swipes straight to that window, and sends typing straight to the iPhone
+through Xcode's CoreDevice keyboard service, so your Mac's focus stays put.
+Scrolling is the one exception: it borrows the pointer and focus for the
+length of the gesture.
 
 **Android.** adb is the transport. `screencap` is the capture, the phone's
 accessibility tree is the text source, `input` is the hands. Works over USB or

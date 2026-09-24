@@ -95,6 +95,8 @@ import Foundation
         try? keyboard.send(key: key, state: .up)
         keyboard.sendBarrier()
       }
+      // sendBarrier returns before delivery; exiting at once drops the last keys.
+      Thread.sleep(forTimeInterval: 0.1)
     }
     for event in CommandLine.arguments.dropFirst(3) {
       let parts = event.split(separator: ":", maxSplits: 1)

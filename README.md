@@ -68,7 +68,8 @@ uses, reached through [pymobiledevice3](https://github.com/doronz88/pymobiledevi
 a screenshot service is the eyes, a virtual HID touchscreen and keyboard are
 the hands, the pasteboard service carries pasted text, the app service
 launches apps by bundle id. No window at all. Needs iOS 27+, Developer Mode,
-and `pip install "phone-harness[iphone]"` on Python 3.13+.
+and, until it is released, an install from the checkout with the `iphone`
+extra on Python 3.13+ (see install.md).
 
 **Android.** adb is the transport. `screencap` is the capture, the phone's
 accessibility tree is the text source, `input` is the hands. Works over USB or

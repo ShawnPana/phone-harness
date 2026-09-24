@@ -15,11 +15,16 @@ up each, then ask which is the default.)
 Two ways to drive an iPhone. Prefer the first; it works on every OS and ends
 with a live preview in the browser.
 
-**Detect first.** Install the extra (`uv tool install --python 3.13
-"phone-harness[iphone]"`; on Linux also `usbmuxd`, on Windows iTunes or the
-Apple Devices app), plug the phone in and unlock it, then run
-`phone-harness ios`. It prints the phone, its iOS version, whether this
-computer is trusted, Developer Mode, and any saved Wi-Fi pairing.
+**Detect first, before any doctor.** Do not start with `--doctor ios` on a
+Mac: on a Mac that means iPhone Mirroring, and it will send you down the
+fallback path. Instead install the extra from the checkout
+(`cd ~/.phone-harness && uv tool install --python 3.13 --editable ".[iphone]"`,
+never `phone-harness[iphone]` from PyPI — that release lacks this backend;
+on Linux also `usbmuxd`, on Windows iTunes or the Apple Devices app), plug the
+phone in and unlock it, then run `phone-harness ios`. It prints the phone,
+its iOS version, whether this computer is trusted, Developer Mode, and any
+saved Wi-Fi pairing. If it prints usage instead, the PyPI install is
+shadowing the checkout; see install.md.
 
 - **iOS 27 or newer on USB, or a saved Wi-Fi pairing → CoreDevice.** Follow
   the steps below.

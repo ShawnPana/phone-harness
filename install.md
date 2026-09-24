@@ -22,10 +22,12 @@ phone-harness skill > "${CODEX_HOME:-$HOME/.codex}/skills/phone-harness/SKILL.md
 
 - Python 3.10+, any OS (3.13+ for the USB iPhone path). **Android works on
   macOS, Linux and Windows** and is the default off a Mac. **iPhone** works on
-  a Mac through iPhone Mirroring, and on any OS over USB (see "iPhone over
-  USB" below).
-  Only the CLI? `pip install phone-harness` works too; the
-  checkout is what makes the harness editable (`agent-workspace/agent_helpers.py`).
+  any OS over USB or Wi-Fi (see "iPhone over USB" below; prefer it), and on a
+  Mac through iPhone Mirroring for iOS below 27.
+  Only the CLI? `pip install phone-harness` works too for Android and iPhone
+  Mirroring, but not yet for the USB/Wi-Fi iPhone backend, which is only in
+  the checkout; the checkout is also what makes the harness editable
+  (`agent-workspace/agent_helpers.py`).
 - The default phone is `phone-harness config set platform ios|android`;
   `phone-harness config` shows every setting and where it came from;
   `PHONE_HARNESS_PLATFORM=android phone-harness …` overrides for one call.
@@ -61,11 +63,23 @@ uses — a screenshot service for eyes, a HID service for touches and keys —
 through [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) over
 the cable. Nothing is installed on the phone.
 
+Install **from the checkout**, with the `iphone` extra, on Python 3.13 or
+newer. The PyPI release does not have this backend yet, and a
+`uv tool install phone-harness` from PyPI would shadow the checkout install
+with a `phone-harness` that has no `ios` command.
+
 ```bash
-uv tool install --python 3.13 "phone-harness[iphone]"    # or: pip install "phone-harness[iphone]" on Python 3.13+
+cd ~/.phone-harness
+uv tool install --python 3.13 --editable ".[iphone]"      # or: python3.13 -m pip install -e ".[iphone]"
 sudo apt install usbmuxd                                   # Linux only: the USB device service
 # Windows only: install iTunes or the Apple Devices app (they provide the Apple Mobile Device service)
+phone-harness ios                                          # must print the phone, not "usage"
 ```
+
+If `phone-harness ios` prints usage, an older install is first on your PATH:
+`which -a phone-harness` shows them; remove the PyPI one
+(`uv tool uninstall phone-harness` or `pip uninstall phone-harness` in that
+interpreter) and reinstall from the checkout.
 
 - **The phone must run iOS 27 or later.** Older versions report no
   screen-streaming features from the display service and cannot be driven

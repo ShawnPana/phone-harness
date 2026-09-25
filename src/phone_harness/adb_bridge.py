@@ -34,7 +34,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-FRAME_LIMIT = 65535          # under 64 KiB, so every frame fits the 16-bit length form
+FRAME_LIMIT = 64 * 1024      # 64 KiB inclusive, the agreed maximum each way; a full frame uses the 8-byte length form
 UPGRADE_LIMIT = 16 * 1024
 PING_INTERVAL = 30
 _GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -203,8 +203,9 @@ class Bridge:
 def _note(where, exc):
     """Errors in a pump thread are expected at the end of a connection (EOF,
     reset); print the unexpected ones so a daemon log explains a dead link."""
-    if isinstance(exc, (ConnectionResetError, BrokenPipeError)) or (isinstance(exc, OSError) and not str(exc)):
-        return
+    if (isinstance(exc, (ConnectionResetError, BrokenPipeError)) or (isinstance(exc, OSError) and not str(exc))
+            or (isinstance(exc, ConnectionError) and "disconnected" in str(exc))):
+        return                                  # the far end hung up: how every connection ends
     print(f"adb-bridge: {where}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
 

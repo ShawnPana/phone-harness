@@ -203,9 +203,11 @@ class Bridge:
 def _note(where, exc):
     """Errors in a pump thread are expected at the end of a connection (EOF,
     reset); print the unexpected ones so a daemon log explains a dead link."""
+    import errno
     if (isinstance(exc, (ConnectionResetError, BrokenPipeError)) or (isinstance(exc, OSError) and not str(exc))
+            or (isinstance(exc, OSError) and exc.errno == errno.EBADF)
             or (isinstance(exc, ConnectionError) and "disconnected" in str(exc))):
-        return                                  # the far end hung up: how every connection ends
+        return                                  # the far end hung up, or our own close raced a read: how connections end
     print(f"adb-bridge: {where}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
 

@@ -112,15 +112,16 @@ def interruption(before, after):
     Raises when either reading has no focus value rather than reporting a
     clean result. AXFrontmost errors when Accessibility permission is missing,
     and a probe that silently answers "nothing happened" because it could not
-    look is worse than no probe at all.
+    look is worse than no probe at all. The error names the app macOS will
+    grant — the terminal, or the agent app that launched this process.
     """
     b_front, b_depth = before
     a_front, a_depth = after
     if b_front is None or a_front is None:
-        raise RuntimeError(
-            "focus_probe() could not read AXFrontmost — grant the terminal "
-            "Accessibility permission. Refusing to report an unmeasured "
-            "result as no interruption.")
+        from .macos_permissions import explain_accessibility_failure
+        raise RuntimeError(explain_accessibility_failure(
+            "focus_probe() could not read AXFrontmost. Refusing to report an "
+            "unmeasured result as no interruption."))
     raised = a_depth is not None and (b_depth is None or a_depth < b_depth)
     return {"raised": bool(raised), "stole_focus": bool(a_front and not b_front)}
 
@@ -437,7 +438,9 @@ def capture(path=None, retries=2):
         if ok:
             return path, win
         time.sleep(0.3)
-    raise RuntimeError(f"window capture failed after {retries + 1} tries: {last}")
+    from .macos_permissions import explain_capture_failure
+    raise RuntimeError(explain_capture_failure(
+        f"window capture failed after {retries + 1} tries: {last}"))
 
 
 # --- input primitives ---

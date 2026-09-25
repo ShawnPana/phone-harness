@@ -242,6 +242,16 @@ events into it for hands. All coordinates are global macOS screen points.
   Pass `keystrokes=True` for fields that need real key events. The typed text
   stays on the Mac clipboard afterwards. If a tap will not take focus,
   `press("tab")` moves between fields.
+- **Permissions.** `phone-harness --doctor ios` names the app macOS will grant
+  — the terminal, or the agent app (Cursor, VS Code, …) if that is what
+  launched the harness — and requests any missing Accessibility or Screen
+  Recording prompt without waiting. `phone-harness --doctor ios --fix` opens
+  the Settings pane and waits only when stdin is a terminal. Do not pass
+  `--fix` from an agent session: relay the doctor's message and let the user
+  re-run it. Both permissions can stay off until that app is quit (Cmd-Q) and
+  reopened; Accessibility sometimes needs the entry removed and added again.
+  The first script that sees or touches the phone requests a missing prompt
+  itself, once, and returns. For the rest, read `install.md`.
 - **Connecting is the user's job, and so is resuming.** `ensure_mirroring()`
   raises a clear message when the phone is not connected (`connection_state()`
   is `ready` / `blocked` / `no-window` / `not-running`). **STOP and relay it.**

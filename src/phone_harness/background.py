@@ -148,7 +148,8 @@ def capture(path=None, retries=2):
         else:
             last = "CGWindowListCreateImage returned nothing, screencapture failed"
         time.sleep(0.3)
-    raise RuntimeError(f"background capture failed: {last}")
+    from .macos_permissions import explain_capture_failure
+    raise RuntimeError(explain_capture_failure(f"background capture failed: {last}"))
 
 
 def _screencapture(win, path):

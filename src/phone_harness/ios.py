@@ -58,6 +58,18 @@ class IPhone(Backend):
     def __init__(self):
         self.mirror, self.background = _load_transport()
 
+    def send(self, op, **kw):
+        # The first time a script sees or touches the phone, ask macOS for any
+        # missing Accessibility / Screen Recording grant. The prompt calls do
+        # not block, so an agent that is not a terminal still returns.
+        if _op_needs_permission(op):
+            try:
+                from .macos_permissions import prompt_if_missing
+                prompt_if_missing()
+            except Exception:
+                pass
+        return super().send(op, **kw)
+
     # --- screen ---------------------------------------------------------
 
     def _screen_bounds(self):
@@ -199,6 +211,11 @@ class IPhone(Backend):
 
     def _focus_diff(self, before, after):
         return self.mirror.interruption(before, after)
+
+
+def _op_needs_permission(op):
+    from .macos_permissions import op_needs_permission_prompt
+    return op_needs_permission_prompt(op)
 
 
 def _sleep(s):

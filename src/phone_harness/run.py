@@ -13,7 +13,13 @@ USAGE = """Usage:
   PY
 
 Commands:
-  phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
+  phone-harness --doctor [ios|android] [--fix]
+                             diagnose the phone the helpers would drive.
+                             On a Mac, --doctor requests any missing
+                             Accessibility or Screen Recording prompt and names
+                             the app macOS will grant (not always the terminal).
+                             --fix also opens that Settings pane. It waits only
+                             when stdin is a terminal; an agent run does not hang.
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
   phone-harness cloud ...   rent a cloud phone: `cloud login`, `cloud start`, `cloud stop`
@@ -122,6 +128,42 @@ def _intents(task):
     return out
 
 
+def parse_doctor_args(args):
+    """Arguments after `doctor`. Returns (platform or None, fix)."""
+    platform = None
+    fix = False
+    for arg in args:
+        if arg == "--fix":
+            fix = True
+        elif arg.startswith("-"):
+            print(f"unknown option {arg}\n{USAGE}", file=sys.stderr)
+            raise SystemExit(2)
+        elif platform is None:
+            platform = arg
+        else:
+            print(f"unexpected argument {arg}\n{USAGE}", file=sys.stderr)
+            raise SystemExit(2)
+    return platform, fix
+
+
+def _doctor_fields():
+    """Anonymous doctor outcome. Omitted from non-doctor events.
+
+    Step ids are stable labels (`accessibility`, `window_capture`), never the
+    app name or a path. `permission_prompt_shown` means we asked macOS to
+    prompt; it may suppress a dialog it has already shown.
+    """
+    mod = sys.modules.get("phone_harness.admin")
+    report = getattr(mod, "last_report", None) if mod else None
+    if not report:
+        return {}
+    return {
+        "doctor_failed_steps": report.get("failed_steps"),
+        "permission_prompt_shown": report.get("prompt_shown"),
+        "permission_granted_after_prompt": report.get("granted_after_prompt"),
+    }
+
+
 def _waitlist_shown():
     """True when a `cloud` command pointed the user at the waitlist: the one
     thing about a cloud run worth counting (no output, no identity)."""
@@ -172,6 +214,7 @@ def main():
             exit_code=code,
             waitlist_shown=_waitlist_shown(),
             error_message=str(exc.code) if isinstance(exc.code, str) else (stderr_tail.tail.strip() or None) if code else None,
+            **_doctor_fields(),
         )
         raise
     except Exception as exc:
@@ -189,6 +232,7 @@ def main():
             exit_code=1,
             waitlist_shown=_waitlist_shown(),
             error_message=str(exc),
+            **_doctor_fields(),
         )
         raise
     finally:
@@ -207,6 +251,7 @@ def main():
         duration_seconds=time.monotonic() - start_time,
         exit_code=0,
         waitlist_shown=_waitlist_shown(),
+        **_doctor_fields(),
     )
 
 
@@ -217,7 +262,8 @@ def _run(args):
         return
     if args and args[0] in {"--doctor", "doctor"}:
         from .admin import run_doctor
-        sys.exit(run_doctor(args[1] if len(args) > 1 else None))
+        platform, fix = parse_doctor_args(args[1:])
+        sys.exit(run_doctor(platform, fix=fix))
     if args and args[0] == "android":
         from .android import cli
         sys.exit(cli(args[1:]))

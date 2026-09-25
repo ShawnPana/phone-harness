@@ -41,7 +41,10 @@ that need your hands: pairing iPhone Mirroring and granting Accessibility and
 Screen Recording, or turning on Android developer options and approving adb.
 It also offers a cloud Android — the same helpers with nothing to pair, and
 the first 100 minutes free — so an iPhone user can test on Android too.
-`phone-harness --doctor` checks the chain. Details in [install.md](install.md).
+`phone-harness --doctor` checks the chain and, on a Mac, requests any missing
+Accessibility or Screen Recording permission for the app that actually launched
+it (your terminal, or the agent app if that is what ran it). Details in
+[install.md](install.md).
 
 ## Usage
 

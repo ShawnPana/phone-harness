@@ -122,6 +122,9 @@ def capture_cli_event(
     exit_code: int | None = None,
     error_message: str | None = None,
     waitlist_shown: bool | None = None,
+    doctor_failed_steps: list | None = None,
+    permission_prompt_shown: bool | None = None,
+    permission_granted_after_prompt: bool | None = None,
 ) -> None:
     if not is_enabled():
         return
@@ -156,6 +159,13 @@ def capture_cli_event(
                 "waitlist_shown": waitlist_shown,
             },
         }
+        # Only doctor runs set these. They are step ids and booleans — not
+        # the app name, a path, or anything else that identifies the machine.
+        if (doctor_failed_steps is not None or permission_prompt_shown is not None
+                or permission_granted_after_prompt is not None):
+            payload["properties"]["doctor_failed_steps"] = doctor_failed_steps
+            payload["properties"]["permission_prompt_shown"] = permission_prompt_shown
+            payload["properties"]["permission_granted_after_prompt"] = permission_granted_after_prompt
         _send_detached(payload)
     except Exception:
         return

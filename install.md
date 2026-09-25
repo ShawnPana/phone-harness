@@ -39,15 +39,27 @@ the agent's copy matches the code.
 
 - macOS Sequoia+ with **iPhone Mirroring** paired to the phone (open the app
   once and finish its pairing prompts — this needs the physical phone).
-- Two permissions for your **terminal**, in System Settings → Privacy & Security:
-  - **Accessibility** — taps and keystrokes. Takes effect immediately.
-  - **Screen Recording** — seeing the phone. Takes effect after the terminal
-    restarts.
+- Two permissions, granted to the **app that launched phone-harness**. That is
+  your terminal when you run it yourself, and the agent app (Cursor, VS Code,
+  Claude, Grok, …) when an agent runs it. A terminal that already has them
+  does not cover the agent app. macOS lists that app by name; `--doctor` names it.
+  - **Accessibility** — taps and keystrokes.
+  - **Screen Recording** — seeing the phone.
+  Both can stay off for the running process until that app is **quit completely
+  and reopened** (Cmd-Q, not just closing the window). If Accessibility is
+  already on and the check still fails, remove the app from the list, add it
+  again, then quit and reopen.
+- `phone-harness --doctor ios` checks the chain, names that app, and asks macOS
+  to show a prompt for each missing permission. It does not wait.
+- `phone-harness --doctor ios --fix` does the same, opens the Settings pane,
+  and waits while you enable it **only when stdin is a terminal**. An agent
+  run is not a terminal: it requests the prompts, prints what to do, and
+  returns. Re-run `--fix` yourself in Terminal or iTerm if you want it to wait.
   ```bash
+  phone-harness --doctor ios --fix
   open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
   open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
   ```
-- Then `phone-harness --doctor ios`.
 
 > You may need to grant more than these two. They are the permissions we
 > *know* are required and all `--doctor` checks; a fresh machine may prompt for
@@ -87,11 +99,15 @@ iPhone is driven through the mirroring window, the Android over adb.
 
 `--doctor` walks the ladder in order and names the missing step. Common ones:
 
-- **iPhone — capture is blank/black**: Screen Recording granted but the
-  terminal wasn't restarted; or Mirroring shows an interstitial (iPhone in Use /
-  Connect / Mac Locked) — clear it on the Mac, lock the iPhone if it says in use.
-- **iPhone — taps do nothing**: Accessibility missing, or another window stole
-  focus (helpers re-activate the window; check for a macOS prompt).
+- **iPhone — capture is blank/black**: Screen Recording is missing, or it was
+  enabled but the app `--doctor` named was not quit and reopened; or Mirroring
+  shows an interstitial (iPhone in Use / Connect / Mac Locked) — clear it on
+  the Mac, lock the iPhone if it says in use.
+- **iPhone — taps do nothing**: Accessibility missing for the app that launched
+  phone-harness (not necessarily the terminal), or another window stole focus
+  (helpers re-activate the window; check for a macOS prompt). If the switch is
+  already on, remove that app from the Accessibility list, add it again, then
+  quit and reopen it.
 - **iPhone — `--doctor` says pyobjc missing on an install that works**: it is
   running a different Python than the one that has pyobjc; use the interpreter
   `pip install -e .` used, or `pip install pyobjc-framework-Quartz

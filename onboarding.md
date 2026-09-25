@@ -18,11 +18,19 @@ Works through the macOS iPhone Mirroring app. Two things only the user can do:
 
 - Pair iPhone Mirroring with the phone once (open the app; the pairing prompts
   need the physical phone).
-- Grant the terminal **Accessibility** and **Screen Recording** in System
-  Settings → Privacy & Security (Screen Recording takes effect after the
-  terminal restarts).
+- Grant **Accessibility** and **Screen Recording** to the app `--doctor` names.
+  That is the terminal if you are in one, and the agent app if setup is running
+  inside Cursor, VS Code, or similar — a terminal that already has the
+  permissions does not count. Both can require quitting that app completely
+  (Cmd-Q) and reopening it. Accessibility sometimes also needs its list entry
+  removed and added again.
 
 Check first — `phone-harness --doctor ios` — and only ask for what is missing.
+It requests the system prompt for each missing permission and names the app to
+enable. Do not pass `--fix` from an agent session (it would only wait in a
+terminal). Relay the doctor's message. The user can run
+`phone-harness --doctor ios --fix` themselves if they want it to open Settings
+and wait.
 Whenever you capture or verify the screen, bring the Mirroring window forward
 so the user can see what you're doing.
 

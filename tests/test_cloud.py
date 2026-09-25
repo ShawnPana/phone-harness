@@ -41,6 +41,7 @@ class FakeCloud(BaseHTTPRequestHandler):
     closing_reads = 0
     seen_headers = []
     forbid = False
+    bridge = False      # ready phones hand out a WebSocket bridge grant instead of a host and port
 
     def _oauth(self, path, form):
         c = FakeCloud
@@ -121,8 +122,10 @@ class FakeCloud(BaseHTTPRequestHandler):
             if m == "GET":
                 c.polls[sid] = c.polls.get(sid, 0) + 1
                 if c.polls[sid] >= 2 and c.sessions[sid]["state"] == "provisioning":
-                    c.sessions[sid].update(state="ready", startup={"startup": "exact"}, adb={
-                        "host": "live.example", "port": 22220, "code": "ph_code"})
+                    c.sessions[sid].update(state="ready", startup={"startup": "exact"}, adb=(
+                        {"transport": "adb-ws", "bridge_url": "ws://127.0.0.1:1/adb", "code": "ph_code",
+                         "expires_at": c.sessions[sid]["expires_at"]} if c.bridge else
+                        {"transport": "adb", "host": "live.example", "port": 22220, "code": "ph_code"}))
                 return self._send(200, c.sessions[sid])
             if m == "DELETE":
                 if c.sessions.pop(sid).get("profile"):
@@ -144,6 +147,7 @@ class CloudCli(unittest.TestCase):
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
         FakeCloud.forbid = False
+        FakeCloud.bridge = False
         FakeCloud.profile = {"id": "prof-1", "state": "stored", "session": None,
                              "saved_at": time.time() - 7200}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCloud)
@@ -246,6 +250,47 @@ class CloudCli(unittest.TestCase):
 
         ls = self.run_cli("cloud", "ls")
         self.assertIn("* sid001", ls.stdout)
+
+    def test_a_bridge_grant_gets_a_local_daemon_and_adb_connects_to_loopback(self):
+        FakeCloud.bridge = True
+        self.login()
+        r = self.run_cli("cloud", "start", "--minutes", "5", "--no-watch")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("bridged to the phone", r.stdout)
+        state = json.loads((Path(self.home.name) / "state" / "cloud.json").read_text())["session"]
+        self.addCleanup(lambda: self._kill(state.get("bridge_pid")))
+        self.assertEqual(state["transport"], "adb-ws")
+        self.assertEqual(state["host"], "127.0.0.1")
+        self.assertIsInstance(state["port"], int)
+        self.assertNotIn("ph_code", r.stdout)
+        log = self.adb_log()
+        self.assertIn(f"connect 127.0.0.1:{state['port']}", log)
+        self.assertIn("shell unlock ph_code", log)
+        os.kill(state["bridge_pid"], 0)                                   # the daemon is alive
+        import socket
+        with socket.create_connection(("127.0.0.1", state["port"]), timeout=3) as c:
+            c.settimeout(3)
+            self.assertEqual(c.recv(10), b"")                              # bridge unreachable (port 1): closed, no hang
+        status = self.run_cli("cloud")
+        self.assertIn("a local bridge", status.stdout)
+        stop = self.run_cli("cloud", "stop")
+        self.assertEqual(stop.returncode, 0, stop.stderr)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(state["bridge_pid"], 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("the bridge daemon outlived the session")
+
+    def _kill(self, pid):
+        if pid:
+            try:
+                os.kill(pid, 15)
+            except ProcessLookupError:
+                pass
 
     def test_start_opens_the_live_view_unless_told_not_to(self):
         self.login()

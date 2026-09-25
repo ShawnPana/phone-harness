@@ -18,6 +18,9 @@ Stdlib only. API reference: https://phone-harness.com/docs
 import json
 import os
 import shutil
+import socket
+import signal
+import subprocess
 import sys
 import time
 import urllib.error
@@ -225,7 +228,9 @@ def attached():
         sess = _load_state().get("session")
     except Exception:
         return None
-    if not isinstance(sess, dict) or not sess.get("host") or not sess.get("code"):
+    if not isinstance(sess, dict) or not sess.get("code"):
+        return None
+    if not sess.get("host") and not sess.get("bridge_url"):
         return None
     if sess.get("expires_at") and time.time() >= sess["expires_at"]:
         return None
@@ -241,6 +246,7 @@ def ensure_connected(sess, quiet=False):
     adb connection starts locked, so this runs once per process and again
     after a drop. -> the adb serial."""
     from .android import _run
+    _ensure_bridge(sess)
     serial = serial_of(sess)
     probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
     if "ph-ok" not in probe:
@@ -267,15 +273,19 @@ def ensure_connected(sess, quiet=False):
 def _attach(session, profile_id=None):
     """Remember a ready session and connect to it."""
     adb = session.get("adb") or {}
-    if not adb.get("host") or not adb.get("code"):
+    if not adb.get("code") or not (adb.get("host") or adb.get("bridge_url")):
         # Only after someone turned ADB off for this session; ready phones have it.
         adb = _api("POST", f"/sessions/{session['id']}/adb")
     state = _load_state()
-    state["session"] = {
-        "sid": session["id"], "host": adb["host"], "port": adb["port"],
-        "code": adb["code"], "profile": session.get("profile"),
-        "expires_at": session.get("expires_at"), "watch_url": session.get("watch_url"),
-    }
+    sess = {"sid": session["id"], "code": adb["code"], "profile": session.get("profile"),
+            "expires_at": session.get("expires_at"), "watch_url": session.get("watch_url")}
+    if adb.get("transport") == "adb-ws":
+        # A boat phone: its gate is reached through a WebSocket bridge that a
+        # local daemon turns into a loopback port (see _ensure_bridge).
+        sess.update(transport="adb-ws", bridge_url=adb["bridge_url"])
+    else:
+        sess.update(host=adb["host"], port=adb["port"])
+    state["session"] = sess
     if profile_id:
         state["profile_id"] = profile_id
     _save_state(state)
@@ -288,11 +298,69 @@ def _detach(sid=None):
     if sess and (sid is None or sess.get("sid") == sid):
         try:
             from .android import _run
-            _run("disconnect", serial_of(sess), timeout=10, check=False)
+            if sess.get("host"):
+                _run("disconnect", serial_of(sess), timeout=10, check=False)
         except Exception:
             pass
+        _stop_bridge(sess)
         state.pop("session", None)
         _save_state(state)
+
+
+# --- the ADB bridge for boat phones ------------------------------------------
+
+def _bridge_origin(url):
+    """The sandbox's own https origin, which the bridge checks on upgrade."""
+    from urllib.parse import urlsplit
+    u = urlsplit(url)
+    return f"https://{u.netloc}"
+
+
+def _bridge_alive(sess):
+    if sess.get("host") != "127.0.0.1" or not sess.get("port"):
+        return False
+    try:
+        with socket.create_connection(("127.0.0.1", sess["port"]), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_bridge(sess):
+    """A bridge-transport phone is driven through a loopback port served by a
+    small daemon (`python -m phone_harness.adb_bridge serve`) that turns each
+    ADB connection into one WebSocket to the phone. Start it, or restart it
+    after a reboot; record its port so `adb connect 127.0.0.1:<port>` works."""
+    if sess.get("transport") != "adb-ws" or _bridge_alive(sess):
+        return
+    log = config.state_dir() / "adb-bridge.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "ab") as err:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "phone_harness.adb_bridge", "serve",
+             "--url", f"{sess['bridge_url']}/{sess['code']}", "--origin", _bridge_origin(sess["bridge_url"]),
+             "--expires", str(float(sess.get("expires_at") or time.time() + 3600))],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err, start_new_session=True)
+    line = proc.stdout.readline().decode().strip()
+    proc.stdout.close()
+    if not line.isdigit():
+        raise RuntimeError("the ADB bridge for the cloud phone did not start; "
+                           f"see {log}")
+    sess.update(host="127.0.0.1", port=int(line), bridge_pid=proc.pid)
+    state = _load_state()
+    if (state.get("session") or {}).get("sid") == sess.get("sid"):
+        state["session"] = {**state["session"], "host": "127.0.0.1", "port": sess["port"], "bridge_pid": proc.pid}
+        _save_state(state)
+
+
+def _stop_bridge(sess):
+    pid = sess.get("bridge_pid")
+    if not pid:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 # --- small things ------------------------------------------------------------
@@ -578,7 +646,7 @@ def _report(session, profile_id=None, watch=True):
             "rebooted": " Rebooted from saved storage: apps and logins kept, the screen is not."}
     print(f"✓ ready.{note.get(how, '')}")
     print(f"  session  {session['id']}  ({'your phone' if session.get('profile') else 'temporary'})")
-    print(f"  adb      {serial} (connected, unlocked)")
+    print(f"  adb      {serial} ({'bridged to the phone, ' if session.get('adb', {}).get('transport') == 'adb-ws' else ''}connected, unlocked)")
     print(f"  expires  in {_left(session.get('expires_at'))} — `phone-harness cloud stop` "
           "before then" + (" to keep the running state" if session.get("profile") else ""))
     # The user asked for a phone; show it to them. Fails quietly where there
@@ -679,7 +747,7 @@ def _status(args):
     state = "closing — saving the phone" if live["state"] == "closing" else live["state"]
     print(f"session     {live['id']} · {state} · {_left(live.get('expires_at'))} left"
           f" · {'your phone' if live.get('profile') else 'temporary'}")
-    print(f"adb         {serial_of(sess)}")
+    print(f"adb         {serial_of(sess)}" + (" (a local bridge to the phone)" if sess.get("transport") == "adb-ws" else ""))
     return 0
 
 

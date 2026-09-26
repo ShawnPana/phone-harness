@@ -373,6 +373,8 @@ class Host:
         return phone
 
     def profile_udid(self, profile_id):
+        # Read fresh: `phone-harness host assign` edits the file while this runs.
+        self.cfg["assignments"] = load_config()["assignments"]
         return self.cfg["assignments"].get(profile_id)
 
     def lease_of_udid(self, udid):

@@ -18,11 +18,12 @@ customer-facing paths (`/iphone/v/<token>/…` for the live mirror,
 sit on a public origin while the worker paths stay behind the bearer token.
 
 Files (config dir): host.json {token, port, assignments{profile_id: udid}}.
-Files (state dir):  host/<udid>/ is PHONE_HARNESS_HOME for that phone's daemon;
+Files (state dir):  h/<hash of udid>/ is PHONE_HARNESS_HOME for that phone's daemon;
                     host-leases.json survives a restart so the API can adopt.
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import secrets
@@ -118,7 +119,9 @@ class Phone:
 
     def __init__(self, udid):
         self.udid = udid
-        self.home = config.state_dir() / "host" / udid
+        # Short on purpose: the daemon's unix socket lives under here, and
+        # macOS caps a socket path at 104 bytes.
+        self.home = config.state_dir() / "h" / hashlib.sha1(udid.encode()).hexdigest()[:10]
         self.run = self.home / "state" / "run"
         self.lock = threading.Lock()
         self.proc = None

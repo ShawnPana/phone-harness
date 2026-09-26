@@ -28,6 +28,11 @@ class Remote(Backend):
     name = "remote"
 
     def __init__(self, url, token, expires_at=None):
+        # A private instance reached through a port-forward: the control URL
+        # names the public origin, and this moves it to the forwarded one.
+        base = os.environ.get("PHONE_HARNESS_CLOUD_CONTROL_BASE")
+        if base:
+            url = base.rstrip("/") + "/" + url.split("/", 3)[3]
         self.url = url.rstrip("/")
         self.token = token
         self.expires_at = expires_at

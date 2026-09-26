@@ -457,6 +457,7 @@ class Session:
         self.keep_awake = asyncio.create_task(self._keep_awake_loop())
         self.hid = UniversalHIDServiceService(self.rsd)
         await self.hid.connect()
+        self._hid_epoch = self._stream_epoch()
         img = await self._capture_bytes()
         self.w, self.h = png_size(img)
         phase("ready")
@@ -726,15 +727,35 @@ class Session:
                 await asyncio.wait_for(svc.close(), 1)
         return r["image"]
 
+    def _stream_epoch(self):
+        """Identity of the current stream session. HID reports are only
+        honoured by the session that authenticated them, so when the stream
+        restarts (stall watchdog, phone hiccup) the HID connections must be
+        remade or every tap is silently dropped."""
+        task = self.mirror._active_recv_task if self.mirror is not None else self.drain
+        return id(task)
+
     async def _reconnect_hid(self):
         from pymobiledevice3.remote.core_device.hid_service import UniversalHIDServiceService
-        with contextlib.suppress(Exception):
-            await asyncio.wait_for(self.hid.close(), 1)
+        for svc in (self.hid, self.indigo):
+            if svc is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(svc.close(), 1)
+        self.indigo = None
         self.hid = UniversalHIDServiceService(self.rsd)
         await asyncio.wait_for(self.hid.connect(), CONNECT_TIMEOUT)
         self.keyboard = None
+        self._hid_epoch = self._stream_epoch()
+
+    async def _ensure_hid(self):
+        """Before any input: if the stream session changed since the HID
+        connections were made, remake them (silent drops are not errors)."""
+        if getattr(self, "_hid_epoch", None) != self._stream_epoch():
+            log.info("stream session changed; reconnecting HID")
+            await self._reconnect_hid()
 
     async def _touch(self, state, x, y):
+        await self._ensure_hid()
         try:
             await self.hid.send_touchscreen(state, x, y)
         except (OSError, asyncio.IncompleteReadError, ConnectionError):
@@ -746,6 +767,7 @@ class Session:
     async def _keys(self, usages):
         """Send one full-bitmap keyboard report, modifiers in a report of
         their own first so a letter is never processed before its Shift."""
+        await self._ensure_hid()
         for attempt in (1, 2):
             try:
                 if self.keyboard is None:
@@ -769,14 +791,26 @@ class Session:
     async def _home_press(self, hold=0.06):
         from pymobiledevice3.remote.core_device.hid_service import (
             IndigoHIDService, HID_BUTTON_STATE_DOWN, HID_BUTTON_STATE_UP)
-        if self.indigo is None:
-            self.indigo = IndigoHIDService(self.rsd)
-            await self.indigo.connect()
-        await self.indigo.send_button(0x0C, 0x40, HID_BUTTON_STATE_DOWN)
-        try:
-            await asyncio.sleep(hold)
-        finally:
-            await self.indigo.send_button(0x0C, 0x40, HID_BUTTON_STATE_UP)
+        await self._ensure_hid()
+        for attempt in (1, 2):
+            if self.indigo is None:
+                self.indigo = IndigoHIDService(self.rsd)
+                await asyncio.wait_for(self.indigo.connect(), CONNECT_TIMEOUT)
+            try:
+                await self.indigo.send_button(0x0C, 0x40, HID_BUTTON_STATE_DOWN)
+                try:
+                    await asyncio.sleep(hold)
+                finally:
+                    await self.indigo.send_button(0x0C, 0x40, HID_BUTTON_STATE_UP)
+                return
+            except (OSError, asyncio.IncompleteReadError, ConnectionError):
+                # The button service's connection died (BrokenPipe): remake
+                # it once; a second failure is the phone's to explain.
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self.indigo.close(), 1)
+                self.indigo = None
+                if attempt == 2 or not self._stream_alive():
+                    raise
 
     async def _glide(self, p1, p2, duration, steps, hold_end=0.0):
         """Finger down at p1, interpolate to p2 over `duration`, optionally

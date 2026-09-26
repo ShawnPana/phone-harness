@@ -441,9 +441,14 @@ class Host:
             self._end_lease(lease_id)
             self._save_leases()
 
-    def mint(self, lease_id, kind, ttl, mode="control"):
+    def mint(self, lease_id, kind, ttl, mode="control", cap=None):
+        """A token that lives to the earliest of: the lease, now + ttl, and the
+        caller's own deadline (the API computes its deadline before asking and
+        refuses a grant that outlives it, even by a millisecond)."""
         lease = self.lease(lease_id)
         expires_at = min(lease["expires_at"], time.time() + ttl)
+        if type(cap) in (int, float) and cap > 0:
+            expires_at = min(expires_at, float(cap))
         token = secrets.token_urlsafe(24)
         with self.lock:
             self.tokens[token] = {"lease": lease_id, "kind": kind, "mode": mode, "expires_at": expires_at}
@@ -621,7 +626,7 @@ class Handler(BaseHTTPRequestHandler):
                 if type(ttl) is not int or ttl < 1:
                     raise HostError(400, "ttl_seconds must be a positive integer")
                 mode = body.get("mode") or "control"
-                token, expires_at = host.mint(lease_id, "viewer", ttl, mode)
+                token, expires_at = host.mint(lease_id, "viewer", ttl, mode, cap=body.get("expires_at"))
                 return self._json(200, {"url": f"{self.origin}/iphone/v/{token}/", "expires_at": expires_at,
                                         "mode": mode})
             if sub == "control" and method == "POST":

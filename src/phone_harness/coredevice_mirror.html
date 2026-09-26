@@ -87,6 +87,16 @@
   #screen:focus { outline: none; }
   .phone:has(#screen:focus-visible) { outline-color: #a3aaa6; }
 
+  /* Embedded (inside another page's frame): no header, no captions, no model
+     strings, a compact toolbar, and the phone fills what is left. */
+  .embedded .standalone-watch { padding: 0; gap: 0; }
+  .embedded .standalone-watch-header, .embedded .stage-caption, .embedded #label { display: none; }
+  .embedded .viewer-toolbar { margin: 0; padding: 6px 8px; justify-content: center; flex-wrap: wrap; gap: 6px; }
+  .embedded .viewer-actions { flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .embedded .viewer-actions .button { min-height: 26px; padding: 4px 8px; }
+  .embedded .viewer-notice { padding: 6px 8px; text-align: center; }
+  .embedded .viewer-stage { padding: 8px; }
+
   @media (max-width: 760px) { :root { --space: 20px; } }
   @media (max-width: 560px) { :root { --space: 16px; } .brand { font-size: 16px; gap: 8px; }
                               .brand-mark { width: 27px; height: 27px; } .viewer-label { font-size: 9px; } }
@@ -112,7 +122,7 @@
   <div class="standalone-watch-content">
     <div class="phone-viewer">
       <div class="viewer-toolbar">
-        <span class="viewer-label" id="label">__TRANSPORT__ · served on 127.0.0.1 · click to tap, drag to swipe, scroll to scroll, type to type</span>
+        <span class="viewer-label" id="label">tap, drag to swipe, scroll, type</span>
         <div class="viewer-actions">
           <button class="button" type="button" data-act="home">Home</button>
           <button class="button" type="button" data-act="rotate">Rotate</button>
@@ -136,8 +146,11 @@
 <script>
 (() => {
   // ?theme=dark|light|amber pins a theme; otherwise the system setting decides.
-  const theme = new URLSearchParams(location.search).get('theme');
+  const params = new URLSearchParams(location.search);
+  const theme = params.get('theme');
   if (theme) document.documentElement.dataset.theme = theme;
+  const embedded = params.get('embed') === '1' || window.self !== window.top;
+  if (embedded) document.documentElement.classList.add('embedded');
 
   const canvas = document.getElementById('screen');
   const ctx = canvas.getContext('2d');
@@ -155,7 +168,8 @@
   let vw = 750, vh = 1334;
   function layout() {
     const r = stage.getBoundingClientRect();
-    const s = Math.min((r.width - 48) / vw, (r.height - 64) / vh);
+    const pad = embedded ? 16 : 48, top = embedded ? 16 : 64;
+    const s = Math.min((r.width - pad) / vw, (r.height - top) / vh);
     phone.style.width = Math.max(1, Math.floor(vw * s)) + 6 + 'px';    // + the 3px bezel each side
     phone.style.height = Math.max(1, Math.floor(vh * s)) + 6 + 'px';
   }

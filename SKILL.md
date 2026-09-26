@@ -141,6 +141,9 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
   password, a 2FA prompt, or just to take over — run `phone-harness cloud open`
   (the dashboard, behind their own sign-in) and wait for them to say they are
   done before you touch the phone again.
+- Some cloud phones (boat-hosted Android) have no public ADB port: the CLI
+  runs a small local bridge and hands adb `127.0.0.1:<port>` instead. Nothing
+  changes for you; `phone-harness cloud` shows the address as a local bridge.
 - The connection is handled for you, including reconnecting after a drop. The
   adb address the CLI shows is not a secret; the unlock code is, and you never
   need it — do not look for it, print it, or ask the user for it.

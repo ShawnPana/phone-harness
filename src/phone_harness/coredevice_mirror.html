@@ -125,7 +125,6 @@
         <span class="viewer-label" id="label">tap, drag to swipe, scroll, type</span>
         <div class="viewer-actions">
           <button class="button" type="button" data-act="home">Home</button>
-          <button class="button" type="button" data-act="rotate">Rotate</button>
           <button class="button" type="button" data-act="shot">Screenshot</button>
           <button class="button" type="button" data-act="volume-down">Vol −</button>
           <button class="button" type="button" data-act="volume-up">Vol +</button>
@@ -302,11 +301,12 @@
   document.querySelector('.viewer-actions').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const act = b.dataset.act;
-    if (act === 'rotate') return post('rotate', { direction: 'left' });
     if (act === 'shot') return canvas.toBlob(blob => {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-      a.download = 'iphone-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png'; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000); }, 'image/png');
+      const url = URL.createObjectURL(blob);
+      if (embedded) { window.open(url, '_blank'); }               // downloads are blocked in a frame
+      else { const a = document.createElement('a'); a.href = url;
+             a.download = 'iphone-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png'; a.click(); }
+      setTimeout(() => URL.revokeObjectURL(url), 30000); }, 'image/png');
     post('button', { name: act, state: 'press' });
   });
   canvas.focus();

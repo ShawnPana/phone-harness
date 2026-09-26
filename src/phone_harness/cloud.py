@@ -225,7 +225,9 @@ def attached():
         sess = _load_state().get("session")
     except Exception:
         return None
-    if not isinstance(sess, dict) or not sess.get("host") or not sess.get("code"):
+    if not isinstance(sess, dict):
+        return None
+    if not sess.get("control_url") and not (sess.get("host") and sess.get("code")):
         return None
     if sess.get("expires_at") and time.time() >= sess["expires_at"]:
         return None
@@ -233,7 +235,17 @@ def attached():
 
 
 def serial_of(sess):
+    if sess.get("control_url"):
+        return "ops over https"
     return f"{sess['host']}:{sess['port']}"
+
+
+def _adb_present():
+    from .android import _adb_bin
+    if not shutil.which(_adb_bin()):
+        sys.exit("adb is not installed, and it is how the helpers reach this phone. Install "
+                 "Android platform-tools first (macOS: brew install android-platform-tools; "
+                 "`phone-harness --doctor android` names it for this OS).")
 
 
 def ensure_connected(sess, quiet=False):
@@ -266,6 +278,20 @@ def ensure_connected(sess, quiet=False):
 
 def _attach(session, profile_id=None):
     """Remember a ready session and connect to it."""
+    control = session.get("control") or {}
+    if control.get("url") and control.get("token"):
+        # No shell on this phone: every op goes to the control URL (remote.py).
+        state = _load_state()
+        state["session"] = {
+            "sid": session["id"], "control_url": control["url"], "control_token": control["token"],
+            "profile": session.get("profile"), "expires_at": session.get("expires_at"),
+            "watch_url": session.get("watch_url"),
+        }
+        if profile_id:
+            state["profile_id"] = profile_id
+        _save_state(state)
+        return serial_of(state["session"])
+    _adb_present()
     adb = session.get("adb") or {}
     if not adb.get("host") or not adb.get("code"):
         # Only after someone turned ADB off for this session; ready phones have it.
@@ -286,11 +312,12 @@ def _detach(sid=None):
     state = _load_state()
     sess = state.get("session")
     if sess and (sid is None or sess.get("sid") == sid):
-        try:
-            from .android import _run
-            _run("disconnect", serial_of(sess), timeout=10, check=False)
-        except Exception:
-            pass
+        if not sess.get("control_url"):
+            try:
+                from .android import _run
+                _run("disconnect", serial_of(sess), timeout=10, check=False)
+            except Exception:
+                pass
         state.pop("session", None)
         _save_state(state)
 
@@ -522,11 +549,6 @@ def _start(args):
     minutes = _option(args, "--minutes", "-m")
     if args:
         sys.exit(CLI_USAGE)
-    from .android import _adb_bin
-    if not shutil.which(_adb_bin()):
-        sys.exit("adb is not installed, and it is how the helpers reach the phone. Install "
-                 "Android platform-tools first (macOS: brew install android-platform-tools; "
-                 "`phone-harness --doctor android` names it for this OS).")
     cap = int(config.get("cloud.max_minutes"))
     minutes = _int(minutes, "--minutes") if minutes else int(config.get("cloud.minutes"))
     if not 1 <= minutes <= cap:
@@ -578,7 +600,10 @@ def _report(session, profile_id=None, watch=True):
             "rebooted": " Rebooted from saved storage: apps and logins kept, the screen is not."}
     print(f"✓ ready.{note.get(how, '')}")
     print(f"  session  {session['id']}  ({'your phone' if session.get('profile') else 'temporary'})")
-    print(f"  adb      {serial} (connected, unlocked)")
+    if session.get("control"):
+        print(f"  control  {serial}: no shell on this phone, the helpers drive it directly")
+    else:
+        print(f"  adb      {serial} (connected, unlocked)")
     print(f"  expires  in {_left(session.get('expires_at'))} — `phone-harness cloud stop` "
           "before then" + (" to keep the running state" if session.get("profile") else ""))
     # The user asked for a phone; show it to them. Fails quietly where there
@@ -679,7 +704,7 @@ def _status(args):
     state = "closing — saving the phone" if live["state"] == "closing" else live["state"]
     print(f"session     {live['id']} · {state} · {_left(live.get('expires_at'))} left"
           f" · {'your phone' if live.get('profile') else 'temporary'}")
-    print(f"adb         {serial_of(sess)}")
+    print(f"{'control' if sess.get('control_url') else 'adb':<12}{serial_of(sess)}")
     return 0
 
 

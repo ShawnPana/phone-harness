@@ -142,7 +142,11 @@ def connect(platform=None, **kw):
             # A phone rented with `cloud start` is the one meant, even on a
             # Mac whose default is the iPhone. An explicit platform still wins.
             from . import cloud
-            if cloud.attached():
+            rented = cloud.attached()
+            if rented and rented.get("control_url"):
+                from .remote import Remote
+                return Remote(rented["control_url"], rented["control_token"], rented.get("expires_at"))
+            if rented:
                 platform = "android"
     platform = platform.lower()
     if platform in ("ios", "iphone", "ipad"):

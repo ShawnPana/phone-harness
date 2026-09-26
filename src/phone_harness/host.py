@@ -51,7 +51,7 @@ WAITING_PAGE = b"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="3">
 <title>iPhone</title><style>html,body{height:100%;margin:0;background:#0a0a0a;color:#a3aaa6;
 font:12px "SFMono-Regular",Consolas,monospace;display:flex;align-items:center;justify-content:center}</style>
-</head><body>Reconnecting to the iPhone\u2026</body></html>"""
+</head><body>Reconnecting to the iPhone&hellip;</body></html>"""
 
 # Public op -> (daemon op, needs the phone unlocked). Argument names are the
 # vocabulary's own (transport.py); the daemon takes the same names.

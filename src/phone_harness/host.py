@@ -124,6 +124,7 @@ class Phone:
         self.proc = None
         self.started_at = 0.0
         self.failures = 0
+        self.last_error = None
         self._gate_at, self._gate_state = 0.0, None
 
     # daemon lifecycle
@@ -142,14 +143,27 @@ class Phone:
         return st
 
     def phase(self):
+        """ready | booting | error. A phone the supervisor is still bringing up
+        is `booting`, and that includes a locked phone: the daemon cannot start
+        a session on it, the owner unlocks it, the next retry succeeds."""
         st = self.state()
-        if st is None:
-            return "booting" if time.time() - self.started_at < DAEMON_START_TIMEOUT else "error"
-        if st.get("ready"):
+        if st is not None and st.get("ready"):
             return "ready"
-        if st.get("phase") == "failed":
-            return "error"
-        return "booting"
+        if st is not None and st.get("phase") != "failed":
+            return "booting"
+        return "booting" if self.recoverable() else "error"
+
+    def recoverable(self):
+        err = (self.last_error or "").lower()
+        return not err or "passwordrequired" in err or "locked" in err
+
+    def detail(self):
+        if self.phase() == "ready":
+            return None
+        err = self.last_error or ""
+        if "passwordrequired" in err.lower():
+            return "the iPhone is locked: unlock it on the phone and the session starts by itself"
+        return err[:200] or "starting the iPhone session"
 
     def ensure_daemon(self):
         """Start the daemon when none is alive. Idempotent; called by the
@@ -162,6 +176,10 @@ class Phone:
         if time.time() - self.started_at < backoff:
             return
         self.run.mkdir(parents=True, exist_ok=True)
+        try:                                        # why the last one died, for detail()
+            self.last_error = json.loads((self.run / "coredevice.json").read_text()).get("error")
+        except (OSError, ValueError):
+            pass
         (self.run / "coredevice.json").unlink(missing_ok=True)
         env = dict(os.environ, PHONE_HARNESS_HOME=str(self.home))
         argv = [sys.executable, "-m", "phone_harness.coredevice_daemon",
@@ -394,7 +412,8 @@ class Host:
         st = phone.state() or {}
         return {"id": lease_id, "owner": lease["client"], "state": phone.phase(),
                 "ops": sorted(OPS), "startup": {"startup": "exact"},
-                "device": st.get("model") or "iPhone", "expires_at": lease["expires_at"]}
+                "device": st.get("model") or "iPhone", "expires_at": lease["expires_at"],
+                "detail": phone.detail()}
 
     def _end_lease(self, lease_id, expired=False):
         lease = self.leases.pop(lease_id, None)
@@ -454,7 +473,8 @@ class Host:
         st = phone.state() or {}
         return {"state": "running" if self.lease_of_udid(udid) else "stored", "exact": True,
                 "saved_at": None, "bytes": None, "startup": {"startup": "exact"},
-                "device": st.get("model") or "iPhone", "online": phone.phase() == "ready"}
+                "device": st.get("model") or "iPhone", "online": phone.phase() == "ready",
+                "detail": phone.detail()}
 
     def capacity(self):
         ready = sum(1 for p in self.phones.values() if p.phase() == "ready")
@@ -712,7 +732,8 @@ def cli(args):
         print(f"port     {cfg.get('port')}")
         for pid, udid in cfg["assignments"].items():
             st = Phone(udid).state() or {}
-            print(f"phone    {udid}  profile {pid}  {st.get('phase') or 'daemon not running'}")
+            print(f"phone    {udid}  profile {pid}  {st.get('phase') or 'daemon not running'}"
+                  + (f"  ({st['error'][:80]})" if st.get('error') else ""))
         try:
             leases = json.loads((config.state_dir() / "host-leases.json").read_text()).get("leases", {})
         except (OSError, ValueError):

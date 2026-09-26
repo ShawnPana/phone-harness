@@ -44,6 +44,14 @@ DAEMON_START_TIMEOUT = 240
 SUPERVISE_EVERY = 10
 FRAME_MAX = 8 * 1024 * 1024
 KIND_ABSENT = "shlut-expired-reservation-v1"
+DEVICE_ID = "iphone"        # what the customer sees as the screen id; never the UDID
+
+# Served in place of the mirror while the phone's session is coming back.
+WAITING_PAGE = b"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="3">
+<title>iPhone</title><style>html,body{height:100%;margin:0;background:#0a0a0a;color:#a3aaa6;
+font:12px "SFMono-Regular",Consolas,monospace;display:flex;align-items:center;justify-content:center}</style>
+</head><body>Reconnecting to the iPhone\u2026</body></html>"""
 
 # Public op -> (daemon op, needs the phone unlocked). Argument names are the
 # vocabulary's own (transport.py); the daemon takes the same names.
@@ -236,7 +244,7 @@ class Phone:
     # ops
     def bounds(self):
         st = self.state() or {}
-        return {"x": 0, "y": 0, "w": int(st.get("w") or 0), "h": int(st.get("h") or 0), "id": self.udid}
+        return {"x": 0, "y": 0, "w": int(st.get("w") or 0), "h": int(st.get("h") or 0), "id": DEVICE_ID}
 
     def capture(self):
         """-> (png bytes, bounds)."""
@@ -244,14 +252,14 @@ class Phone:
         with self.lock:
             r = self.request("capture", path=str(path))
         data = Path(r["path"]).read_bytes()
-        return data, {"x": 0, "y": 0, "w": r["w"], "h": r["h"], "id": self.udid}
+        return data, {"x": 0, "y": 0, "w": r["w"], "h": r["h"], "id": DEVICE_ID}
 
     def text(self, min_confidence=0.3):
         from . import ocr
         path = self.run / "frame.png"
         with self.lock:
             r = self.request("capture", path=str(path))
-        win = {"x": 0, "y": 0, "w": r["w"], "h": r["h"], "id": self.udid}
+        win = {"x": 0, "y": 0, "w": r["w"], "h": r["h"], "id": DEVICE_ID}
         return [dict(o, source="pixels") for o in ocr.recognize(r["path"], win)
                 if o["confidence"] >= min_confidence]
 
@@ -667,6 +675,8 @@ class Handler(BaseHTTPRequestHandler):
         (`/stream.bin`) flows without buffering."""
         port = phone.mirror_port()
         if port is None:
+            if method == "GET" and target.split("?")[0] == "/":
+                return self._bytes(503, WAITING_PAGE, "text/html; charset=utf-8")
             raise HostError(503, "the live mirror is not up yet")
         body = self._raw()
         try:

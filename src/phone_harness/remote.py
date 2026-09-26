@@ -12,6 +12,7 @@ Unsupported here, exactly as a local backend would.
 """
 import base64
 import json
+import os
 import tempfile
 import urllib.error
 import urllib.request
@@ -36,10 +37,14 @@ class Remote(Backend):
 
     def _call(self, method, path, body=None, timeout=60):
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(self.url + path, data=data, method=method,
-                                     headers={"Authorization": f"Bearer {self.token}",
-                                              "User-Agent": USER_AGENT,
-                                              **({"Content-Type": "application/json"} if data else {})})
+        headers = {"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT}
+        if data:
+            headers["Content-Type"] = "application/json"
+        # The same gate the API sits behind on a private instance (cloud.py).
+        proxy = os.environ.get("PHONE_HARNESS_CLOUD_PROXY_TOKEN")
+        if proxy:
+            headers["X-Exedev-Authorization"] = f"Bearer {proxy}"
+        req = urllib.request.Request(self.url + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()

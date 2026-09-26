@@ -521,9 +521,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _raw(self):
+        """The request body, read once. Every reply must have consumed it: the
+        gateway reuses this connection, and an unread body would be parsed as
+        the start of the next request."""
+        if getattr(self, "_raw_body", None) is None:
+            n = int(self.headers.get("Content-Length") or 0)
+            self._raw_body = self.rfile.read(n) if n else b""
+        return self._raw_body
+
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b""
+        raw = self._raw()
         if not raw:
             return {}
         try:
@@ -554,11 +562,14 @@ class Handler(BaseHTTPRequestHandler):
         self._route("DELETE")
 
     def _route(self, method):
+        self._raw_body = None
         try:
             self._dispatch(method)
         except HostError as e:
+            self._raw()
             self._json(e.status, {"error": str(e), **e.extra})
         except Exception as e:                       # never leak a traceback to a client
+            self._raw()
             self._json(500, {"error": f"{type(e).__name__}: {e}"[:300]})
 
     def _dispatch(self, method):
@@ -655,8 +666,7 @@ class Handler(BaseHTTPRequestHandler):
         port = phone.mirror_port()
         if port is None:
             raise HostError(503, "the live mirror is not up yet")
-        n = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(n) if n else b""
+        body = self._raw()
         try:
             up = socket.create_connection(("127.0.0.1", port), timeout=10)
         except OSError:

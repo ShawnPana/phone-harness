@@ -168,10 +168,13 @@ class Phone:
     def ensure_daemon(self):
         """Start the daemon when none is alive. Idempotent; called by the
         supervisor every few seconds and by any op that finds it down."""
-        if self.state() is not None:
-            return
+        if self.proc is not None:
+            self.proc.poll()                        # reap: a dead child must not read as alive
+        st = self.state()
+        if st is not None and st.get("phase") != "failed":
+            return                                  # alive: ready, or still starting
         if self.proc is not None and self.proc.poll() is None:
-            return                                  # starting, not yet ready
+            return
         backoff = min(60, 5 * self.failures)
         if time.time() - self.started_at < backoff:
             return

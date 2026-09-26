@@ -396,8 +396,11 @@ class CloudCli(unittest.TestCase):
         FakeCloud.control_url = f"http://127.0.0.1:{control.server_port}"
         FakeControl.calls = []
         self.login()
-        r = self.run_cli("cloud", "start", "--no-watch", env={"PHONE_HARNESS_ADB": "/nonexistent/adb"})
+        r = self.run_cli("cloud", "start", "--iphone", "--no-watch", env={"PHONE_HARNESS_ADB": "/nonexistent/adb"})
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(FakeCloud.posts[0]["provider"], "iphone")
+        self.assertNotIn("profile_id", FakeCloud.posts[0])
+        self.assertIn("Starting your iPhone", r.stdout)
         self.assertIn("control", r.stdout)
         self.assertNotIn("adb", r.stdout)
         self.assertFalse((Path(self.home.name) / "adb.log").exists())     # never touched

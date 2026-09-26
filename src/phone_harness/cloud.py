@@ -545,6 +545,7 @@ def _wait_for_profile():
 
 def _start(args):
     temp = _flag(args, "--temp")
+    iphone = _flag(args, "--iphone")
     watch = not _flag(args, "--no-watch")
     minutes = _option(args, "--minutes", "-m")
     if args:
@@ -568,7 +569,11 @@ def _start(args):
 
     body = {"timeout_seconds": minutes * 60}
     profile_id = None
-    if not temp:
+    if iphone:
+        # A real iPhone assigned to this account: the API knows which one, and
+        # it is never temporary, so the Android profile below does not apply.
+        body["provider"] = "iphone"
+    elif not temp:
         profile_id = _wait_for_profile()
         if isinstance(profile_id, dict):                  # it is already up: use it
             return _report(profile_id["session"], profile_id["id"], watch)
@@ -576,8 +581,8 @@ def _start(args):
             body["profile_id"] = profile_id
 
     request_key = uuid.uuid4().hex
-    print("Starting a temporary phone…" if "profile_id" not in body
-          else "Starting your phone…")
+    print("Starting your iPhone…" if iphone else
+          "Starting a temporary phone…" if "profile_id" not in body else "Starting your phone…")
     try:
         created = _api("POST", "/sessions", body, headers={"Idempotency-Key": request_key})
     except CloudError as e:
@@ -856,9 +861,10 @@ CLI_USAGE = """Usage:
   phone-harness cloud                          who is signed in, what is attached
   phone-harness cloud login [--no-browser]     sign in through the browser
   phone-harness cloud logout | whoami
-  phone-harness cloud start [--temp] [--minutes N] [--no-watch]
-                                               start your saved phone (or a throwaway one), connect,
-                                               and open its live view (config: cloud.watch)
+  phone-harness cloud start [--temp|--iphone] [--minutes N] [--no-watch]
+                                               start your saved phone (or a throwaway one, or the
+                                               iPhone assigned to your account), connect, and open
+                                               its live view (config: cloud.watch)
   phone-harness cloud stop [SID|--all] [--wait]
                                                end it; your phone is saved for next time
                                                (--wait watches the save finish)

@@ -32,7 +32,8 @@ import webbrowser
 from . import config
 
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
-READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
+READY_WAIT = 480      # seconds to wait for `ready` before giving the phone back; a stored
+                      # phone on a hosted provider can take ~5 min to stream back before it boots
 LOW_TIME = 120        # warn the script when the session has less than this left
 # Named, because the sign-in host's CDN refuses urllib's default signature.
 USER_AGENT = "phone-harness-cli"
@@ -448,6 +449,8 @@ def _wait_ready(sid):
         line = prog.get("phase") or "provisioning"
         if prog.get("queue_position"):
             line += f", position {prog['queue_position']} in the queue"
+        if prog.get("eta_seconds"):
+            line += f", about {int(prog['eta_seconds'])}s"
         if line != shown:
             print(f"  … {line}")
             shown = line

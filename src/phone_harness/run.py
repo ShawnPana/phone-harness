@@ -21,6 +21,7 @@ Commands:
                             (no argument: every agent that has a home dir here)
   phone-harness ios ...     iPhone over USB (Linux/Windows/macOS): pair, awake, rest
   phone-harness android ... pair/connect/choose an Android phone
+  phone-harness host ...    offer this Mac's iPhones to Phone Harness Cloud: `host serve`
   phone-harness config ...  settings: `config set platform android`
 """
 
@@ -125,7 +126,7 @@ def _telemetry_command(args):
         return "help"
     if first in {"--doctor", "doctor"}:
         return "doctor"
-    if first in {"android", "ios", "config", "skill"}:
+    if first in {"android", "ios", "config", "skill", "host"}:
         return first
     return "usage"
 
@@ -244,6 +245,9 @@ def _run(args):
         sys.exit(cli(args[1:]))
     if args and args[0] == "config":
         from .config import cli
+        sys.exit(cli(args[1:]))
+    if args and args[0] == "host":
+        from .host import cli
         sys.exit(cli(args[1:]))
     if args and args[0] == "skill":
         if len(args) > 1 and args[1] == "install":

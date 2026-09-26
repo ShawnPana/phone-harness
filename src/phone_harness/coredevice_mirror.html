@@ -165,7 +165,7 @@
   async function codecInfo() {
     for (let i = 0; i < 60; i++) {
       try {
-        const r = await fetch('/codec', { cache: 'no-store' });
+        const r = await fetch('codec', { cache: 'no-store' });
         if (r.ok) {
           const j = await r.json();
           if (j.codec && j.description)
@@ -201,7 +201,7 @@
     for (;;) {
       let resp = null;
       for (let i = 0; i < 20 && !resp; i++) {
-        try { const r = await fetch('/stream.bin', { cache: 'no-store' }); if (r.ok) resp = r; } catch (e) {}
+        try { const r = await fetch('stream.bin', { cache: 'no-store' }); if (r.ok) resp = r; } catch (e) {}
         if (!resp) await new Promise(r => setTimeout(r, 500));
       }
       if (!resp) { setState('disconnected', 'Lost the stream. Is the phone still connected? `phone-harness ios` shows the session.'); return; }
@@ -238,12 +238,12 @@
   };
   let down = false, lastMove = 0;
   canvas.addEventListener('pointerdown', e => { canvas.focus(); down = true; canvas.setPointerCapture(e.pointerId);
-    post('/touch', { type: 'contact', ...hid(e) }); });
+    post('touch', { type: 'contact', ...hid(e) }); });
   canvas.addEventListener('pointermove', e => {
     if (!down) return;
     const now = performance.now(); if (now - lastMove < 12) return; lastMove = now;
-    post('/touch', { type: 'contact', ...hid(e) }); });
-  const lift = e => { if (!down) return; down = false; post('/touch', { type: 'release', ...hid(e) }); };
+    post('touch', { type: 'contact', ...hid(e) }); });
+  const lift = e => { if (!down) return; down = false; post('touch', { type: 'release', ...hid(e) }); };
   canvas.addEventListener('pointerup', lift); canvas.addEventListener('pointercancel', lift);
 
   // Scroll wheel → a finger drag with a rest at the end (no fling).
@@ -256,11 +256,11 @@
         const amount = Math.max(-300, Math.min(300, pending)); pending = 0;
         const p = hid(e), steps = 8, dy = -amount / canvas.getBoundingClientRect().height * 65535;
         const y0 = Math.max(6553, Math.min(58981, p.y));
-        await post('/touch', { type: 'contact', x: p.x, y: y0 });
+        await post('touch', { type: 'contact', x: p.x, y: y0 });
         for (let i = 1; i <= steps; i++) { await new Promise(r => setTimeout(r, 14));
-          await post('/touch', { type: 'contact', x: p.x, y: Math.round(y0 + dy * i / steps) }); }
+          await post('touch', { type: 'contact', x: p.x, y: Math.round(y0 + dy * i / steps) }); }
         await new Promise(r => setTimeout(r, 120));
-        await post('/touch', { type: 'release', x: p.x, y: Math.round(y0 + dy) });
+        await post('touch', { type: 'release', x: p.x, y: Math.round(y0 + dy) });
       }
       scrolling = false;
     })();
@@ -277,7 +277,7 @@
   for (let i = 1; i <= 9; i++) CODES['Digit' + i] = 29 + i; CODES.Digit0 = 39;
   for (let i = 1; i <= 12; i++) CODES['F' + i] = 57 + i;
   const held = new Set(); let keyChain = Promise.resolve();
-  const sendKeys = () => { const snap = [...held]; keyChain = keyChain.then(() => post('/key', { usages: snap })); };
+  const sendKeys = () => { const snap = [...held]; keyChain = keyChain.then(() => post('key', { usages: snap })); };
   canvas.addEventListener('keydown', e => { const u = CODES[e.code]; if (u === undefined) return;
     e.preventDefault(); if (!held.has(u)) { held.add(u); sendKeys(); } });
   canvas.addEventListener('keyup', e => { const u = CODES[e.code]; if (u === undefined) return;
@@ -288,12 +288,12 @@
   document.querySelector('.viewer-actions').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const act = b.dataset.act;
-    if (act === 'rotate') return post('/rotate', { direction: 'left' });
+    if (act === 'rotate') return post('rotate', { direction: 'left' });
     if (act === 'shot') return canvas.toBlob(blob => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
       a.download = 'iphone-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png'; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000); }, 'image/png');
-    post('/button', { name: act, state: 'press' });
+    post('button', { name: act, state: 'press' });
   });
   canvas.focus();
 })();

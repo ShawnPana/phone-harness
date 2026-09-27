@@ -141,9 +141,39 @@ class Keyboard:
     def connected(self):
         return self.intr is not None
 
-    def send(self, states):
+    def reconnect(self, addresses):
+        """What a real keyboard does when a key is pressed: open the HID
+        channels to the phone it is paired with."""
+        for addr in addresses:
+            try:
+                chans = {}
+                for psm, attr in ((PSM_CTRL, "ctrl"), (PSM_INTR, "intr")):
+                    s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
+                    s.settimeout(8)
+                    s.connect((addr, psm))
+                    s.settimeout(None)
+                    chans[attr] = s
+            except OSError as e:
+                for c in chans.values():
+                    c.close()
+                log(f"reconnect to {addr} failed ({e.strerror or e})")
+                continue
+            for attr, conn in chans.items():
+                old = getattr(self, attr)
+                setattr(self, attr, conn)
+                if old:
+                    old.close()
+                threading.Thread(target=self._watch, args=(conn, attr), daemon=True).start()
+            log(f"reconnected to {addr}")
+            time.sleep(0.3)          # let the phone finish setting up the channels
+            return True
+        return False
+
+    def send(self, states, paired=()):
         packets = [report_bytes(s) for s in states]
         with self.lock:
+            if not self.connected:
+                self.reconnect(paired)
             if not self.connected:
                 raise RuntimeError("the iPhone is not connected to the keyboard")
             for p in packets:
@@ -212,21 +242,29 @@ class Profile(dbus.service.Object):
 
 
 class Adapter:
+    """The Bluetooth adapter. D-Bus is only touched on the main loop; request
+    threads read the cached `paired` and `is_discoverable` and ask for changes
+    through GLib.idle_add."""
+
     def __init__(self, bus):
         self.props = dbus.Interface(bus.get_object("org.bluez", "/org/bluez/hci0"),
                                     "org.freedesktop.DBus.Properties")
         self.bus = bus
+        self.paired = []             # addresses of the phones this keyboard is paired with
+        self.is_discoverable = False
 
-    def paired(self):
+    def refresh(self):
         om = dbus.Interface(self.bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
-        return any(ifaces.get("org.bluez.Device1", {}).get("Paired")
-                   for ifaces in om.GetManagedObjects().values())
+        self.paired = [str(d["Address"]) for d in (i.get("org.bluez.Device1")
+                       for i in om.GetManagedObjects().values()) if d and d.get("Paired")]
+        self.is_discoverable = bool(self.props.Get("org.bluez.Adapter1", "Discoverable"))
+        return True                  # keep the GLib timer running
 
-    def discoverable(self, on=None):
-        if on is not None:
-            self.props.Set("org.bluez.Adapter1", "Discoverable", bool(on))
-            log(f"discoverable {'on' if on else 'off'}")
-        return bool(self.props.Get("org.bluez.Adapter1", "Discoverable"))
+    def discoverable(self, on):
+        self.props.Set("org.bluez.Adapter1", "Discoverable", bool(on))
+        self.is_discoverable = bool(on)
+        log(f"discoverable {'on' if on else 'off'}")
+        return False                 # one-shot when run through idle_add
 
 
 def setup_bluez(bus):
@@ -237,7 +275,8 @@ def setup_bluez(bus):
         "RequireAuthentication": True, "RequireAuthorization": False,
     })
     adapter = Adapter(bus)
-    agent = Agent(bus, "/phoneharness/agent", on_paired=lambda: adapter.discoverable(False))
+    agent = Agent(bus, "/phoneharness/agent",
+                  on_paired=lambda: (adapter.discoverable(False), adapter.refresh()))
     am = dbus.Interface(bus.get_object("org.bluez", "/org/bluez"), "org.bluez.AgentManager1")
     am.RegisterAgent("/phoneharness/agent", "KeyboardOnly")
     am.RequestDefaultAgent("/phoneharness/agent")
@@ -247,7 +286,9 @@ def setup_bluez(bus):
     p.Set("org.bluez.Adapter1", "Alias", NAME)
     p.Set("org.bluez.Adapter1", "Pairable", True)
     p.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
-    adapter.discoverable(not adapter.paired())
+    adapter.refresh()
+    adapter.discoverable(not adapter.paired)
+    GLib.timeout_add_seconds(5, adapter.refresh)
     return agent, adapter
 
 
@@ -278,16 +319,20 @@ def handle(conn, kbd, agent, adapter):
                             isinstance(s, list) and all(type(u) is int and 0 <= u <= 255 for u in s)
                             for s in states):
                         raise ValueError("reports must be lists of HID usages")
-                    kbd.send(states)
+                    kbd.send(states, adapter.paired)
                     out = {"ok": True}
                 elif op == "passkey":
                     agent.supply(req["code"])
                     out = {"ok": True}
                 elif op == "pairing":
-                    out = {"ok": True, "discoverable": adapter.discoverable(bool(req["on"]))}
+                    GLib.idle_add(adapter.discoverable, bool(req["on"]))
+                    out = {"ok": True, "discoverable": bool(req["on"])}
                 elif op == "status":
+                    if not kbd.connected:
+                        with kbd.lock:
+                            kbd.reconnect(adapter.paired)
                     out = {"ok": True, "connected": kbd.connected, "pairing_prompt": agent.pending is not None,
-                           "discoverable": adapter.discoverable()}
+                           "discoverable": adapter.is_discoverable}
                 else:
                     raise ValueError("unknown op")
                 log(f"control: op={op} ok")  # never what was typed
@@ -306,6 +351,11 @@ def main():
     kbd = Keyboard()
     agent, adapter = setup_bluez(bus)
     threading.Thread(target=serve, args=(kbd, agent, adapter), daemon=True).start()
+    def reconnect_at_start():
+        with kbd.lock:
+            if not kbd.connected:
+                kbd.reconnect(adapter.paired)
+    threading.Thread(target=lambda: (time.sleep(3), reconnect_at_start()), daemon=True).start()
     log(f"keyboard {NAME!r} up")
     GLib.MainLoop().run()
 

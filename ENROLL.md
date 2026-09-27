@@ -42,3 +42,23 @@ Screen Time restrictions, manual profile installs, VPN creation, OS updates
 for 90 days. Allowed: Apple ID sign-in and sign-out, iCloud, App Store,
 Safari, camera. Auto-Lock is a Settings value, not a restriction; set it to
 Never once after enrolling (Settings > Display & Brightness > Auto-Lock).
+
+## The phone's keyboard
+
+Apple's own Apple Account sheets refuse keys that arrive over the developer
+connection, so each farm phone gets a real keyboard: a Raspberry Pi paired with
+it over Bluetooth. With `keyboards[udid]` in host.json, every key for that phone
+(`input.text`, `input.keys`, and the live preview's typing) goes through it.
+
+1. On the Pi: copy `deploy/pi-keyboard/` over and run `sudo ./install.sh`.
+2. On this Mac: make an SSH key, authorize it on the Pi for the forward only
+   (`restrict,port-forwarding,permitopen="127.0.0.1:7777",command="/bin/false"`),
+   and install `deploy/com.phone-harness.keyboard-tunnel.plist`.
+3. Copy the Pi's `/etc/pi-keyboard/token` to a 600 file here, then
+   `phone-harness host keyboard UDID set 127.0.0.1:7777 TOKEN_FILE`.
+4. Pair: `host keyboard UDID pairing on`, pick "Phone Harness Keyboard" in the
+   phone's Settings > Bluetooth, and send the code it shows with
+   `host keyboard UDID passkey CODE`.
+
+An erase makes the phone forget the keyboard: remove the old pairing on the Pi
+(`bluetoothctl remove <address>`) and pair again from step 4.

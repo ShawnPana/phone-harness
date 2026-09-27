@@ -6,7 +6,7 @@
      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.phone-harness.keyboard-tunnel.plist
      Local 127.0.0.1:7777 on this Mac is then the keyboard's control port.
      On the Pi, authorize the key for this forward only:
-       restrict,port-forwarding,permitopen="127.0.0.1:7777" ssh-ed25519 AAAA... -->
+       restrict,port-forwarding,permitopen="127.0.0.1:7777",command="/bin/false" ssh-ed25519 AAAA... -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>com.phone-harness.keyboard-tunnel</string>

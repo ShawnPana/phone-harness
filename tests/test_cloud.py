@@ -41,6 +41,7 @@ class FakeCloud(BaseHTTPRequestHandler):
     closing_reads = 0
     seen_headers = []
     forbid = False
+    control_url = None            # set: ready sessions carry control {url, token}, no adb
 
     def _oauth(self, path, form):
         c = FakeCloud
@@ -107,8 +108,11 @@ class FakeCloud(BaseHTTPRequestHandler):
                 return self._send(409, {"error": "held", "code": "profile_running",
                                         "session": c.profile["session"]})
             sid = f"sid{len(c.posts):03d}"
+            iphone = body.get("provider") == "iphone"
             c.sessions[sid] = {"id": sid, "state": "provisioning",
-                               "profile": body.get("profile_id"),
+                               "provider": "iphone" if iphone else "shlut",
+                               # As the API does: the iPhone is the account's own phone.
+                               "profile": "prof-1" if iphone else body.get("profile_id"),
                                "expires_at": time.time() + body["timeout_seconds"],
                                "watch_url": "https://watch.example/secret"}
             if body.get("profile_id"):
@@ -121,8 +125,12 @@ class FakeCloud(BaseHTTPRequestHandler):
             if m == "GET":
                 c.polls[sid] = c.polls.get(sid, 0) + 1
                 if c.polls[sid] >= 2 and c.sessions[sid]["state"] == "provisioning":
-                    c.sessions[sid].update(state="ready", startup={"startup": "exact"}, adb={
-                        "host": "live.example", "port": 22220, "code": "ph_code"})
+                    c.sessions[sid].update(state="ready", startup={"startup": "exact"})
+                    if c.control_url:
+                        c.sessions[sid]["control"] = {"url": c.control_url, "token": "ct_1",
+                                                      "expires_at": c.sessions[sid]["expires_at"]}
+                    else:
+                        c.sessions[sid]["adb"] = {"host": "live.example", "port": 22220, "code": "ph_code"}
                 return self._send(200, c.sessions[sid])
             if m == "DELETE":
                 if c.sessions.pop(sid).get("profile"):
@@ -131,6 +139,49 @@ class FakeCloud(BaseHTTPRequestHandler):
         return self._send(404, {"error": "not found"})
 
     do_GET = do_POST = do_DELETE = _handle
+
+
+class FakeControl(BaseHTTPRequestHandler):
+    """What a phone driven by ops over HTTPS answers: /ops, /op, /frame.png."""
+    calls = []
+    PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                        "0000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
+
+    def log_message(self, *a):
+        pass
+
+    def _send(self, status, body):
+        raw = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _handle(self):
+        import base64
+        n = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(n)) if n else {}
+        if self.headers.get("Authorization") != "Bearer ct_1":
+            return self._send(404, {"error": "not found"})
+        if self.path == "/ops":
+            return self._send(200, {"ops": ["screen.capture", "screen.bounds", "input.tap", "nav.home"]})
+        if self.path == "/op":
+            FakeControl.calls.append(body)
+            op = body["op"]
+            if op == "screen.capture":
+                return self._send(200, {"result": {"png_b64": base64.b64encode(self.PNG).decode(),
+                                                   "bounds": {"x": 0, "y": 0, "w": 750, "h": 1334, "id": "udid1"}}})
+            if op == "screen.bounds":
+                return self._send(200, {"result": {"x": 0, "y": 0, "w": 750, "h": 1334, "id": "udid1"}})
+            if op == "input.tap":
+                return self._send(200, {"result": True})
+            if op == "nav.back":
+                return self._send(400, {"error": "iOS has no back", "unsupported": True})
+            return self._send(400, {"error": f"cannot {op}", "unsupported": True})
+        return self._send(404, {"error": "not found"})
+
+    do_GET = do_POST = _handle
 
 
 class CloudCli(unittest.TestCase):
@@ -144,6 +195,7 @@ class CloudCli(unittest.TestCase):
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
         FakeCloud.forbid = False
+        FakeCloud.control_url = None
         FakeCloud.profile = {"id": "prof-1", "state": "stored", "session": None,
                              "saved_at": time.time() - 7200}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCloud)
@@ -214,13 +266,13 @@ class CloudCli(unittest.TestCase):
         r = self.run_cli("cloud", "whoami", env={"PH_AGENT_WORKSPACE": str(ws)})
         self.assertIn("a@b.c", r.stdout, r.stderr)
 
-    def test_a_proxy_token_rides_along_as_the_gate_header(self):
+    def test_a_gate_header_rides_along_on_every_request(self):
         FakeCloud.valid.add("pck_ci")
         FakeCloud.seen_headers = []
         r = self.run_cli("cloud", "whoami", env={"PHONE_HARNESS_API_KEY": "pck_ci",
-                                                  "PHONE_HARNESS_CLOUD_PROXY_TOKEN": "gate-1"})
+                                                  "PHONE_HARNESS_CLOUD_GATE_HEADER": "X-Gate-Authorization: Bearer gate-1"})
         self.assertIn("a@b.c", r.stdout)
-        self.assertIn("Bearer gate-1", [h.get("X-Exedev-Authorization") for h in FakeCloud.seen_headers])
+        self.assertIn("Bearer gate-1", [h.get("X-Gate-Authorization") for h in FakeCloud.seen_headers])
         self.assertNotIn("gate-1", r.stdout)
 
     def test_an_api_key_in_the_environment_is_used_for_ci(self):
@@ -338,6 +390,58 @@ class CloudCli(unittest.TestCase):
         r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
                            env=self.env)
         self.assertEqual(r.stdout.split()[:2], ["android", "hello"], r.stderr)
+
+    def test_a_control_session_needs_no_adb_and_the_helpers_drive_it_over_https(self):
+        control = ThreadingHTTPServer(("127.0.0.1", 0), FakeControl)
+        threading.Thread(target=control.serve_forever, daemon=True).start()
+        self.addCleanup(control.server_close)
+        self.addCleanup(control.shutdown)
+        FakeCloud.control_url = f"http://127.0.0.1:{control.server_port}"
+        FakeControl.calls = []
+        self.login()
+        r = self.run_cli("cloud", "start", "--iphone", "--no-watch", env={"PHONE_HARNESS_ADB": "/nonexistent/adb"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(FakeCloud.posts[0]["provider"], "iphone")
+        self.assertNotIn("profile_id", FakeCloud.posts[0])
+        self.assertIn("Starting your iPhone", r.stdout)
+        self.assertIn("control", r.stdout)
+        self.assertNotIn("adb", r.stdout)
+        self.assertFalse((Path(self.home.name) / "adb.log").exists())     # never touched
+        status = self.run_cli("cloud")
+        self.assertIn("your iPhone", status.stdout)
+        self.assertIn("drive it over HTTPS", status.stdout)
+        self.assertNotIn("ct_1", status.stdout + r.stdout)                # the grant stays private
+
+        script = ("from phone_harness import transport\n"
+                  "from phone_harness.helpers import tap, Unsupported\n"
+                  "p = transport.connect()\n"
+                  "print(p.name)\n"
+                  "tap(10, 20)\n"
+                  "path, win = p.send('screen.capture')\n"
+                  "print(open(path, 'rb').read()[:4] == b'\\x89PNG', win['w'])\n"
+                  "try:\n"
+                  "    p.send('nav.back')\n"
+                  "except Unsupported:\n"
+                  "    print('unsupported')\n"
+                  "print(p.supports('tree'))\n")
+        r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.stdout.split(), ["remote", "True", "750", "unsupported", "False"], r.stderr)
+        self.assertEqual([c["op"] for c in FakeControl.calls][:2], ["input.tap", "screen.capture"])
+
+        stop = self.run_cli("cloud", "stop")
+        self.assertEqual(stop.returncode, 0, stop.stderr)
+        self.assertNotIn("saved", stop.stdout)                            # an iPhone keeps its data
+        self.assertIn("none attached", self.run_cli("cloud").stdout)
+
+    def test_a_saved_session_without_a_link_is_not_attached(self):
+        state = Path(self.home.name) / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "cloud.json").write_text(json.dumps({"session": {
+            "sid": "sid009", "host": "live.example", "port": 22220, "code": "ph_code",
+            "expires_at": time.time() + 600}}))
+        r = subprocess.run([sys.executable, "-c", "from phone_harness import cloud; print(cloud.attached())"],
+                           capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.stdout.strip(), "None", r.stderr)
 
     def test_start_waits_out_a_phone_that_is_still_closing(self):
         self.login()

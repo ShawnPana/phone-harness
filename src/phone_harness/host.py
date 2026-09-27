@@ -729,6 +729,8 @@ CLI_USAGE = """Usage:
   phone-harness host assign PROFILE_ID UDID             give an account's profile this iPhone
   phone-harness host unassign PROFILE_ID
   phone-harness host status                             assignments, daemons, leases
+  phone-harness host enroll UDID [--wifi SSID --wifi-password PW]
+                                                        erase, supervise, profile, Developer Mode
 """
 
 
@@ -739,11 +741,17 @@ def cli(args):
     ap.add_argument("--port", type=int, default=None)
     ap.add_argument("--origin", default=None, help="public origin the viewer/control URLs live on")
     ap.add_argument("-h", "--help", action="store_true")
+    if args and args[0] == "enroll":
+        from .enroll import cli as enroll_cli
+        return enroll_cli(args[1:])
     ns = ap.parse_args(args)
     cfg = load_config()
     if ns.help or not ns.verb:
         print(CLI_USAGE)
         return 0
+    if ns.verb == "enroll":
+        from .enroll import cli as enroll_cli
+        return enroll_cli(ns.rest)
     if ns.verb == "token":
         print(ensure_token(cfg))
         return 0

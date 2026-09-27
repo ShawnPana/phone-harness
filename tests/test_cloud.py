@@ -266,13 +266,13 @@ class CloudCli(unittest.TestCase):
         r = self.run_cli("cloud", "whoami", env={"PH_AGENT_WORKSPACE": str(ws)})
         self.assertIn("a@b.c", r.stdout, r.stderr)
 
-    def test_a_proxy_token_rides_along_as_the_gate_header(self):
+    def test_a_gate_header_rides_along_on_every_request(self):
         FakeCloud.valid.add("pck_ci")
         FakeCloud.seen_headers = []
         r = self.run_cli("cloud", "whoami", env={"PHONE_HARNESS_API_KEY": "pck_ci",
-                                                  "PHONE_HARNESS_CLOUD_PROXY_TOKEN": "gate-1"})
+                                                  "PHONE_HARNESS_CLOUD_GATE_HEADER": "X-Gate-Authorization: Bearer gate-1"})
         self.assertIn("a@b.c", r.stdout)
-        self.assertIn("Bearer gate-1", [h.get("X-Exedev-Authorization") for h in FakeCloud.seen_headers])
+        self.assertIn("Bearer gate-1", [h.get("X-Gate-Authorization") for h in FakeCloud.seen_headers])
         self.assertNotIn("gate-1", r.stdout)
 
     def test_an_api_key_in_the_environment_is_used_for_ci(self):

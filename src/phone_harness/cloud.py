@@ -160,6 +160,13 @@ def _bearer(required=True, force_refresh=False):
 
 # --- http --------------------------------------------------------------------
 
+def gate_headers():
+    """A header a private instance's front gate wants on every request, from
+    PHONE_HARNESS_CLOUD_GATE_HEADER="Name: value". Unset for the public cloud."""
+    name, sep, value = os.environ.get("PHONE_HARNESS_CLOUD_GATE_HEADER", "").partition(":")
+    return {name.strip(): value.strip()} if sep and name.strip() else {}
+
+
 def _api(method, path, body=None, token=None, headers=None, timeout=40):
     """-> parsed JSON. CloudError for an HTTP error, OSError if unreachable."""
     try:
@@ -176,10 +183,7 @@ def _api(method, path, body=None, token=None, headers=None, timeout=40):
 def _request(method, path, body, token, headers, timeout):
     h = {"Authorization": f"Bearer {token}", "Accept": "application/json",
          "User-Agent": USER_AGENT, **(headers or {})}
-    # A gate in front of a private instance (exe.dev's, for the dev VM) admits this bearer.
-    proxy = os.environ.get("PHONE_HARNESS_CLOUD_PROXY_TOKEN")
-    if proxy:
-        h["X-Exedev-Authorization"] = f"Bearer {proxy}"
+    h.update(gate_headers())
     data = None
     if body is not None:
         h["Content-Type"] = "application/json"
@@ -897,7 +901,7 @@ CLI_USAGE = """Usage:
   phone-harness cloud keys [create [LABEL] | revoke HASH]   API keys, for CI
   phone-harness cloud history [-n NUM]
 ls, show, whoami, phone, keys and history take --json. SID may be a unique prefix.
-PHONE_HARNESS_CLOUD_API, _OAUTH_ISSUER, _OAUTH_CLIENT_ID and _PROXY_TOKEN point the CLI
+PHONE_HARNESS_CLOUD_API, _OAUTH_ISSUER, _OAUTH_CLIENT_ID and _GATE_HEADER point the CLI
 at a Phone Harness instance of your own (or a gated one); unset, it is the public cloud.
 They may live in a .env file at the repo root or in the agent workspace (never committed).
 """

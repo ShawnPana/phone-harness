@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The host reaches a phone's keyboard (a Pi on the LAN) through SSH, so keys
+     never cross the network in the clear. Copy to ~/Library/LaunchAgents,
+     replace PI_USER@PI_ADDRESS and the key path, then
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.phone-harness.keyboard-tunnel.plist
+     Local 127.0.0.1:7777 on this Mac is then the keyboard's control port.
+     On the Pi, authorize the key for this forward only:
+       restrict,port-forwarding,permitopen="127.0.0.1:7777" ssh-ed25519 AAAA... -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.phone-harness.keyboard-tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string><string>-N</string>
+    <string>-i</string><string>/Users/USER/.ssh/id_ed25519_keyboard</string>
+    <string>-o</string><string>ServerAliveInterval=15</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>BatchMode=yes</string>
+    <string>-L</string><string>127.0.0.1:7777:127.0.0.1:7777</string>
+    <string>PI_USER@PI_ADDRESS</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardErrorPath</key><string>/Users/USER/.local/state/phone-harness/keyboard-tunnel.log</string>
+</dict>
+</plist>

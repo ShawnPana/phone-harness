@@ -1,0 +1,13 @@
+[Unit]
+Description=Phone Harness Bluetooth keyboard (types into one farm iPhone)
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+ExecStartPre=/usr/bin/hciconfig hci0 class 0x002540
+ExecStart=/usr/bin/python3 /usr/local/lib/pi-keyboard/pi-keyboard.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

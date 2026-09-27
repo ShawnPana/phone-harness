@@ -17,7 +17,13 @@ customer-facing paths (`/iphone/v/<token>/…` for the live mirror,
 `/iphone/c/<token>/…` for ops) carry their own per-lease tokens, so they can
 sit on a public origin while the worker paths stay behind the bearer token.
 
-Files (config dir): host.json {token, port, assignments{profile_id: udid}}.
+A phone may have a keyboard of its own (keyboard.py): a Bluetooth keyboard next
+to it. Then every key sent to that phone, from an op or from the live preview,
+goes through the keyboard, because Apple's own password sheets refuse keys that
+arrive over the developer connection.
+
+Files (config dir): host.json {token, port, assignments{profile_id: udid},
+                    keyboards{udid: {addr, token_file}}}.
 Files (state dir):  h/<hash of udid>/ is PHONE_HARNESS_HOME for that phone's daemon;
                     host-leases.json survives a restart so the API can adopt.
 """
@@ -38,6 +44,7 @@ from pathlib import Path
 
 from . import config
 from .coredevice import _LOCKED_MARKERS
+from .keyboard import Keyboard, KeyboardError, combo_reports, text_reports
 
 DEFAULT_PORT = 8730
 DAEMON_START_TIMEOUT = 240
@@ -276,6 +283,19 @@ class Phone:
         self._gate_at, self._gate_state = time.time(), state
         return state
 
+    def keyboard(self):
+        """This phone's hardware keyboard, or None. Read fresh, like the
+        assignments: `phone-harness host keyboard` edits the file while the
+        host runs."""
+        entry = load_config().get("keyboards", {}).get(self.udid)
+        return Keyboard.from_config(entry) if entry else None
+
+    def send_keys(self, reports):
+        try:
+            self.keyboard().send(reports)
+        except KeyboardError as e:
+            raise HostError(503, str(e), code="keyboard") from None
+
     def _gate(self):
         state = self.session_state()
         if state == "locked":
@@ -303,6 +323,12 @@ class Phone:
             return self.session_state()
         if gated:
             self._gate()
+        if name in ("input.text", "input.keys") and self.keyboard():
+            reports = (text_reports(str(kw.get("s", ""))) if name == "input.text"
+                       else combo_reports(str(kw.get("combo", ""))))
+            if reports is not None:             # None: characters no key types; they are pasted
+                self.send_keys(reports)
+                return True
         timeout = 60 if name in ("apps.launch", "apps.list") else 30
         if name == "input.text":
             timeout = max(30.0, 0.2 * len(str(kw.get("s", ""))) + 10)
@@ -597,6 +623,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._control(method, phone, rest)
             if method == "POST" and grant.get("mode") == "view":
                 raise HostError(403, "this link is view-only")
+            if method == "POST" and rest == "/key" and phone.keyboard():
+                # The preview sends the full set of keys held down; that is
+                # exactly one keyboard report.
+                usages = self._body().get("usages")
+                if not isinstance(usages, list) or not all(type(u) is int and 0 <= u <= 255 for u in usages):
+                    raise HostError(400, "usages must be a list of HID usages")
+                phone.send_keys([sorted(set(usages))])
+                return self._json(200, {"ok": True})
             if rest == "/" and not path.endswith("/"):
                 self.send_response(302)
                 self.send_header("Location", path + "/")
@@ -731,6 +765,12 @@ CLI_USAGE = """Usage:
   phone-harness host status                             assignments, daemons, leases
   phone-harness host enroll UDID [--wifi SSID --wifi-password PW]
                                                         erase, supervise, profile, Developer Mode
+  phone-harness host keyboard UDID set ADDR TOKEN_FILE  this phone's keys go through the keyboard at ADDR
+  phone-harness host keyboard UDID off                  keys go over the developer connection again
+  phone-harness host keyboard UDID status               connected? waiting for a pairing code?
+  phone-harness host keyboard UDID pairing on|off       let the phone find the keyboard (to pair again)
+  phone-harness host keyboard UDID passkey CODE         type the code the phone shows while pairing
+  phone-harness host keyboard UDID type                 type stdin on the phone (never pass text as an argument)
 """
 
 
@@ -768,6 +808,8 @@ def cli(args):
         cfg["assignments"].pop(ns.rest[0], None)
         save_config(cfg)
         return 0
+    if ns.verb == "keyboard":
+        return keyboard_cli(cfg, ns.rest)
     if ns.verb == "status":
         print(f"config   {_config_path()}")
         print(f"port     {cfg.get('port')}")
@@ -775,6 +817,9 @@ def cli(args):
             st = Phone(udid).state() or {}
             print(f"phone    {udid}  profile {pid}  {st.get('phase') or 'daemon not running'}"
                   + (f"  ({st['error'][:80]})" if st.get('error') else ""))
+            kb = cfg.get("keyboards", {}).get(udid)
+            if kb:
+                print(f"keyboard {udid}  {kb['addr']}")
         try:
             leases = json.loads((config.state_dir() / "host-leases.json").read_text()).get("leases", {})
         except (OSError, ValueError):
@@ -791,3 +836,43 @@ def cli(args):
         serve(cfg, port, origin)
         return 0
     sys.exit(CLI_USAGE)
+
+
+def keyboard_cli(cfg, rest):
+    usage = "Usage: phone-harness host keyboard UDID set ADDR TOKEN_FILE | off | status | pairing on|off | passkey CODE | type"
+    if len(rest) < 2:
+        sys.exit(usage)
+    udid, action, args = rest[0], rest[1], rest[2:]
+    boards = cfg.setdefault("keyboards", {})
+    if action == "set" and len(args) == 2:
+        boards[udid] = {"addr": args[0], "token_file": args[1]}
+        save_config(cfg)
+        print(f"{udid}: keys go through {args[0]}")
+        return 0
+    if action == "off" and not args:
+        boards.pop(udid, None)
+        save_config(cfg)
+        print(f"{udid}: keys go over the developer connection")
+        return 0
+    if udid not in boards:
+        sys.exit(f"{udid} has no keyboard; `phone-harness host keyboard {udid} set ADDR TOKEN_FILE`")
+    kbd = Keyboard.from_config(boards[udid])
+    try:
+        if action == "status" and not args:
+            print(json.dumps({k: v for k, v in kbd.status().items() if k != "ok"}))
+        elif action == "pairing" and args in (["on"], ["off"]):
+            kbd.pairing(args[0] == "on")
+            print(f"pairing {args[0]}")
+        elif action == "passkey" and len(args) == 1:
+            kbd.passkey(args[0])
+            print("code sent")
+        elif action == "type" and not args:
+            reports = text_reports(sys.stdin.read())
+            if reports is None:
+                sys.exit("some characters have no key on a US keyboard")
+            kbd.send(reports)
+        else:
+            sys.exit(usage)
+    except KeyboardError as e:
+        sys.exit(str(e))
+    return 0

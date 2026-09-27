@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadDisplayName</key>
+  <string>Phone Harness farm iPhone</string>
+  <key>PayloadDescription</key>
+  <string>A farm iPhone: customers may sign in and out of Apple IDs, but the phone can never be erased, locked, or bound to an account by them. Requires supervision.</string>
+  <key>PayloadIdentifier</key>
+  <string>com.phone-harness.farm-iphone</string>
+  <key>PayloadOrganization</key>
+  <string>Phone Harness</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>6F2C9A1E-4B7D-4E0A-9C21-7A3E5D1B8F40</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadScope</key>
+  <string>System</string>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadDisplayName</key>
+      <string>Farm restrictions</string>
+      <key>PayloadIdentifier</key>
+      <string>com.phone-harness.farm-iphone.restrictions</string>
+      <key>PayloadType</key>
+      <string>com.apple.applicationaccess</string>
+      <key>PayloadUUID</key>
+      <string>B1D4E7A2-0C6F-4A5B-8E3D-2F9A6C4B7D10</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>allowActivationLock</key>
+      <false/>
+      <key>allowFindMyDevice</key>
+      <false/>
+      <key>allowEraseContentAndSettings</key>
+      <false/>
+      <key>allowPasscodeModification</key>
+      <false/>
+      <key>allowEnablingRestrictions</key>
+      <false/>
+      <key>allowUIConfigurationProfileInstallation</key>
+      <false/>
+      <key>allowVPNCreation</key>
+      <false/>
+      <key>allowDeviceNameModification</key>
+      <false/>
+      <key>forceDelayedSoftwareUpdates</key>
+      <true/>
+      <key>enforcedSoftwareUpdateDelay</key>
+      <integer>90</integer>
+      <key>allowAccountModification</key>
+      <true/>
+      <key>allowCloudBackup</key>
+      <true/>
+      <key>allowCloudDocumentSync</key>
+      <true/>
+      <key>allowCloudPhotoLibrary</key>
+      <true/>
+      <key>allowAppInstallation</key>
+      <true/>
+      <key>allowAppRemoval</key>
+      <true/>
+      <key>allowSafari</key>
+      <true/>
+      <key>allowCamera</key>
+      <true/>
+      <key>allowScreenShot</key>
+      <true/>
+      <key>allowAutoUnlock</key>
+      <true/>
+      <key>forceAutomaticDateAndTime</key>
+      <true/>
+    </dict>
+  </array>
+</dict>
+</plist>

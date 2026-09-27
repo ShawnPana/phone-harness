@@ -141,6 +141,14 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
   password, a 2FA prompt, or just to take over — run `phone-harness cloud open`
   (the dashboard, behind their own sign-in) and wait for them to say they are
   done before you touch the phone again.
+- **A cloud iPhone, only if the account has one.** `phone-harness cloud start
+  --iphone` starts it; it is never the default, and an account without one gets
+  an error. It is the user's own real iPhone, kept between sessions, and nothing
+  is saved on stop because nothing leaves the phone. The same helpers drive it,
+  with no shell and no accessibility tree: `ocr()` reads pixels, `back()` and
+  `ui()` are Unsupported, and `home()` is the Home button. Apple's own Apple
+  Account sign-in refuses remote typing; tell the user that password has to be
+  entered on the phone itself.
 - The connection is handled for you, including reconnecting after a drop. The
   adb address the CLI shows is not a secret; the unlock code is, and you never
   need it — do not look for it, print it, or ask the user for it.

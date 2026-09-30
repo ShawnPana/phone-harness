@@ -83,9 +83,9 @@ def find_window():
 
 def screen_info():
     """{window, frontmost, img_px} — bounds, focus state, capture size."""
-    from . import ocr as _vision
+    from .imaging import image_size as _image_size
     path, win = send("screen.capture")
-    w, h = _vision.image_size(path)
+    w, h = _image_size(path)
     return {"window": win, "frontmost": bool(send("focus.probe")[0]),
             "img_px": [w, h]}
 

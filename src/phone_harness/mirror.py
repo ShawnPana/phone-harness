@@ -412,14 +412,30 @@ def activate(timeout=2.5):
     # for the full timeout doing nothing. AXRaise on the window's own
     # AXUIElement works even in that stuck state, so it runs alongside
     # activateWithOptions_ on every iteration rather than only as a fallback.
-    win = find_window()
+    # Off-screen too: a minimized window, or one on another Space, is exactly
+    # the window that needs raising, and the on-screen lookup returned None
+    # for it, so AXRaise never ran and this loop spun out with AXFrontmost
+    # true and the window still in the Dock.
+    win = find_window(on_screen=False)
+    el = _ax_window_element(app, win) if win else None
+    if el is not None:
+        err, minimized = _AS.AXUIElementCopyAttributeValue(el, "AXMinimized", None)
+        if not err and minimized:
+            _AS.AXUIElementSetAttributeValue(el, "AXMinimized", False)
     deadline = time.time() + timeout
     while time.time() < deadline:
         app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
-        el = _ax_window_element(app, win) if win else None
         if el is not None:
             _AS.AXUIElementPerformAction(el, "AXRaise")
         time.sleep(0.08)
+        if is_frontmost():
+            return
+    # Last resort: ask Launch Services. It switches to the window's Space,
+    # which nothing above does for a window on another desktop.
+    subprocess.run(["open", "-a", APP_PATH], capture_output=True)
+    deadline = time.time() + 1.5
+    while time.time() < deadline:
+        time.sleep(0.1)
         if is_frontmost():
             return
     # is_frontmost() now requires both AXFrontmost and z-order to agree, so a

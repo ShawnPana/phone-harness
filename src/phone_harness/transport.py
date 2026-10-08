@@ -148,6 +148,20 @@ def connect(platform=None, **kw):
                 return Remote(rented["link"]["url"], rented["link"]["token"])
             if rented:
                 platform = "android"
+            else:
+                lost = cloud.lost()
+                if lost:
+                    # The agent was driving a cloud phone and it died. Falling
+                    # through to the default would run its next script on
+                    # whatever phone is on this desk — a different device
+                    # with the user's own apps — so refuse instead.
+                    what = "iPhone" if (lost.get("platform") or "") == "ios" else "Android"
+                    raise RuntimeError(
+                        f"the cloud {what} session {lost.get('sid')} is gone and no other "
+                        "phone is attached, so this script did not run. `phone-harness "
+                        "cloud start`" + (" --iphone" if what == "iPhone" else "") +
+                        " rents another. To drive the phone on this machine on purpose, "
+                        "say so: PHONE_HARNESS_PLATFORM=ios (or android).")
     platform = platform.lower()
     if platform in ("ios", "iphone", "ipad"):
         if sys.platform != "darwin":

@@ -161,6 +161,13 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
   starts the account's iPhone; plain `cloud start` stays Android. Session
   length, billing, `ls`, `watch`, `use`, and `stop` are the commands above.
   How the helpers see and touch that phone is **Cloud iPhone**.
+- **A cloud session that dies does not hand you a different phone.** When
+  the service loses the session (expired, crashed), the next script raises
+  naming it instead of running on the phone on this desk, which is a
+  different device with the user's own apps. `phone-harness cloud start`
+  (with `--iphone` for the iPhone) rents another and clears that; so does
+  the user's `cloud stop`. Only an explicit `PHONE_HARNESS_PLATFORM=ios` or
+  `android` drives a local phone while that stands.
 - The connection is handled for you, including reconnecting after a drop. The
   adb address the CLI shows is not a secret; the unlock code is, and you never
   need it — do not look for it, print it, or ask the user for it.

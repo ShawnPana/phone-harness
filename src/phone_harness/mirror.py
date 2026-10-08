@@ -410,8 +410,10 @@ def _run_capture(args, path):
     return ok, (r.stderr.decode(errors="replace").strip() or "empty capture")
 
 
-def capture(path=None, retries=2):
+def capture(path=None, retries=2, retina=True):
     """Capture the mirroring window as a PNG. Returns (path, window_bounds).
+
+    screencapture is always Retina; `retina` exists to match background.capture.
 
     `screencapture -l <id>` grabs only the window (no shadow, even if covered)
     but fails with "could not create image from window" when the window is not

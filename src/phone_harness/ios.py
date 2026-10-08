@@ -73,7 +73,7 @@ class IPhone(Backend):
         return self.mirror.capture(path)
 
     def _screen_text(self, min_confidence=0.3):
-        path, win = self.mirror.capture()
+        path, win = self.mirror.capture(retina=True)
         return [dict(o, source="pixels")
                 for o in _vision.recognize(path, win)
                 if o["confidence"] >= min_confidence]
@@ -148,7 +148,7 @@ class IPhone(Backend):
             return "no-window"
         if self.mirror.window_ax_content():
             return "blocked"
-        path, win = self.mirror.capture()   # window exists, launches nothing
+        path, win = self.mirror.capture(retina=True)   # window exists, launches nothing
         texts = " ".join(o["text"] for o in _vision.recognize(path, win)).lower()
         return "blocked" if any(m in texts for m in _BLOCKED_MARKERS) else "ready"
 

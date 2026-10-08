@@ -116,19 +116,25 @@ def ensure_window(timeout=5.0):
 
 # --- capture (eyes), no focus ---
 
-def capture(path=None, retries=2):
+def capture(path=None, retries=2, retina=False):
     """Capture the mirroring window as a PNG without activating it.
 
+    Point resolution by default, which keeps screenshots small for a model to
+    read. retina=True is for OCR: at point resolution a small window's text is
+    too few pixels for Vision. It writes its own file so it never overwrites a
+    screenshot the caller has yet to read.
+
     Returns (path, window_bounds), matching mirror.capture()."""
-    path = str(path or TMP / "background.png")
+    path = str(path or TMP / ("ocr.png" if retina else "background.png"))
+    flags = Quartz.kCGWindowImageBoundsIgnoreFraming
+    if not retina:
+        flags |= Quartz.kCGWindowImageNominalResolution
     last = None
     for _ in range(retries + 1):
         win = find_window() or ensure_window()
         img = Quartz.CGWindowListCreateImage(
             Quartz.CGRectNull, Quartz.kCGWindowListOptionIncludingWindow,
-            win["id"],
-            Quartz.kCGWindowImageBoundsIgnoreFraming
-            | Quartz.kCGWindowImageNominalResolution)
+            win["id"], flags)
         if img is not None and Quartz.CGImageGetWidth(img) > 0:
             url = Quartz.CFURLCreateWithFileSystemPath(
                 None, path, Quartz.kCFURLPOSIXPathStyle, False)

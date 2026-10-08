@@ -540,6 +540,33 @@ class CloudCli(unittest.TestCase):
         self.assertIn("still saving", r.stdout)
         self.assertEqual(FakeCloud.posts, [{"timeout_seconds": 900, "profile_id": "prof-1"}])
 
+    def test_a_session_that_dies_blocks_the_fallback_to_a_local_phone(self):
+        self.login()
+        self.run_cli("cloud", "start")
+        FakeCloud.sessions.clear()                        # the service lost it
+        r = self.run_cli("cloud")
+        self.assertIn("is gone", r.stdout)
+        self.assertIn("refuse", r.stdout)
+        script = ("from phone_harness import transport\n"
+                  "try:\n"
+                  "    transport.connect(); print('RAN')\n"
+                  "except RuntimeError as e:\n"
+                  "    print('REFUSED', e)\n")
+        r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                           env=self.env)
+        self.assertIn("REFUSED", r.stdout, r.stderr)
+        self.assertIn("is gone", r.stdout)
+        self.assertIn("did not run", r.stdout)
+        # Naming a platform is the agent saying "the local phone, on purpose".
+        r = subprocess.run([sys.executable, "-c", "from phone_harness import cloud; print(cloud.lost() is not None)"],
+                           capture_output=True, text=True, env={**self.env, "PHONE_HARNESS_PLATFORM": "android"})
+        self.assertEqual(r.stdout.strip(), "True")
+        # The user's own stop clears it.
+        self.run_cli("cloud", "stop", "--all")
+        r = subprocess.run([sys.executable, "-c", "from phone_harness import cloud; print(cloud.lost())"],
+                           capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.stdout.strip(), "None", r.stderr)
+
     def test_stop_returns_at_once_and_detaches(self):
         self.login()
         self.run_cli("cloud", "start")

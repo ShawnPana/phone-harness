@@ -388,13 +388,19 @@ def _attach(session, profile_id=None):
     }
     if profile_id:
         state["profile_id"] = profile_id
+    state.pop("gone", None)
     _save_state(state)
     if state["session"]["link"]["kind"] == "adb":
         ensure_connected(state["session"], quiet=True)
     return state["session"]
 
 
-def _detach(sid=None):
+def _detach(sid=None, gone=False):
+    """Forget the attached session. `gone=True` means the service lost it
+    (expired, crashed) rather than the user ending it: the session is then
+    remembered under "gone" so the helpers refuse to run instead of quietly
+    falling through to the phone on this machine — see lost(). A plain
+    detach (the user's `cloud stop`) clears that too."""
     state = _load_state()
     sess = state.get("session")
     sess = _as_linked(sess)
@@ -406,7 +412,33 @@ def _detach(sid=None):
             except Exception:
                 pass
         state.pop("session", None)
-        _save_state(state)
+        if gone:
+            state["gone"] = {"sid": sess.get("sid"), "platform": sess.get("platform"),
+                             "at": time.time()}
+    if not gone:
+        state.pop("gone", None)
+    _save_state(state)
+
+
+def lost():
+    """A session that was attached and is no longer usable, or None.
+
+    Either the service said it was gone (`gone` in the state file) or its
+    expiry passed while it was still attached. Read by transport.build() so
+    the default-platform fallback never lands on a different phone than the
+    one the agent was driving. No network, never raises."""
+    try:
+        state = _load_state()
+    except Exception:
+        return None
+    gone = state.get("gone")
+    if gone:
+        return gone
+    sess = state.get("session") or {}
+    if sess.get("expires_at") and time.time() >= sess["expires_at"]:
+        return {"sid": sess.get("sid"), "platform": sess.get("platform"),
+                "at": sess["expires_at"]}
+    return None
 
 
 # --- small things ------------------------------------------------------------
@@ -767,7 +799,7 @@ def _start(args):
             print(f"Already attached to session {live['id']}; reusing it.")
             return _report(_wait_ready(live["id"]), watch=False)   # its view is already open
         if not (live and live["state"] in ("provisioning", "ready")):
-            _detach()
+            _detach(gone=True)
         elif iphone != _is_ios(live):
             # Android and an iPhone may run at once. Leave the other session
             # billing on the server; the helpers follow the one just started.
@@ -916,8 +948,10 @@ def _status(args):
                                               if running else " — `phone-harness cloud start`"))
         return 0
     if live is None:
-        print(f"session     {sess['sid']} is gone; detaching")
-        _detach()
+        print(f"session     {sess['sid']} is gone; detaching. Scripts will refuse to run "
+              "until `phone-harness cloud start` rents another (or a local platform is "
+              "named explicitly)")
+        _detach(gone=True)
         return 0
     state = ("closing — saving the phone"
              if live["state"] == "closing" and live.get("profile") and not _is_ios(live)

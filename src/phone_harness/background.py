@@ -87,6 +87,9 @@ def find_window():
 
 running_app = mirror.running_app
 window_ax_content = mirror.window_ax_content
+window_ax_buttons = mirror.window_ax_buttons
+press_window_button = mirror.press_window_button
+launch = mirror.launch
 focus_probe = mirror.focus_probe
 interruption = mirror.interruption
 frontmost_window = mirror.frontmost_window
@@ -101,6 +104,11 @@ is_frontmost = mirror.is_frontmost
 def activate():
     """No-op: the whole point of this backend is never to take focus."""
     return None
+
+
+# session.require shows the window once at the start of a task so the user
+# can watch; that is the only time this backend raises it on purpose.
+show = mirror.activate
 
 
 def ensure_window(timeout=5.0):

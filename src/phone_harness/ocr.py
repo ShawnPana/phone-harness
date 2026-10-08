@@ -24,7 +24,7 @@ def recognize(path, window):
     bottom-left origin; screen points have a top-left origin, hence the flip.
     """
     handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(
-        NSURL.fileURLWithPath_(path), {})
+        NSURL.fileURLWithPath_(path), None)
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
     ok, err = handler.performRequests_error_([request], None)

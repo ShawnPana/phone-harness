@@ -162,32 +162,112 @@ class IPhone(Backend):
                         if role == "AXStaticText" and t)
 
     def _session_require(self):
-        """Bounds if the phone is connected and ready, else raise for the user.
+        """Bounds once the phone is connected and ready.
 
-        Never launches the app, taps Connect/Continue, or polls to reconnect —
-        resuming mirroring is physical and only the user can do it. Relay the
-        message; do not try to tap through the connect screen.
+        First does what the user would do by hand: opens iPhone Mirroring
+        when it is not running, and presses the interstitial's own button
+        (Connect, Try Again, Continue) once. What is left after that is
+        physical — an unlocked phone ("iPhone in Use", "Timed Out"), the Mac
+        login prompt, a phone that is not paired — and only the user can
+        clear it, so this raises quoting the window rather than pressing
+        again. Once the phone is live the window is brought to the front so
+        the user can watch the task. One press per call: a caller that retries after the user says
+        the phone is locked gets a fresh press.
         """
         state = self._session_state()
+        if state == "not-running":
+            self.mirror.launch()
+            self._show()
+            state = self._wait_state(("blocked", "ready"), _LAUNCH_WAIT)
+        elif state == "no-window":
+            state = self._wait_state(("blocked", "ready"), _WINDOW_WAIT)
+        pressed = None
+        if state == "blocked":
+            pressed = self._press_connect()
+            if pressed:
+                state = self._wait_connected(_CONNECT_WAIT)
         if state == "ready":
-            self.mirror.activate()
+            self._show()
             return self.mirror.find_window()
         if state == "not-running":
             raise RuntimeError(
-                "iPhone Mirroring isn't running. Please open the iPhone "
-                "Mirroring app and connect your phone, then retry — "
-                "reconnecting is physical, so I can't do it for you.")
+                "iPhone Mirroring would not launch. Please open the iPhone "
+                "Mirroring app and connect your phone, then retry.")
         if state == "no-window":
             raise RuntimeError(
-                "iPhone Mirroring is open but no phone is connected. Please "
-                "connect your phone in the app, then retry.")
-        said = self._session_detail()
+                "iPhone Mirroring is open but shows no phone window. Pair "
+                "the phone in the app (it has to be nearby, locked, and "
+                "signed in to the same Apple Account), then retry.")
+        said = self._session_detail() or "an interstitial with no text"
+        did = (f"I pressed {pressed} and it came back with"
+               if pressed else "It says")
         raise RuntimeError(
-            "iPhone Mirroring is not connected — an interstitial is on screen."
-            + (f" It says: {said}" if said else "")
-            + " This needs you: clear it on the Mac, and if it says 'iPhone in "
-            "Use', LOCK your iPhone so mirroring can resume. Then retry. I "
-            "will not tap Connect for you.")
+            f"iPhone Mirroring is not connected. {did}: {said}. This needs "
+            "you: if it mentions the iPhone being in use or timing out, LOCK "
+            "your iPhone, then tell me and I will try once more. I never "
+            "type a passcode.")
+
+    def _show(self):
+        """Bring the mirroring window to the front so the user can watch.
+        Best effort: a window that will not come forward is not a reason to
+        fail the session, since the background build drives it regardless."""
+        try:
+            self.mirror.show()
+        except Exception:
+            pass
+
+    def _press_connect(self):
+        """Press the interstitial's button through accessibility, once.
+
+        Returns the title pressed, or None when there is nothing safe to
+        press: no button, several buttons (the choice is the user's), or a
+        login prompt — pressing Unlock without a password does nothing, and
+        the password is never ours to type.
+        """
+        content = self.mirror.window_ax_content()
+        if any(role in ("AXTextField", "AXSecureTextField")
+               for role, _ in content):
+            return None
+        buttons = [t for role, t in content if role == "AXButton"]
+        if len(buttons) == 1 and buttons[0].lower() not in _NOT_CONNECT_BUTTONS:
+            return self.mirror.press_window_button()
+        return self.mirror.press_window_button(_CONNECT_BUTTONS)
+
+    def _wait_state(self, wanted, timeout):
+        """Poll until the session is in one of `wanted` or time runs out;
+        returns the last state seen."""
+        deadline = _now() + timeout
+        state = self._session_state()
+        while state not in wanted and _now() < deadline:
+            _sleep(0.5)
+            state = self._session_state()
+        return state
+
+    def _wait_connected(self, timeout):
+        """After a press: wait for the live stream.
+
+        'ready' has to hold for three polls in a row. Measured: the press
+        empties the window for about half a second before "Connecting to"
+        draws, and a single poll in that gap reads as live. A failed attempt
+        shows "iPhone in Use" again; the app keeps retrying by itself, so a
+        user who locks the phone inside this wait gets connected without
+        another press. Stops early once a Connect/Try Again button is back,
+        which is the app giving up until someone presses again."""
+        start = _now()
+        _sleep(1.0)
+        streak = 0
+        state = self._session_state()
+        while _now() - start < timeout:
+            streak = streak + 1 if state == "ready" else 0
+            if streak >= 3:
+                return "ready"
+            if state == "blocked" and _now() - start > 3.0:
+                titles = {t.lower() for t, _ in self.mirror.window_ax_buttons()}
+                if titles & set(_CONNECT_BUTTONS):
+                    break
+            _sleep(0.5)
+            state = self._session_state()
+        return "blocked" if state == "ready" and streak < 3 else state
 
     def _session_refocus(self):
         self.mirror.activate()
@@ -199,6 +279,23 @@ class IPhone(Backend):
 
     def _focus_diff(self, before, after):
         return self.mirror.interruption(before, after)
+
+
+# Buttons an interstitial offers that mean "try to connect"; pressed once
+# per session.require. Lower-case; matched case-insensitively.
+_CONNECT_BUTTONS = ("connect", "try again", "retry", "continue", "reconnect")
+# A lone button that is not an attempt to connect: "Background" on the
+# Connecting screen sends the app behind, "Cancel" gives up.
+_NOT_CONNECT_BUTTONS = ("background", "cancel", "quit", "unlock", "ok",
+                        "done", "settings")
+_LAUNCH_WAIT = 12.0     # app launch to phone window
+_WINDOW_WAIT = 6.0      # app running, window still coming up
+_CONNECT_WAIT = 20.0    # press to live stream
+
+
+def _now():
+    import time
+    return time.time()
 
 
 def _sleep(s):

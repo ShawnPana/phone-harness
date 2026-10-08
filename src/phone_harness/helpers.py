@@ -57,14 +57,18 @@ def connection_state():
 
     On iPhone Mirroring: 'ready' | 'blocked' | 'no-window' | 'not-running',
     where 'blocked' means an interstitial is up and nothing should be tapped
-    or typed until the user clears it.
+    or typed until it is cleared — ensure_device() tries that once.
     """
     return send("session.state")
 
 
 def ensure_device():
-    """Screen bounds if the device is usable, else raise telling the user what
-    they physically need to do. Never reconnects — that is the user's job."""
+    """Screen bounds once the device is usable, else raise telling the user
+    what they physically need to do.
+
+    On iPhone Mirroring this launches the app if it is not running and
+    presses the interstitial's Connect once; what it cannot clear (an
+    unlocked phone, a login prompt) comes back as the error text."""
     return send("session.require")
 
 

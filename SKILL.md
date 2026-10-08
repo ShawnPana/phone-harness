@@ -16,9 +16,19 @@ of you.
 | Phone | How it is reached | Eyes | Hands | Read |
 | --- | --- | --- | --- | --- |
 | **Cloud Android** — rented from Phone Harness Cloud, the user's own saved phone | `phone-harness cloud start` connects it; nothing to export | accessibility tree (exact), Vision OCR fallback on a Mac | adb `input` | Working method, then **Cloud phones** and **Android** |
-| **Cloud iPhone** — the account's own iPhone; only with `--iphone` | `phone-harness cloud start --iphone` connects it; nothing to export | server-side OCR (`source: "pixels"`), from any OS | ops over HTTPS | Working method, then **Cloud iPhone** |
+| **Cloud iPhone** — a second iPhone hosted by Phone Harness Cloud, not the one in the user's pocket; only with `--iphone` | `phone-harness cloud start --iphone` connects it; nothing to export | server-side OCR (`source: "pixels"`), from any OS | ops over HTTPS | Working method, then **Cloud iPhone** |
 | **Android on the desk** — USB or paired Wi-Fi | the harness finds it | accessibility tree (exact), Vision OCR fallback on a Mac | adb `input` | Working method, then **Android** |
-| **iPhone** — through the Mac's iPhone Mirroring window | the user connects it | screenshots + Vision OCR | HID-level CGEvents into the window | Working method, then **iPhone** |
+| **Personal iPhone** — the user's own phone, through the Mac's iPhone Mirroring window | the harness opens Mirroring and presses Connect; the user locks the phone | screenshots + Vision OCR | HID-level CGEvents into the window | Working method, then **iPhone** |
+
+**"My phone" means the personal one.** The personal iPhone and the cloud
+iPhone are two different devices with different apps and logins: the first is
+in the user's pocket and mirrored onto the Mac, the second lives in a data
+centre and is reached over HTTPS. When the user says "my phone", "my iPhone",
+or names an app they use, drive the personal iPhone. Use a cloud phone only
+when the user names it ("the cloud phone", `cloud start`) or the task is
+clearly about it. If the personal phone cannot be reached, say so and ask;
+never fall through to a cloud session that happens to be running, even one
+the user started — it is theirs, and it is a different phone.
 
 `phone-harness config` shows the default platform (`ios` on a Mac, `android`
 elsewhere) and every other setting. `phone-harness cloud` shows whether a cloud
@@ -96,11 +106,14 @@ PY
   following, purchasing, deleting, changing settings. Never type a PIN, a
   password or a 2FA code; on a cloud phone, hand the controls over instead
   (`phone-harness cloud open`, below).
-- **Connection is the user's job.** Pairing, unlocking, tapping Allow,
-  locking an iPhone that says "iPhone in Use", approving a cloud sign-in in
-  the browser: when the harness says the phone is not reachable, relay its
-  message and ask — never tap through a Connect screen and never loop-poll.
-  Retry once after the user says it is done.
+- **The harness reconnects what it can; the rest is the user's.** On a
+  personal iPhone, start the task with `ensure_mirroring()`: it opens iPhone
+  Mirroring if it is closed, presses the window's Connect once, and brings
+  the window to the front so the user can watch. Pairing, unlocking, tapping Allow,
+  locking an iPhone that says "iPhone in Use" or "Timed Out", approving a
+  cloud sign-in in the browser: when the harness still says the phone is not
+  reachable, relay its message and ask — never loop-poll. Retry once after
+  the user says it is done; that retry presses Connect again.
 
 ## Cloud phones
 
@@ -158,7 +171,9 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
 `kind: device` (both together; this is not the Android default). From then on
 the helpers drive it over HTTPS: every op is a POST to the host, screenshots
 come back as PNG bytes, and this machine needs no adb, no shell, and no Mac.
-It is the user's own phone, kept between sessions. `cloud stop` ends billing
+It is a phone granted to the user's account and kept between sessions —
+not the personal iPhone mirrored on the Mac, which is a different device
+with its own apps and logins. `cloud stop` ends billing
 and returns at once; the phone keeps its own data, so there is no Android-style
 disk save to wait on. An Android session can stay up beside it: `cloud use SID`
 switches which one the helpers drive.
@@ -294,8 +309,12 @@ The Mac's iPhone Mirroring app renders the phone as a window; the harness
 captures that window and OCRs it with Vision for eyes, and posts HID-level
 events into it for hands. All coordinates are global macOS screen points.
 
-- `ensure_mirroring()` launches the window and gates on connection. The
-  default build works the phone **without taking the user's focus**: capture
+- **Start every task with `ensure_mirroring()`.** It opens iPhone Mirroring
+  if it is not running, presses the interstitial's Connect once through
+  accessibility, waits up to 20s for the live stream, brings the window to
+  the front so the user can watch, and raises with the window's own words if
+  the phone did not come up. Call it once in the first script of a task, not
+  before every action. After that, the default build works the phone **without taking the user's focus**: capture
   is by window id and taps and keystrokes are event records delivered straight
   to the app. Scrolling is the exception — macOS routes a scroll to whichever
   window sits under the pointer, so a scroll raises the mirroring window for
@@ -324,13 +343,17 @@ events into it for hands. All coordinates are global macOS screen points.
   Pass `keystrokes=True` for fields that need real key events. The typed text
   stays on the Mac clipboard afterwards. If a tap will not take focus,
   `press("tab")` moves between fields.
-- **Connecting is the user's job, and so is resuming.** `ensure_mirroring()`
-  raises a clear message when the phone is not connected (`connection_state()`
-  is `ready` / `blocked` / `no-window` / `not-running`). **STOP and relay it.**
-  Never tap `Connect` / `Continue` and never loop-poll: tapping Connect while
-  the phone is unlocked does nothing, and the only fix is the user locking or
-  connecting the phone. **Unlocking the physical phone pauses the session**
-  ("iPhone in Use") — do not tap through the resume screen.
+- **What the harness cannot clear is physical.** Connect only works while
+  the iPhone is locked; "iPhone in Use" and "Timed Out … due to iPhone use"
+  mean it was not. `ensure_mirroring()` presses Connect once and then raises
+  quoting the screen (`connection_state()` is `ready` / `blocked` /
+  `no-window` / `not-running`). **STOP and relay it**, ask the user to lock
+  the phone, and retry once when they say so — the retry presses Connect
+  again. Do not press it yourself in a loop and do not tap the window
+  (an interstitial is a Mac view; taps meant for the phone go nowhere).
+  **Unlocking the physical phone pauses the session** ("iPhone in Use") —
+  the same rule applies. The Mac login prompt that sometimes appears in the
+  window is never typed into.
 - **Unfocused input is swallowed silently — for events you post yourself.**
   The helpers are immune in the background build, but raw CGEvents and the
   `PHONE_HARNESS_BACKGROUND=0` path need the window frontmost: `activate()`

@@ -149,10 +149,72 @@ def window_ax_content():
     minute later — so callers should read AXStaticText for anything shown to
     a user.
     """
+    out = []
+    for role, text, _el in _window_ax_nodes():
+        out.append((role, text))
+    return out
+
+
+def window_ax_buttons():
+    """The AXButtons drawn inside the phone window, as [(title, element)].
+
+    Empty on a connected session, where the window is a video stream. On an
+    interstitial it is the button the user would click — Connect, Try Again,
+    Continue — and press_window_button() presses it through accessibility, so
+    it works on a window the user cannot see and never moves the mouse.
+    """
+    return [(text, el) for role, text, el in _window_ax_nodes()
+            if role == "AXButton"]
+
+
+def press_window_button(titles=None):
+    """Press one button inside the phone window and return its title, or None.
+
+    With `titles`, only a button whose title matches (case-insensitive) is
+    pressed; without, the window's single button is, and a window with
+    several is left alone — a choice is the user's.
+    """
+    buttons = window_ax_buttons()
+    if titles:
+        want = {t.lower() for t in titles}
+        buttons = [(t, el) for t, el in buttons if t.lower() in want]
+    elif len(buttons) != 1:
+        return None
+    if not buttons:
+        return None
+    title, el = buttons[0]
+    err = _AS.AXUIElementPerformAction(el, "AXPress")
+    return title if not err else None
+
+
+def launch(timeout=12.0):
+    """Open iPhone Mirroring without bringing it in front, and wait for its
+    phone window. Returns the window bounds, or None when none appeared in
+    time (the app is launched either way).
+
+    `open -g` keeps the user's focus where it is; the app connects to the
+    paired phone on its own once it is up.
+    """
+    if running_app() is None:
+        subprocess.run(["open", "-g", "-a", APP_PATH], capture_output=True)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        win = find_window(on_screen=False)
+        if win is not None:
+            return win
+        time.sleep(0.4)
+    return find_window(on_screen=False)
+
+
+def _window_ax_nodes():
+    """[(role, text, element)] for the native UI inside the phone window.
+
+    The shared walk behind window_ax_content() and window_ax_buttons().
+    """
     app = running_app()
     if app is None:
         return []
-    win = find_window()
+    win = find_window(on_screen=False)
     if win is None:
         return []
     err, ax_wins = _AS.AXUIElementCopyAttributeValue(
@@ -197,7 +259,7 @@ def window_ax_content():
                 ea, v = _AS.AXUIElementCopyAttributeValue(node, attr, None)
                 if not ea and isinstance(v, str) and v.strip():
                     parts.append(v.strip())
-            out.append((role, " ".join(parts)))
+            out.append((role, " ".join(parts), node))
         ek, kids = _AS.AXUIElementCopyAttributeValue(node, "AXChildren", None)
         for k in (kids or []):
             walk(k, depth + 1)
@@ -377,6 +439,10 @@ def activate(timeout=2.5):
     raise RuntimeError(
         f"could not bring {APP_NAME} frontmost after {timeout:.1f}s — "
         f"{detail}. Input would be swallowed, so nothing was sent.")
+
+
+# Showing the window to the user is the same move as taking focus for input.
+show = activate
 
 
 def ensure_window(timeout=5.0):

@@ -141,8 +141,7 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("iPhone in Use", msg)
         self.assertIn("LOCK your iPhone", msg)
         self.assertEqual(p.mirror.pressed, ["Connect"])
-        self.assertLess(self.clock[0], ios._CONNECT_WAIT,
-                        "stopped early once Try Again came back")
+        self.assertLess(self.clock[0], ios._CONNECT_WAIT, "stopped before the cap")
 
     def test_transient_ready_after_the_press_is_not_a_connection(self):
         # Measured: the window reads empty for ~0.5s between the press and
@@ -154,12 +153,22 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("iPhone in Use", str(cm.exception))
         self.assertEqual(p.mirror.pressed, ["Connect"])
 
-    def test_locking_the_phone_during_the_wait_connects_without_a_press(self):
-        p = self.phone(CONNECT, CONNECT, CONNECTING, IN_USE_RETRYING,
-                       IN_USE_RETRYING, IN_USE_RETRYING, IN_USE_RETRYING,
-                       CONNECTING, LIVE)
+    def test_a_slow_connect_is_waited_for(self):
+        p = self.phone(CONNECT, CONNECT, CONNECTING, CONNECTING, CONNECTING,
+                       CONNECTING, CONNECTING, CONNECTING, CONNECTING, LIVE)
         self.assertEqual(p._session_require(), WIN)
         self.assertEqual(p.mirror.pressed, ["Connect"])
+
+    def test_in_use_fails_fast_and_shows_the_window_first(self):
+        # The app says "iPhone in Use" ~2s after the press and retries by
+        # itself; waiting out the cap would only delay the user's lock.
+        p = self.phone(CONNECT, CONNECT, CONNECTING, CONNECTING,
+                       IN_USE_RETRYING)
+        with self.assertRaises(RuntimeError) as cm:
+            p._session_require()
+        self.assertIn("iPhone in Use", str(cm.exception))
+        self.assertLess(self.clock[0], 5.0, "gave up within a few seconds")
+        self.assertEqual(p.mirror.shown, 1, "the window was raised even so")
 
     def test_connecting_screen_background_button_is_not_pressed(self):
         p = self.phone(CONNECTING)

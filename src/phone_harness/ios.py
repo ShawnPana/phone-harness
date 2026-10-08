@@ -177,9 +177,11 @@ class IPhone(Backend):
         state = self._session_state()
         if state == "not-running":
             self.mirror.launch()
-            self._show()
             state = self._wait_state(("blocked", "ready"), _LAUNCH_WAIT)
-        elif state == "no-window":
+        # Shown before anything else so the user sees what the harness sees,
+        # the interstitial included, not only a session that worked.
+        self._show()
+        if state == "no-window":
             state = self._wait_state(("blocked", "ready"), _WINDOW_WAIT)
         pressed = None
         if state == "blocked":
@@ -187,7 +189,6 @@ class IPhone(Backend):
             if pressed:
                 state = self._wait_connected(_CONNECT_WAIT)
         if state == "ready":
-            self._show()
             return self.mirror.find_window()
         if state == "not-running":
             raise RuntimeError(
@@ -244,15 +245,19 @@ class IPhone(Backend):
         return state
 
     def _wait_connected(self, timeout):
-        """After a press: wait for the live stream.
+        """After a press: wait for the live stream, and fail fast otherwise.
 
         'ready' has to hold for three polls in a row. Measured: the press
         empties the window for about half a second before "Connecting to"
-        draws, and a single poll in that gap reads as live. A failed attempt
-        shows "iPhone in Use" again; the app keeps retrying by itself, so a
-        user who locks the phone inside this wait gets connected without
-        another press. Stops early once a Connect/Try Again button is back,
-        which is the app giving up until someone presses again."""
+        draws, and a single poll in that gap reads as live.
+
+        Measured timeline of a failed attempt: 0.3s blank, 0.9s "Connecting
+        to" (its only button is "Background"), 2.0s "iPhone in Use" with no
+        button at all. So once the attempt is a couple of seconds old and the
+        window is an interstitial that is not the Connecting screen, the
+        answer is known: raise now rather than sit out the timeout. The user
+        locking the phone is what fixes it, and the app reconnects by itself
+        when that happens, so the next session.require finds it live."""
         start = _now()
         _sleep(1.0)
         streak = 0
@@ -261,9 +266,9 @@ class IPhone(Backend):
             streak = streak + 1 if state == "ready" else 0
             if streak >= 3:
                 return "ready"
-            if state == "blocked" and _now() - start > 3.0:
+            if state == "blocked" and _now() - start > _ATTEMPT_SETTLE:
                 titles = {t.lower() for t, _ in self.mirror.window_ax_buttons()}
-                if titles & set(_CONNECT_BUTTONS):
+                if not titles & set(_NOT_CONNECT_BUTTONS):
                     break
             _sleep(0.5)
             state = self._session_state()
@@ -290,7 +295,8 @@ _NOT_CONNECT_BUTTONS = ("background", "cancel", "quit", "unlock", "ok",
                         "done", "settings")
 _LAUNCH_WAIT = 12.0     # app launch to phone window
 _WINDOW_WAIT = 6.0      # app running, window still coming up
-_CONNECT_WAIT = 20.0    # press to live stream
+_CONNECT_WAIT = 12.0    # press to live stream, the cap; a failure shows in ~3s
+_ATTEMPT_SETTLE = 2.5   # a press has drawn Connecting and then its outcome by now
 
 
 def _now():

@@ -310,10 +310,12 @@ captures that window and OCRs it with Vision for eyes, and posts HID-level
 events into it for hands. All coordinates are global macOS screen points.
 
 - **Start every task with `ensure_mirroring()`.** It opens iPhone Mirroring
-  if it is not running, presses the interstitial's Connect once through
-  accessibility, waits up to 20s for the live stream, brings the window to
-  the front so the user can watch, and raises with the window's own words if
-  the phone did not come up. Call it once in the first script of a task, not
+  if it is not running, brings the window to the front so the user sees what
+  you see, presses the interstitial's Connect once through accessibility,
+  and waits for the live stream. A phone that is in use shows up within
+  about three seconds and it raises then, with the window's own words,
+  rather than sitting out a timeout. It is the cheapest first line a script
+  can have: a phone that cannot be driven fails there, not five taps in. Call it once in the first script of a task, not
   before every action. After that, the default build works the phone **without taking the user's focus**: capture
   is by window id and taps and keystrokes are event records delivered straight
   to the app. Scrolling is the exception — macOS routes a scroll to whichever
@@ -348,8 +350,9 @@ events into it for hands. All coordinates are global macOS screen points.
   mean it was not. `ensure_mirroring()` presses Connect once and then raises
   quoting the screen (`connection_state()` is `ready` / `blocked` /
   `no-window` / `not-running`). **STOP and relay it**, ask the user to lock
-  the phone, and retry once when they say so — the retry presses Connect
-  again. Do not press it yourself in a loop and do not tap the window
+  the phone, and retry once when they say so. The app reconnects by itself
+  the moment the phone is locked, so the retry usually finds it live; if
+  not, it presses Connect again. Do not press it yourself in a loop and do not tap the window
   (an interstitial is a Mac view; taps meant for the phone go nowhere).
   **Unlocking the physical phone pauses the session** ("iPhone in Use") —
   the same rule applies. The Mac login prompt that sometimes appears in the

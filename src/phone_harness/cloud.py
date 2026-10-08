@@ -919,7 +919,8 @@ def _status(args):
         print(f"session     {sess['sid']} is gone; detaching")
         _detach()
         return 0
-    state = ("closing — saving the phone" if live["state"] == "closing" and not _is_ios(live)
+    state = ("closing — saving the phone"
+             if live["state"] == "closing" and live.get("profile") and not _is_ios(live)
              else live["state"])
     print(f"session     {live['id']} · {state} · {_left(live.get('expires_at'))} left"
           f" · {_kind_of_phone(live)}")

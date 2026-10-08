@@ -400,6 +400,35 @@ class CloudCli(unittest.TestCase):
         self.assertIn("closing — saving the phone", r.stdout)
         self.assertNotIn("running in session", r.stdout)
 
+    def test_a_closing_temporary_android_stays_plain_closing(self):
+        """A temp session has no profile, so closing it must not look like a save
+        and must not relabel the stored phone."""
+        self.login()
+        self.assertEqual(self.run_cli("cloud", "start", "--temp").returncode, 0)
+        sid = json.loads((Path(self.home.name) / "state" / "cloud.json").read_text())["session"]["sid"]
+        self.assertFalse(FakeCloud.sessions[sid].get("profile"))
+        FakeCloud.sessions[sid]["state"] = "closing"
+        r = self.run_cli("cloud")
+        self.assertIn("· closing ·", r.stdout)
+        self.assertNotIn("saving", r.stdout)
+        self.assertIn("phone       stored", r.stdout)
+        self.assertIn("temporary", r.stdout)
+
+    def test_a_closing_iphone_is_not_a_save(self):
+        """An iPhone session can name a profile; closing it still is not a save."""
+        self.login()
+        started = self.run_cli("cloud", "start", "--iphone", "--no-watch",
+                               env={"PHONE_HARNESS_ADB": "/nonexistent/adb"})
+        self.assertEqual(started.returncode, 0, started.stderr)
+        sid = json.loads((Path(self.home.name) / "state" / "cloud.json").read_text())["session"]["sid"]
+        self.assertEqual(FakeCloud.sessions[sid].get("profile"), "prof-1")
+        FakeCloud.sessions[sid]["state"] = "closing"
+        r = self.run_cli("cloud")
+        self.assertIn("· closing ·", r.stdout)
+        self.assertIn("your iPhone", r.stdout)
+        self.assertNotIn("saving", r.stdout)
+        self.assertIn("phone       stored", r.stdout)
+
     def test_temp_phone_and_minutes_cap(self):
         self.login()
         self.assertEqual(self.run_cli("cloud", "start", "--temp").returncode, 0)

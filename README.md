@@ -4,7 +4,8 @@
 
 Connect Claude Code, Codex, or any agent to your real phone. **iPhone** through
 the Mac's iPhone Mirroring window, **Android** over adb from macOS, Linux or
-Windows. No jailbreak, no
+Windows, or a Phone Harness Cloud phone — an Android over adb, or an iPhone
+over HTTPS. No jailbreak, no
 Xcode, nothing installed on the phone. The agent sees the screen, taps, types,
 and reads the result.
 
@@ -60,18 +61,20 @@ guide; [helpers.py](src/phone_harness/helpers.py) is the full list.
 ## No phone on your desk? Rent one
 
 ```bash
-phone-harness cloud login     # once: approve in your browser
-phone-harness cloud start     # your own Android phone; apps and logins are kept
+phone-harness cloud login            # once: approve in your browser
+phone-harness cloud start            # your own Android phone; apps and logins are kept
+phone-harness cloud start --iphone   # the account's iPhone; helpers over HTTPS, no adb
 phone-harness <<'PY'
 print(screenshot())
 PY
-phone-harness cloud stop      # billing stops, the phone is saved
+phone-harness cloud stop             # billing stops; an Android phone is saved
 ```
 
-[Phone Harness Cloud](https://phone-harness.com/cloud) phones are Android
-phones reached over adb, so every helper works on them unchanged and there is
-nothing to export or select. `phone-harness cloud` lists the rest: `ls`,
-`watch`, `history`, and `start --temp` for a throwaway phone.
+A [cloud Android](https://phone-harness.com/cloud) is reached over adb, so every
+helper works on it unchanged. A cloud iPhone (`cloud start --iphone`) has no
+shell: the helpers POST ops over HTTPS, OCR runs on the host, and driving it
+is in [SKILL.md](SKILL.md). `phone-harness cloud` lists the rest: `ls`,
+`watch`, `use`, `history`, and `start --temp` for a throwaway Android.
 
 ## How it works
 
@@ -84,8 +87,13 @@ HID-level events for taps, swipes, and typing.
 accessibility tree is the text source, `input` is the hands. Works over USB or
 Wi‑Fi, no window needed.
 
-Same helpers on both. `phone-harness config set platform ios|android` picks
-the default.
+**Cloud iPhone.** `phone-harness cloud start --iphone` drives the account's
+iPhone over HTTPS from any OS. The host runs OCR; taps use the phone's screen
+points. No adb and no accessibility tree. Day-to-day steps are in
+[SKILL.md](SKILL.md).
+
+Same helpers throughout. `phone-harness config set platform ios|android` picks
+the desk default.
 
 ## Limits
 

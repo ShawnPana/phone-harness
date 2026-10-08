@@ -62,8 +62,8 @@ guide; [helpers.py](src/phone_harness/helpers.py) is the full list.
 
 ```bash
 phone-harness cloud login            # once: approve in your browser
-phone-harness cloud start            # your own Android phone; apps and logins are kept
-phone-harness cloud start --iphone   # the account's iPhone; helpers over HTTPS, no adb
+phone-harness cloud start            # your own Android; default 15 min (--minutes or --timeout)
+phone-harness cloud start --iphone   # platform ios, kind device; --device ID if several
 phone-harness <<'PY'
 print(screenshot())
 PY

@@ -37,8 +37,9 @@ the agent's copy matches the code.
 - **No phone on your desk?** `phone-harness cloud login`, then
   `phone-harness cloud start` for your own Android (needs adb, below) or
   `phone-harness cloud start --iphone` for the account's iPhone (no adb, no
-  Mac; driving it is **Cloud iPhone** in `SKILL.md`). New accounts get $5 of
-  credit (100 minutes).
+  Mac; `--device ID` when the account has several; driving it is **Cloud
+  iPhone** in `SKILL.md`). A start lasts 15 minutes unless you pass
+  `--minutes` or `--timeout`. New accounts get $5 of credit (100 minutes).
 
 ## iPhone
 

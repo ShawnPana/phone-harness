@@ -114,6 +114,7 @@ between sessions.
 phone-harness cloud                     # signed in? a phone attached? minutes left?
 phone-harness cloud start               # ~15s; opens the live view; safe to run twice (reattaches)
 phone-harness cloud start --minutes 25  # default 15, cap 30 (config: cloud.minutes, cloud.max_minutes)
+phone-harness cloud start --timeout 90s # same length as seconds, or 15m; not with --minutes
 phone-harness cloud start --temp        # a throwaway phone that keeps nothing
 phone-harness cloud ls                  # every running session (* = attached)
 phone-harness cloud phone               # the saved phone: stored / running / saving
@@ -153,22 +154,30 @@ phone-harness cloud stop                # ends billing and saves the phone; retu
 
 ## Cloud iPhone
 
-`phone-harness cloud start --iphone` starts the iPhone assigned to this
-account. The service decides whether the account has one. From then on the
-helpers drive it over HTTPS: every op is a POST to the host, screenshots
+`phone-harness cloud start --iphone` asks the service for `platform: ios`,
+`kind: device` (both together; this is not the Android default). From then on
+the helpers drive it over HTTPS: every op is a POST to the host, screenshots
 come back as PNG bytes, and this machine needs no adb, no shell, and no Mac.
 It is the user's own phone, kept between sessions. `cloud stop` ends billing
 and returns at once; the phone keeps its own data, so there is no Android-style
-disk save to wait on.
+disk save to wait on. An Android session can stay up beside it: `cloud use SID`
+switches which one the helpers drive.
 
-Length, billing, and the watch link are the **Cloud phones** commands above.
-A rental is short — default 15 minutes, cap 30 (`cloud.minutes`,
-`cloud.max_minutes`) — and it bills by the minute. `phone-harness cloud` and
-`cloud ls` show the time left (`*` marks the session the helpers are attached
-to). `cloud watch --print` prints the live-view link. `cloud use SID` attaches
-to a session that is already running. `cloud start --iphone` reuses a session
-this machine is already attached to, and starts another when it is not. Stop
-when the user is done, and say that you did.
+Length and the watch link are the **Cloud phones** commands above.
+The CLI sends a length on every start — default 15 minutes, cap 30
+(`cloud.minutes`, `cloud.max_minutes`) — via `--minutes N` or `--timeout`
+(`90s`, `15m`). That is longer than the service's own 300s default, which
+applies only when a client omits the length. An iPhone session reports
+`billing_mode: disabled`. `phone-harness cloud` and `cloud ls` show the time
+left (`*` marks the session the helpers are attached to). `cloud watch --print`
+prints the live-view link.
+`cloud use SID` attaches to a session that is already running. `cloud start
+--iphone` reuses an iPhone this machine is already attached to. When `GET /me`
+lists more than one granted iPhone, pass `--device ID` (the `id` on
+`available`); with no id, a terminal asks and anything else gets the list and
+stops. One granted iPhone needs no `--device`. If that phone is already
+running, the error names `cloud use SID` and `cloud stop SID`. Stop when the
+user is done, and say that you did.
 
 Run scripts as plain `phone-harness`. `PHONE_HARNESS_PLATFORM=...` selects a
 local backend and skips the attached cloud phone.
@@ -197,10 +206,18 @@ OCR on the host, taps in screen points.
   `{x:0, y:0, w:750, h:1334, id:"iphone"}` while its `screenshot()` PNGs were
   576×1024. Use `tap_image_point()` for a PNG pixel once `screen_info()`
   returns `img_px`. Otherwise tap an OCR centre.
-- **`ui()` and `back()` raise Unsupported.** `ops()` for this phone has no
-  `tree` and no `nav.back` (`supports('tree')` is false; the message is
-  `this cloud phone cannot 'tree'`). `home()` is the Home button. `shell()`
-  is Unsupported. For any other op, trust `ops()`.
+- **`ui()`, `back()`, and `current_app()` raise Unsupported on a live cloud
+  iPhone.** The host's vocabulary is `screen.capture`, `screen.bounds`,
+  `screen.require`, `screen.text`, `screen.text_pixels`, `input.tap`,
+  `input.press`, `input.drag`, `input.scroll`, `input.keys`, `input.text`,
+  `nav.home`, `nav.back`, `nav.recents`, `apps.launch`, `apps.current`,
+  `apps.list`, `session.state`, `session.require`, `session.refocus`,
+  `session.detail`, `focus.probe`, `focus.diff`, `tree`, `raw`. A live iPhone
+  answers `tree`, `nav.back`, and `apps.current` with HTTP 400
+  `{"unsupported": true}`, which the client raises as `Unsupported`
+  (`supports('tree')` is false; `ui()` says `this cloud phone cannot 'tree'`).
+  `home()` is the Home button. `shell()` is Unsupported. Trust `ops()` when
+  the host's list differs.
 - **Confirm `open_app`.** It sends `apps.launch` (the client allows it up to
   90s) and can return with the app still not in front. Check with `ocr()` or
   a screenshot. If it missed, `home()` and tap the icon. `tap_icon()` in

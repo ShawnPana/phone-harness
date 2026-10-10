@@ -43,6 +43,9 @@ It also offers a cloud Android — the same helpers with nothing to pair, and
 the first 100 minutes free — so an iPhone user can test on Android too.
 `phone-harness --doctor` checks the chain. Details in [install.md](install.md).
 
+**Hermes Agent:** `hermes plugins install ShawnPana/phone-harness/integrations/hermes`
+adds a `phone_exec` tool and this skill. See [integrations/hermes](integrations/hermes/README.md).
+
 ## Usage
 
 ```bash

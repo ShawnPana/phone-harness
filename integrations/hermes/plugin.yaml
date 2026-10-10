@@ -1,0 +1,31 @@
+name: phone-harness
+version: 0.1.0
+manifest_version: 2
+description: Drive a real phone from Hermes with one phone_exec tool (iPhone via iPhone Mirroring, Android over adb, or a cloud phone)
+author: Shawn Pana
+license: MIT
+homepage: https://phone-harness.com
+tags: [phone, iphone, android, automation]
+provides_tools:
+  - phone_exec
+provides_hooks:
+  - pre_tool_call
+python_dependencies:
+  - "phone-harness>=0.3,<0.4"
+config_schema:
+  platform:
+    type: str
+    choices: [auto, ios, android]
+    default: auto
+    label: Phone
+    description: "auto lets phone-harness choose (an attached cloud phone, else its default). ios or android drives the phone on this machine on purpose."
+  telemetry:
+    type: bool
+    default: false
+    label: Share anonymous usage with phone-harness
+    description: "Off: scripts run with PHONE_HARNESS_TELEMETRY=0. On: phone-harness's own telemetry setting applies."
+  agent_workspace:
+    type: str
+    default: ""
+    label: Agent workspace
+    description: "Folder with agent_helpers.py, passed as PH_AGENT_WORKSPACE. Empty: ~/.phone-harness/agent-workspace if that checkout exists, else a folder in Hermes's plugin data."

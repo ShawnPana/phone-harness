@@ -91,7 +91,13 @@ def _doctor_ios():
             os.unlink(path)
 
     from . import ios
-    state = ios.IPhone().send("session.state")
+    try:
+        state = ios.IPhone().send("session.state")
+    except RuntimeError as e:
+        # session.state captures the window as well, so a capture that fails
+        # above raises here; report it and let the verdict print.
+        _check("session state", False, str(e)[:120], fatal=False)
+        return
     _check(f"session state: {state}", state == "ready",
            "an interstitial is up (iPhone in Use / Connect / Mac Locked) — "
            "clear it on the Mac; lock the iPhone if it says in use", fatal=False)

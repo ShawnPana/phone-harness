@@ -10,7 +10,7 @@ from pathlib import Path
 
 def _check(label, ok, hint="", fatal=True):
     """Print a check; a fatal failure is remembered for the verdict."""
-    mark = "PASS" if ok else "FAIL"
+    mark = "PASS" if ok else "FAIL" if fatal else "WARN"
     print(f"  [{mark}] {label}" + (f" — {hint}" if not ok and hint else ""))
     if not ok and fatal:
         _failures.append(label)
@@ -40,14 +40,14 @@ def run_doctor(platform=None):
 def _doctor_ios():
     try:
         import Quartz, Vision, AppKit  # noqa: F401
-        _check("pyobjc frameworks (Quartz, Vision, AppKit)", True)
+        from ApplicationServices import AXIsProcessTrusted
+        _check("pyobjc frameworks (Quartz, Vision, AppKit, ApplicationServices)", True)
     except ImportError as e:
         _check("pyobjc frameworks", False,
                f"pip install pyobjc-framework-Quartz pyobjc-framework-Vision "
-               f"pyobjc-framework-Cocoa ({e})")
+               f"pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices ({e})")
         return
 
-    from ApplicationServices import AXIsProcessTrusted
     _check("Accessibility permission (taps & keystrokes)", AXIsProcessTrusted(),
            "System Settings > Privacy & Security > Accessibility: enable your terminal")
 

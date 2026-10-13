@@ -5,32 +5,78 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 
-def _check(label, ok, hint="", fatal=True):
-    """Print a check; a fatal failure is remembered for the verdict."""
-    mark = "PASS" if ok else "FAIL"
-    print(f"  [{mark}] {label}" + (f" — {hint}" if not ok and hint else ""))
-    if not ok and fatal:
-        _failures.append(label)
-    return ok
+@dataclass
+class Step:
+    """One `--doctor` check.
+
+    `fn` takes no arguments and returns `None` (this step doesn't apply
+    right now — print nothing), a 3-tuple `(label, ok, hint)`, or a
+    4-tuple `(label, ok, hint, fatal)` that overrides this Step's own
+    `fatal` for this particular result.
+    """
+    fn: Callable[[], object]
+    fatal: bool = True
+    stop_if_failed: bool = False
 
 
-_failures = []
+def run_steps(steps):
+    """Run a `--doctor` check ladder in order.
+
+    Args:
+        steps: The `Step`s to run, in the order they should be checked.
+
+    Returns:
+        The labels of every step that failed with `fatal` true — this is
+        what the overall doctor verdict is based on.
+    """
+    failures = []
+    for step in steps:
+        try:
+            result = step.fn()
+        except Exception as e:
+            # A step whose body crashes (a bad import, an unguarded
+            # attribute access) is exactly what a doctor check exists to
+            # report — never let it become an uncaught traceback.
+            result = (getattr(step.fn, "__name__", "check"), False,
+                       f"unexpected error: {e}")
+        if result is None:
+            continue
+        label, ok, hint, *rest = result
+        fatal = rest[0] if rest else step.fatal
+        mark = "PASS" if ok else ("FAIL" if fatal else "WARN")
+        print(f"  [{mark}] {label}" + (f" — {hint}" if not ok and hint else ""))
+        if not ok and fatal:
+            failures.append(label)
+        if not ok and step.stop_if_failed:
+            break
+    return failures
 
 
 def run_doctor(platform=None):
+    """Entry point for `phone-harness --doctor [ios|android]`.
+
+    Runs the ios or android check ladder and prints a final verdict line.
+
+    Args:
+        platform: `"ios"` or `"android"` to check a specific phone type;
+            `None` to check whichever the config default is set to.
+
+    Returns:
+        Process exit code: 0 if every fatal check passed, 1 otherwise.
+    """
     from . import config
     platform = (platform or config.get("platform")).lower()
+    # Note when the caller asked for a platform other than the configured
+    # default, so the output is clear about which one is "normal" for them.
     print(f"phone-harness doctor — {platform}"
           f"{'' if platform == config.get('platform') else '  (default is ' + config.get('platform') + ')'}\n")
-    _failures.clear()
-    if platform == "android":
-        _doctor_android()
-    else:
-        _doctor_ios()
-    ok = not _failures
+    failures = _doctor_android() if platform == "android" else _doctor_ios()
+    ok = not failures
     print("\nall clear" if ok else "\nfix the FAILs above, then re-run")
     if not ok:
         print(CLOUD_HINT)
@@ -67,111 +113,219 @@ def _host_app():
 # --- iPhone: pyobjc -> permissions -> Mirroring -> capture -> OCR -----------
 
 def _doctor_ios():
-    try:
-        import Quartz, Vision, AppKit  # noqa: F401
-        _check("pyobjc frameworks (Quartz, Vision, AppKit)", True)
-    except ImportError as e:
-        _check("pyobjc frameworks", False,
-               f"pip install pyobjc-framework-Quartz pyobjc-framework-Vision "
-               f"pyobjc-framework-Cocoa ({e})")
-        return
+    """Walk the iPhone check ladder, stopping early once a step blocks the
+    next one from meaning anything (e.g. no window -> nothing to capture).
 
-    from ApplicationServices import AXIsProcessTrusted
-    host = _host_app()
-    _check("Accessibility permission (taps & keystrokes)", AXIsProcessTrusted(),
-           f"System Settings > Privacy & Security > Accessibility: turn on {host}")
+    Ladder: pyobjc installed -> Accessibility + Screen Recording permissions
+    -> Mirroring app installed/running -> mirroring window found -> a test
+    window capture -> OCR on that capture -> iPhone session state.
 
-    import Quartz as Q
-    _check("Screen Recording permission (seeing the phone)",
-           bool(Q.CGPreflightScreenCaptureAccess()),
-           f"System Settings > Privacy & Security > Screen Recording: turn on {host}, "
-           f"then quit and reopen it")
+    Returns:
+        The labels of every fatal check that failed.
+    """
+    ctx = {}
 
-    from . import mirror
-    _check(f"{mirror.APP_NAME} installed", Path(mirror.APP_PATH).exists(),
-           "requires macOS Sequoia+ with a paired iPhone")
+    def check_pyobjc():
+        try:
+            # ApplicationServices lives here, in the same guarded import as
+            # the other three frameworks, so a missing module is a FAIL
+            # line instead of an uncaught crash on the next statement
+            # (GitHub issue #4).
+            import Quartz, Vision, AppKit, ApplicationServices  # noqa: F401
+        except ImportError as e:
+            return ("pyobjc frameworks", False,
+                    f"pip install pyobjc-framework-Quartz pyobjc-framework-Vision "
+                    f"pyobjc-framework-Cocoa ({e})")
+        return ("pyobjc frameworks (Quartz, Vision, AppKit, ApplicationServices)",
+                 True, "")
 
-    running = mirror.running_app() is not None
-    _check(f"{mirror.APP_NAME} running", running,
-           "will auto-launch on first use — not fatal", fatal=False)
+    def check_accessibility():
+        from ApplicationServices import AXIsProcessTrusted
+        ok = AXIsProcessTrusted()
+        # Only walk the process tree for a hint when it'll be printed.
+        hint = "" if ok else (
+            f"System Settings > Privacy & Security > Accessibility: turn on {_host_app()}")
+        return ("Accessibility permission (taps & keystrokes)", ok, hint)
 
-    win = mirror.find_window()
-    _check("mirroring window found", win is not None,
-           "open iPhone Mirroring once manually to pair the phone")
-    if not win:
-        return
+    def check_screen_recording():
+        import Quartz as Q
+        ok = bool(Q.CGPreflightScreenCaptureAccess())
+        hint = "" if ok else (
+            f"System Settings > Privacy & Security > Screen Recording: turn on {_host_app()}, "
+            f"then quit and reopen it")
+        return ("Screen Recording permission (seeing the phone)", ok, hint)
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-        path = f.name
-    try:
-        # Never crash here: a missing Screen Recording grant is exactly what
-        # this check exists to report.
+    def check_mirroring_installed():
+        from . import mirror
+        return (f"{mirror.APP_NAME} installed", Path(mirror.APP_PATH).exists(),
+                "requires macOS Sequoia+ with a paired iPhone")
+
+    def check_mirroring_running():
+        from . import mirror
+        # Not fatal: the app auto-launches on first real use.
+        return (f"{mirror.APP_NAME} running", mirror.running_app() is not None,
+                "will auto-launch on first use — not fatal")
+
+    def check_window():
+        from . import mirror
+        win = mirror.find_window()
+        ctx["win"] = win
+        return ("mirroring window found", win is not None,
+                "open iPhone Mirroring once manually to pair the phone")
+
+    def check_capture():
+        win = ctx["win"]
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            path = f.name
+        # Never crash here: a missing Screen Recording grant is exactly
+        # what this check exists to report.
         r = subprocess.run(["screencapture", "-x", "-o", "-l", str(win["id"]), path],
                            capture_output=True)
         size = os.path.getsize(path) if os.path.exists(path) else 0
+        # A capture with no Screen Recording grant still "succeeds" but
+        # writes a near-empty/blank image, so size is the real signal.
         good = r.returncode == 0 and size > 20_000
-        _check(f"window capture works ({size} bytes)", good,
-               "capture failed or is blank — Screen Recording permission "
-               "needs a terminal restart to take effect")
         if good:
+            ctx["capture_path"] = path  # handed to check_ocr; cleaned up there
+        elif os.path.exists(path):
+            os.unlink(path)
+        return (f"window capture works ({size} bytes)", good,
+                "capture failed or is blank — Screen Recording permission "
+                "needs a terminal restart to take effect")
+
+    def check_ocr():
+        path = ctx.get("capture_path")
+        if not path:
+            # Nothing to OCR — print nothing rather than a misleading FAIL.
+            return None
+        win = ctx["win"]
+        try:
             from . import ocr
             n = len(ocr.recognize(path, win))
-            _check(f"Vision OCR works ({n} text boxes)", True)
-    finally:
-        if os.path.exists(path):
-            os.unlink(path)
+            return (f"Vision OCR works ({n} text boxes)", True, "")
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
 
-    from . import ios
-    state = ios.IPhone().send("session.state")
-    _check(f"session state: {state}", state == "ready",
-           "an interstitial is up (iPhone in Use / Connect / Mac Locked) — "
-           "clear it on the Mac; lock the iPhone if it says in use", fatal=False)
+    def check_session_state():
+        from . import ios
+        state = ios.IPhone().send("session.state")
+        # Not fatal: an interstitial (locked Mac, "iPhone in Use", etc.) is
+        # a transient state the user clears themselves, not a setup defect.
+        return (f"session state: {state}", state == "ready",
+                "an interstitial is up (iPhone in Use / Connect / Mac Locked) — "
+                "clear it on the Mac; lock the iPhone if it says in use")
+
+    return run_steps([
+        Step(check_pyobjc, stop_if_failed=True),
+        Step(check_accessibility),
+        Step(check_screen_recording),
+        Step(check_mirroring_installed),
+        Step(check_mirroring_running, fatal=False),
+        Step(check_window, stop_if_failed=True),
+        Step(check_capture),
+        Step(check_ocr),
+        Step(check_session_state, fatal=False),
+    ])
 
 
 # --- Android: adb -> a phone -> authorised -> awake -> tree ------------------
 
+# Pick the right install command for this OS, falling back to a generic
+# Linux package-manager hint for anything that isn't darwin/win32.
 _ADB_INSTALL = {"darwin": "brew install android-platform-tools",
                 "win32": "winget install Google.PlatformTools"}.get(sys.platform, "apt install adb (or your distro's android-tools)")
 _SCRCPY_INSTALL = {"darwin": "brew install scrcpy", "win32": "winget install Genymobile.scrcpy"}.get(sys.platform, "apt install scrcpy")
 
 
 def _doctor_android():
-    from . import config
-    adb = str(config.get("android.adb"))
-    if not shutil.which(adb):
-        _check(f"adb found ({adb})", False,
-               _ADB_INSTALL + ", or set android.adb to the binary")
-        return
-    _check(f"adb found ({shutil.which(adb)})", True)
-    _check("scrcpy found (optional: live mirror during `android awake`)",
-           bool(shutil.which("scrcpy")), _SCRCPY_INSTALL + " — not required", fatal=False)
+    """Walk the Android check ladder, stopping early once a step blocks the
+    next one from meaning anything (e.g. no adb -> no phone to talk to).
 
-    from . import android
-    phone = android.Android()
-    state = phone.send("session.state")
-    hints = {
-        "no-device": "plug in with USB debugging on and tap Allow, or "
-                     "Wireless debugging + `phone-harness android pair CODE`",
-        "unauthorized": "tap Allow on the phone's 'Allow USB debugging?' prompt",
-        "offline": "unplug/replug, or toggle Wireless debugging off and on",
-        "locked": "unlock the phone (`phone-harness android awake` keeps it so)",
-        "no-adb": "adb did not answer",
-    }
-    _check(f"a phone is reachable and ready (state: {state})",
-           state in ("ready", "locked"), hints.get(state, ""))
-    if state == "locked":
-        _check("phone unlocked", False, hints["locked"], fatal=False)
-    if state not in ("ready",):
-        return
+    Ladder: adb found -> (optional) scrcpy found -> a phone reachable and
+    in a ready/locked state -> screen bounds readable -> accessibility
+    tree readable -> list of remembered phones.
 
-    b = phone.send("screen.bounds")
-    label = android._phone_label(b["id"]) if b else "?"
-    _check(f"talking to {label} ({b['id']}), screen {b['w']}x{b['h']}", bool(b))
-    try:
-        n = len(phone.send("tree"))
-        _check(f"accessibility tree readable ({n} nodes)", n > 0)
-    except RuntimeError as e:
-        _check("accessibility tree readable", False, str(e)[:120], fatal=False)
-    reg = config.devices_of("android")
-    _check(f"remembered phones: {', '.join(reg['phones']) or 'none'}; primary: "
-           f"{reg['primary'] or 'none'}", True)
+    Returns:
+        The labels of every fatal check that failed.
+    """
+    ctx = {}
+
+    def check_adb():
+        from . import config
+        adb = str(config.get("android.adb"))
+        found = shutil.which(adb)
+        if not found:
+            # No adb binary means every later check has nothing to talk to.
+            return (f"adb found ({adb})", False,
+                    _ADB_INSTALL + ", or set android.adb to the binary")
+        return (f"adb found ({found})", True, "")
+
+    def check_scrcpy():
+        return ("scrcpy found (optional: live mirror during `android awake`)",
+                bool(shutil.which("scrcpy")), _SCRCPY_INSTALL + " — not required")
+
+    def check_reachable():
+        from . import android
+        phone = android.Android()
+        ctx["phone"] = phone
+        state = phone.send("session.state")
+        ctx["state"] = state
+        # Human-readable fix for each adb/device state the backend reports.
+        hints = {
+            "no-device": "plug in with USB debugging on and tap Allow, or "
+                         "Wireless debugging + `phone-harness android pair CODE`",
+            "unauthorized": "tap Allow on the phone's 'Allow USB debugging?' prompt",
+            "offline": "unplug/replug, or toggle Wireless debugging off and on",
+            "locked": "unlock the phone (`phone-harness android awake` keeps it so)",
+            "no-adb": "adb did not answer",
+        }
+        ctx["hints"] = hints
+        # "locked" counts as reachable (adb still works on a locked phone);
+        # check_unlocked below reports that case on its own line, and the
+        # gate below the first run_steps() call stops before screen/tree.
+        return (f"a phone is reachable and ready (state: {state})",
+                state in ("ready", "locked"), hints.get(state, ""))
+
+    def check_unlocked():
+        if ctx.get("state") != "locked":
+            return None  # only relevant when the phone is actually locked
+        return ("phone unlocked", False, ctx["hints"]["locked"], False)  # non-fatal
+
+    def check_screen_bounds():
+        from . import android
+        b = ctx["phone"].send("screen.bounds")
+        ctx["bounds"] = b
+        label = android._phone_label(b["id"]) if b else "?"
+        return (f"talking to {label} ({b['id']}), screen {b['w']}x{b['h']}", bool(b), "")
+
+    def check_tree():
+        try:
+            n = len(ctx["phone"].send("tree"))
+            return (f"accessibility tree readable ({n} nodes)", n > 0, "")
+        except RuntimeError as e:
+            # Some screens (constantly animating) make uiautomator refuse
+            # the tree; that's a known limitation, not a setup problem.
+            return ("accessibility tree readable", False, str(e)[:120], False)
+
+    def check_remembered_phones():
+        from . import config
+        reg = config.devices_of("android")
+        return (f"remembered phones: {', '.join(reg['phones']) or 'none'}; primary: "
+                f"{reg['primary'] or 'none'}", True, "")
+
+    failures = run_steps([
+        Step(check_adb, stop_if_failed=True),
+        Step(check_scrcpy, fatal=False),
+        Step(check_reachable),
+        Step(check_unlocked, fatal=False),
+    ])
+    if ctx.get("state") != "ready":
+        # Anything other than fully "ready" (locked, unauthorized, etc.)
+        # means screen/tree calls below would just fail too.
+        return failures
+    return failures + run_steps([
+        Step(check_screen_bounds),
+        Step(check_tree),
+        Step(check_remembered_phones),
+    ])

@@ -87,14 +87,27 @@ def _doctor_ios():
     """Walk the iPhone check ladder, stopping early once a step blocks the
     next one from meaning anything (e.g. no window -> nothing to capture).
 
-    Ladder: pyobjc installed -> Accessibility + Screen Recording permissions
-    -> Mirroring app installed/running -> mirroring window found -> a test
-    window capture -> OCR on that capture -> iPhone session state.
+    Ladder: running on macOS -> pyobjc installed -> Accessibility + Screen
+    Recording permissions -> Mirroring app installed/running -> mirroring
+    window found -> a test window capture -> OCR on that capture ->
+    iPhone session state.
 
     Returns:
         The labels of every fatal check that failed.
     """
     ctx = {}
+
+    def check_host_os():
+        if sys.platform != "darwin":
+            # Off macOS, the pyobjc import below would fail too, but with a
+            # pip-install hint that can't actually work (pyobjc only ships
+            # macOS wheels) — this matches transport.py's existing guard
+            # instead, so the user gets the real answer.
+            return ("running on macOS", False,
+                    "iPhone control needs macOS (it drives the iPhone Mirroring app); "
+                    "on this machine use Android: PHONE_HARNESS_PLATFORM=android "
+                    "or `phone-harness config set platform android`")
+        return ("running on macOS", True, "")
 
     def check_pyobjc():
         try:
@@ -183,6 +196,7 @@ def _doctor_ios():
                 "clear it on the Mac; lock the iPhone if it says in use")
 
     return run_steps([
+        Step(check_host_os, stop_if_failed=True),
         Step(check_pyobjc, stop_if_failed=True),
         Step(check_accessibility),
         Step(check_screen_recording),

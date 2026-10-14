@@ -123,13 +123,18 @@ class IPhone(Backend):
     # No _nav_back: iOS has no system Back button.
 
     def _apps_launch(self, name):
-        """Spotlight (Cmd+3): type the name, let results populate, commit."""
+        """Replace Spotlight's query literally, then request the top result.
+
+        The returned name is the request, not proof that an app opened.
+        """
         self.mirror.press("cmd+3")
         _sleep(0.9)
-        # Keystrokes on purpose: Spotlight is the load-bearing path behind
-        # open_app and demonstrably works this way. Move it to paste only once
-        # that path has miles on it.
-        self.mirror.type_text(name, keystrokes=True)
+        self.mirror.press("cmd+a")
+        # Key events run through the active input source. A Korean IME can
+        # turn "Settings" into Hangul, sending Return to the wrong result.
+        # Use the same literal paste path as type_text(), replacing any old
+        # search that Spotlight restored.
+        self.mirror.type_text(name)
         _sleep(1.2)
         self.mirror.press("return")
         return name

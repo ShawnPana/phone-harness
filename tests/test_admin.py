@@ -8,6 +8,32 @@ SRC = str(Path(__file__).resolve().parents[1] / "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
+# Same technique as tests/test_ios_session.py: on a machine without pyobjc
+# (e.g. the Linux/Windows CI runners), stub the frameworks so _doctor_ios's
+# checks can still be exercised via mock.patch("Quartz.X", ..., create=True)
+# — that needs the module importable, stub or real.
+try:
+    import Quartz  # noqa: F401
+except ImportError:
+    import importlib.machinery
+    import types
+
+    class _LazyModule(types.ModuleType):
+        def __getattr__(self, name):
+            if name.startswith("__"):
+                raise AttributeError(name)
+            obj = type(name, (), {})
+            setattr(self, name, obj)
+            return obj
+
+    for _name in ("Quartz", "Vision", "Foundation", "AppKit",
+                  "ApplicationServices", "objc", "CoreFoundation"):
+        if _name in sys.modules:
+            continue
+        _mod = _LazyModule(_name)
+        _mod.__spec__ = importlib.machinery.ModuleSpec(_name, loader=None)
+        sys.modules[_name] = _mod
+
 import phone_harness.admin as admin  # noqa: E402
 from phone_harness.admin import Step, run_steps  # noqa: E402
 
@@ -87,6 +113,36 @@ class RunStepsControlFlow(unittest.TestCase):
         self.assertIn("ApplicationServices", out[0])
 
 
+class DoctorIosHostOsGuard(unittest.TestCase):
+    """_doctor_ios must refuse cleanly off macOS instead of letting the
+    pyobjc import fail with a pip-install hint that can't work there
+    (pyobjc only ships macOS wheels)."""
+
+    def test_off_macos_stops_before_the_pyobjc_check_with_a_clear_message(self):
+        out = []
+        with mock.patch("sys.platform", "linux"), \
+             mock.patch("builtins.print", side_effect=lambda s: out.append(s)):
+            failures = admin._doctor_ios()
+        self.assertEqual(failures, ["running on macOS"])
+        self.assertEqual(len(out), 1)
+        self.assertIn("[FAIL] running on macOS", out[0])
+        self.assertIn("needs macOS", out[0])
+
+    def test_on_macos_the_ladder_continues_past_this_check(self):
+        out = []
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
+             mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
+             mock.patch("phone_harness.mirror.APP_PATH", "/Applications/Mirroring.app"), \
+             mock.patch("phone_harness.mirror.APP_NAME", "Mirroring"), \
+             mock.patch("pathlib.Path.exists", return_value=True), \
+             mock.patch("phone_harness.mirror.running_app", return_value=object()), \
+             mock.patch("phone_harness.mirror.find_window", return_value=None), \
+             mock.patch("builtins.print", side_effect=lambda s: out.append(s)):
+            admin._doctor_ios()
+        self.assertTrue(any("[PASS] running on macOS" in l for l in out))
+
+
 class DoctorIosPyobjcGuard(unittest.TestCase):
     """GitHub issue #4, bug #1: a missing ApplicationServices import must
     report a FAIL, not crash _doctor_ios before the PASS line even makes
@@ -101,14 +157,15 @@ class DoctorIosPyobjcGuard(unittest.TestCase):
             return real_import(name, *a, **kw)
 
         out = []
-        with mock.patch("builtins.__import__", side_effect=fake_import), \
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("builtins.__import__", side_effect=fake_import), \
              mock.patch("builtins.print", side_effect=lambda s: out.append(s)):
             failures = admin._doctor_ios()
         self.assertEqual(len(failures), 1)
         self.assertIn("pyobjc frameworks", failures[0])
         self.assertTrue(any("[FAIL] pyobjc frameworks" in l for l in out))
-        # And nothing past the pyobjc check ran:
-        self.assertEqual(len(out), 1)
+        # Host-OS PASS, then pyobjc FAIL — nothing past that ran:
+        self.assertEqual(len(out), 2)
 
 
 class DoctorIosNonFatalTag(unittest.TestCase):
@@ -117,7 +174,8 @@ class DoctorIosNonFatalTag(unittest.TestCase):
 
     def test_mirroring_not_running_prints_warn_and_is_non_fatal(self):
         out = []
-        with mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
              mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
              mock.patch("phone_harness.mirror.APP_PATH", "/Applications/Mirroring.app"), \
              mock.patch("phone_harness.mirror.APP_NAME", "Mirroring"), \
@@ -137,7 +195,8 @@ class DoctorIosLadder(unittest.TestCase):
     def test_a_good_capture_runs_ocr_then_checks_session_state(self):
         win = {"id": 42}
         out = []
-        with mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
              mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
              mock.patch("phone_harness.mirror.APP_PATH", "/Applications/Mirroring.app"), \
              mock.patch("phone_harness.mirror.APP_NAME", "Mirroring"), \
@@ -160,7 +219,8 @@ class DoctorIosLadder(unittest.TestCase):
     def test_a_bad_capture_skips_ocr_but_still_checks_session_state(self):
         win = {"id": 42}
         out = []
-        with mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
              mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
              mock.patch("phone_harness.mirror.APP_PATH", "/Applications/Mirroring.app"), \
              mock.patch("phone_harness.mirror.APP_NAME", "Mirroring"), \
@@ -182,7 +242,8 @@ class DoctorIosLadder(unittest.TestCase):
 
     def test_no_window_stops_before_capture_and_session_state(self):
         out = []
-        with mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
+        with mock.patch("sys.platform", "darwin"), \
+             mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True, create=True), \
              mock.patch("Quartz.CGPreflightScreenCaptureAccess", return_value=True, create=True), \
              mock.patch("phone_harness.mirror.APP_PATH", "/Applications/Mirroring.app"), \
              mock.patch("phone_harness.mirror.APP_NAME", "Mirroring"), \

@@ -313,7 +313,8 @@ def _build_parser():
         description="Diagnose the phone the helpers would drive.",
     )
     doctor.add_argument("platform", nargs="?", metavar="ios|android",
-                        help="ios or android (default: the configured platform)")
+                        help="ios or android (default: the phone the helpers would "
+                             "drive, including an attached cloud iPhone)")
     doctor.add_argument("extra", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
 
     skill = sub.add_parser(

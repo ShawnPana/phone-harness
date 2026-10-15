@@ -56,8 +56,11 @@ That reaches the default phone. If it fails, use the sections below.
 - The default phone is `phone-harness config set platform ios|android`;
   `phone-harness config` shows every setting and where it came from;
   `PHONE_HARNESS_PLATFORM=android phone-harness …` overrides for one call.
-- `phone-harness --doctor` checks the default phone; `--doctor ios` or
-  `--doctor android` checks the other.
+- `phone-harness doctor` (and `--doctor`) checks the phone the helpers
+  would drive. With no platform, an attached cloud iPhone is checked over
+  its control URL (`screen.text`, `screen.capture`, `screen.bounds`) and
+  adb is not required. `doctor android`, `--doctor ios`, and
+  `PHONE_HARNESS_PLATFORM` still check that local phone.
 - Re-run the skill registration after `phone-harness update` so the
   agent's copy matches the code. `phone-harness update` does the upgrade:
   `uv tool upgrade phone-harness` when this is a uv tool, `git pull

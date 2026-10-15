@@ -1,5 +1,11 @@
-"""Diagnostics: `phone-harness --doctor` walks the ladder for the phone the
-helpers would drive — the config default, or `--doctor ios|android`."""
+"""Diagnostics: `phone-harness doctor` walks the ladder for the phone the
+helpers would drive.
+
+With no platform argument, that is the same choice as connect(): an attached
+cloud iPhone (a control link) is checked over HTTPS — the control URL, then
+screen.text, screen.capture, and screen.bounds — and adb is not consulted.
+`doctor android` and PHONE_HARNESS_PLATFORM still check the local phone.
+"""
 import os
 import shutil
 import subprocess
@@ -20,19 +26,105 @@ def _check(label, ok, hint="", fatal=True):
 _failures = []
 
 
+def _doctor_target(platform):
+    """Which phone to check, using the same choice as connect().
+
+    An explicit platform (`doctor android`) or PHONE_HARNESS_PLATFORM names
+    the local phone. With neither, an attached cloud iPhone control link is
+    the phone the helpers drive, over HTTPS. Returns ("cloud-iphone", session)
+    or ("android"|"ios", None).
+    """
+    from . import config
+    if platform is None:
+        platform, source = config.lookup("platform")
+        if not str(source).startswith("env:"):
+            from . import cloud
+            rented = cloud.attached()
+            if rented and rented["link"]["kind"] == "control":
+                return "cloud-iphone", rented
+            if rented:
+                platform = "android"
+    name = str(platform).lower()
+    if name == "android":
+        return "android", None
+    return "ios", None
+
+
 def run_doctor(platform=None):
     from . import config
-    platform = (platform or config.get("platform")).lower()
-    print(f"phone-harness doctor — {platform}"
-          f"{'' if platform == config.get('platform') else '  (default is ' + config.get('platform') + ')'}\n")
+    kind, session = _doctor_target(platform)
+    label = "cloud iphone" if kind == "cloud-iphone" else kind
+    default = config.get("platform")
+    print(f"phone-harness doctor — {label}"
+          f"{'' if label == default else '  (default is ' + str(default) + ')'}\n")
     _failures.clear()
-    if platform == "android":
+    if kind == "cloud-iphone":
+        _doctor_cloud_iphone(session)
+    elif kind == "android":
         _doctor_android()
     else:
         _doctor_ios()
     ok = not _failures
     print("\nall clear" if ok else "\nfix the FAILs above, then re-run")
     return 0 if ok else 1
+
+
+def _short(exc):
+    return str(exc).splitlines()[0][:160]
+
+
+def _doctor_cloud_iphone(session):
+    """The attached cloud iPhone connect() would drive. HTTPS only: no adb."""
+    from .remote import Remote
+    link = session["link"]
+    url = str(link.get("url") or "")
+    phone = Remote(url, link.get("token") or "")
+    try:
+        phone._call("GET", "/ops", timeout=20)
+    except Exception as exc:
+        _check(f"control URL reachable ({url})", False, _short(exc)
+               or "the control URL did not answer")
+        return
+    _check(f"control URL reachable ({url})", True)
+    _check_cloud_text(phone)
+    _check_cloud_capture(phone)
+    _check_cloud_bounds(phone)
+
+
+def _check_cloud_text(phone):
+    try:
+        boxes = phone.send("screen.text")
+    except Exception as exc:
+        _check("screen.text", False, _short(exc))
+        return
+    ok = isinstance(boxes, list)
+    n = len(boxes) if ok else 0
+    _check(f"screen.text ({n} text boxes)", ok, "screen.text did not return text boxes")
+
+
+def _check_cloud_capture(phone):
+    path = None
+    try:
+        path, bounds = phone.send("screen.capture")
+        size = os.path.getsize(path) if path and os.path.exists(path) else 0
+        ok = size > 0 and isinstance(bounds, dict)
+        _check(f"screen.capture ({size} bytes)", ok, "capture failed or is empty")
+    except Exception as exc:
+        _check("screen.capture", False, _short(exc))
+    finally:
+        if path and os.path.exists(path):
+            os.unlink(path)
+
+
+def _check_cloud_bounds(phone):
+    try:
+        bounds = phone.send("screen.bounds")
+    except Exception as exc:
+        _check("screen.bounds", False, _short(exc))
+        return
+    ok = isinstance(bounds, dict) and bounds.get("w") and bounds.get("h")
+    shown = f"{bounds.get('w')}x{bounds.get('h')}" if isinstance(bounds, dict) else "missing"
+    _check(f"screen.bounds ({shown})", bool(ok), "screen.bounds did not return a screen size")
 
 
 # --- iPhone: pyobjc -> permissions -> Mirroring -> capture -> OCR -----------

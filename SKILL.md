@@ -280,7 +280,10 @@ Length, billing, `ls`, `watch`, and `stop` are the **Cloud phones** commands
 above. An iPhone session reports `billing_mode: disabled`. Run scripts as
 plain `phone-harness` (with `--session` when you must pin one).
 `PHONE_HARNESS_PLATFORM=...` selects a local backend and skips the attached
-cloud phone.
+cloud phone. `phone-harness doctor` with no platform checks the attached
+cloud iPhone: the control URL, then `screen.text`, `screen.capture`, and
+`screen.bounds`. It does not look for adb. `doctor android` and
+`PHONE_HARNESS_PLATFORM` still check the local phone.
 
 The mirroring section describes a Mac window. This phone is the HTTPS path.
 

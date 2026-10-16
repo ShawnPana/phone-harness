@@ -4,9 +4,11 @@ transport is faked and the clock does not tick.
 
     python -m unittest tests.test_ios_session
 """
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
@@ -474,6 +476,43 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("iPhone in Use", str(cm.exception))
         self.assertIn("screenshot()", str(cm.exception))
         self.assertEqual(p.mirror.actions, ["capture"])
+
+
+@unittest.skipIf(ios is None, "pyobjc not installed")
+class BackgroundFallback(unittest.TestCase):
+    """Falling back to the mirror backend stays silent, but says why when asked."""
+
+    def setUp(self):
+        self.addCleanup(setattr, ios, "background_unavailable",
+                        ios.background_unavailable)
+        ios.background_unavailable = None
+
+    def _load(self, env, background_raises=None):
+        real = ios.importlib.import_module
+
+        def fake(name, package=None):
+            if name == ".background" and background_raises is not None:
+                raise background_raises
+            return real(name, package)
+
+        with mock.patch.dict(os.environ, env), \
+                mock.patch.object(ios.importlib, "import_module", fake):
+            return ios._load_transport()
+
+    def test_skylight_failure_is_recorded_not_raised(self):
+        mod, background = self._load(
+            {"PHONE_HARNESS_BACKGROUND": "1"},
+            background_raises=OSError("SkyLight.framework: image not found"))
+        self.assertFalse(background)
+        self.assertTrue(mod.__name__.endswith("mirror"))
+        self.assertTrue(ios.background_unavailable.startswith("OSError:"))
+        self.assertIn("SkyLight.framework", ios.background_unavailable)
+
+    def test_opting_out_is_not_reported_as_a_failure(self):
+        mod, background = self._load({"PHONE_HARNESS_BACKGROUND": "0"})
+        self.assertFalse(background)
+        self.assertTrue(mod.__name__.endswith("mirror"))
+        self.assertIsNone(ios.background_unavailable)
 
 
 if __name__ == "__main__":

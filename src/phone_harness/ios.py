@@ -28,19 +28,29 @@ from . import ocr as _vision
 from .transport import Backend
 
 
+# Why the background backend is not in use, for the doctor to report. None
+# means nothing was given up: either background loaded, or it was never asked
+# for. The fallback itself is silent on purpose — a degraded backend still
+# drives the phone, so it must not break a run — but silent and unknowable
+# are different things, and losing the window-stays-back property without
+# being told is the surprise worth printing.
+background_unavailable = None
+
+
 def _load_transport():
     """background drives iPhone Mirroring without ever taking the window to the
     front (SkyLight event records) and is the default: not covering the user's
     screen is what you want unless something is broken. Its private SkyLight
     symbols are not guaranteed across macOS builds, so fall back rather than
     leaving the harness unusable."""
+    global background_unavailable
     want_bg = os.environ.get("PHONE_HARNESS_BACKGROUND", "1").lower() not in (
         "0", "false", "no")
     if want_bg:
         try:
             return importlib.import_module(".background", __package__), True
-        except Exception:
-            pass
+        except Exception as exc:
+            background_unavailable = f"{type(exc).__name__}: {exc}"[:300]
     return importlib.import_module(".mirror", __package__), False
 
 

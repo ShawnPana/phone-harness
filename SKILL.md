@@ -45,7 +45,7 @@ no hardware and is always the fallback.
 - `long_press(x, y, duration=0.8)` - Press and hold a point.
 - `type_text(text, delay=0.03, keystrokes=False)` - Type into the focused field.
 - `press(combo)` - Press a key, such as `press("enter")`.
-- `open_app(name)` - Launch an app and return the app id that launched.
+- `open_app(name)` - Request an app launch; return an Android app id or the requested name on iPhone Mirroring. Verify the resulting screen.
 - `swipe(direction, distance=0.4, at=None)` - Flick. `direction` is finger motion: `"up"`, `"down"`, `"left"`, or `"right"`.
 - `scroll(direction="down", amount=0.3, at=None)` - Scroll. `direction` is the content to reveal: `"down"`, `"up"`, `"left"`, or `"right"`.
 - `scroll_screen(direction="down", amount=0.6, settle=2.5, moved_thresh=None, at=None)` - One scroll, then the text on screen before and after.
@@ -479,7 +479,10 @@ events into it for hands. All coordinates are global macOS screen points.
   and carousels, which a scroll cannot do. (Breaking change: `scroll` used to
   take finger motion too, so the old `scroll("up")` is today's
   `scroll("down")`. `swipe` is unchanged.)
-- `open_app("Notes")` goes through Spotlight.
+- `open_app("Notes")` replaces Spotlight's search with a literal paste so
+  the active input language cannot rewrite the app name. It returns the
+  requested name, not a verified app identity. Confirm the app's own screen
+  before the next action; a paste dialog or search results can also settle.
 - **Home-Screen labels are not tap targets.** `tap_text("Weather")` hits the
   label and nothing happens; the icon is ~35 points above it. Use
   `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works

@@ -569,7 +569,12 @@ def app_switcher():
 
 
 def open_app(name):
-    """Launch an app. Returns the app id that was launched."""
+    """Request an app launch and wait for the screen to settle.
+
+    Returns the backend's launch result: an app id on Android, the requested
+    search name on iPhone Mirroring. Verify the resulting screen; a settled
+    Spotlight result or paste dialog is not proof that the app opened.
+    """
     result = send("apps.launch", name=name)
     wait_stable()
     return result

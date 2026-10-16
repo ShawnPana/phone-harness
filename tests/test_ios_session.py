@@ -429,7 +429,7 @@ class SessionRequire(unittest.TestCase):
         self.assertEqual(
             p.mirror.actions,
             ["scroll", "tap", "long_press", "drag", "press", "type",
-             "press", "press", "type", "press", "capture"])
+             "press", "press", "press", "type", "press", "capture"])
         self.assertEqual(p.mirror.pressed, [])
 
     def test_observer_notification_of_iphone_in_use_raises_before_the_action(self):
@@ -474,6 +474,60 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("iPhone in Use", str(cm.exception))
         self.assertIn("screenshot()", str(cm.exception))
         self.assertEqual(p.mirror.actions, ["capture"])
+
+
+@unittest.skipIf(ios is None, "Apple frameworks unavailable")
+class SpotlightLaunch(unittest.TestCase):
+    """A non-Latin input source must not rewrite an app search."""
+
+    class SearchField:
+        def __init__(self, query="", ime=False, paste_error=False):
+            self.query = query
+            self.ime = ime
+            self.paste_error = paste_error
+            self.selected = False
+            self.committed = []
+
+        def press(self, key):
+            if key == "cmd+a":
+                self.selected = True
+            elif key == "return":
+                self.committed.append(self.query)
+
+        def type_text(self, text, keystrokes=False):
+            if not keystrokes and self.paste_error:
+                raise RuntimeError("paste unavailable")
+            inserted = "ㄴㄷㅅㅅㅑㅜㅎㄴ" if keystrokes and self.ime else text
+            self.query = inserted if self.selected else self.query + inserted
+            self.selected = False
+
+    def launch(self, field, name):
+        from unittest.mock import patch
+        phone = ios.IPhone.__new__(ios.IPhone)
+        phone.mirror = field
+        with patch.object(ios, "_sleep"):
+            return phone._apps_launch(name)
+
+    def test_korean_input_source_preserves_english_app_name(self):
+        field = self.SearchField(ime=True)
+        self.assertEqual(self.launch(field, "Settings"), "Settings")
+        self.assertEqual(field.committed, ["Settings"])
+
+    def test_previous_search_is_replaced(self):
+        field = self.SearchField(query="old search")
+        self.launch(field, "Notes")
+        self.assertEqual(field.committed, ["Notes"])
+
+    def test_non_ascii_app_name_survives_input_source(self):
+        field = self.SearchField(ime=True)
+        self.launch(field, "카카오톡")
+        self.assertEqual(field.committed, ["카카오톡"])
+
+    def test_failed_paste_does_not_submit_stale_search(self):
+        field = self.SearchField(query="old search", paste_error=True)
+        with self.assertRaisesRegex(RuntimeError, "paste unavailable"):
+            self.launch(field, "Settings")
+        self.assertEqual(field.committed, [])
 
 
 if __name__ == "__main__":

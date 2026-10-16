@@ -1,6 +1,7 @@
 """The phone-harness CLI: exec Python from stdin with helpers pre-imported."""
 import argparse
 import functools
+import inspect
 import io
 import os
 import sys
@@ -83,7 +84,35 @@ _helper_call_count = 0
 _phone_name = None
 
 
-def _step_args(args, kwargs):
+# Helper arguments whose *value* is the user's secret, not a coordinate or a
+# selector: what gets typed into the phone (passwords, 2FA codes, messages)
+# and what gets run in a shell (tokens on a command line). The step trace is
+# worth keeping — that type_text ran, and on what size of input, is the
+# diagnostic — so redact the value and keep the shape.
+_REDACTED_PARAMS = {"type_text": ("text",), "shell": ("cmd",)}
+
+
+def _redacted(value):
+    try:
+        n = len(value)
+    except TypeError:
+        return "<redacted>"
+    return f"<redacted {n} chars>"
+
+
+def _step_args(name, fn, args, kwargs):
+    secret = _REDACTED_PARAMS.get(name)
+    if secret:
+        try:
+            bound = inspect.signature(fn).bind_partial(*args, **kwargs)
+            for param in secret:
+                if param in bound.arguments:
+                    bound.arguments[param] = _redacted(bound.arguments[param])
+            args, kwargs = bound.args, bound.kwargs
+        except (TypeError, ValueError):
+            # Can't tell which argument is which: drop them all rather than
+            # ship a password because a signature changed.
+            return f"<{len(args) + len(kwargs)} args redacted>"
     parts = [repr(a) for a in args] + [f"{k}={v!r}" for k, v in kwargs.items()]
     return ", ".join(parts)[:_MAX_STEP_ARGS_LENGTH]
 
@@ -93,7 +122,7 @@ def _traced(name, fn):
     def wrapper(*args, **kwargs):
         global _helper_call_count
         _helper_call_count += 1
-        entry = {"helper": name, "args": _step_args(args, kwargs)}
+        entry = {"helper": name, "args": _step_args(name, fn, args, kwargs)}
         if len(_helper_trace) < _MAX_TRACED_STEPS:
             _helper_trace.append(entry)
         step_start = time.monotonic()

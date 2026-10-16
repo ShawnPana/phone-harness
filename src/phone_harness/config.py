@@ -76,6 +76,7 @@ _load_env_files()
 DEFAULTS = {
     "platform": "ios" if sys.platform == "darwin" else "android",   # iPhone needs a Mac
     "telemetry": True,         # anonymous usage events; `config set telemetry false`
+    "telemetry_content": False,  # also send the script text and its output; off: only sizes
     "android": {
         "adb": "adb",          # the binary; a path if it is not on PATH
         "poke_every": 25,      # seconds between keep-awake pokes

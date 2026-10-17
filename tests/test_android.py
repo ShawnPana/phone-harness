@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from phone_harness import android as android_mod  # noqa: E402
-from phone_harness.android import Android, TreeUnavailable  # noqa: E402
+from phone_harness.android import Android, LockStateUnknown, TreeUnavailable  # noqa: E402
 
 
 class Recorded(Android):
@@ -135,6 +135,78 @@ class Launch(unittest.TestCase):
                 got, last = self.launched(name)
                 self.assertEqual(got, pkg)
                 self.assertEqual(last, f"am start -W -n {pkg}/.Main")
+
+
+class LockState(unittest.TestCase):
+    """#129: a build with no isKeyguardShowing is not an adb failure."""
+
+    EMUI_POLICY = ("KeyguardServiceDelegate\n"
+                   "  showing=false\n"
+                   "  inputRestricted=false\n"
+                   "KeyguardStateMonitor\n"
+                   "  mIsShowing=false\n"
+                   "  mInputRestricted=false\n")
+
+    def phone(self, dumps):
+        phone = Android.__new__(Android)
+        phone._gate_at = 0.0
+
+        def sh(cmd, timeout=60):
+            if cmd in dumps:
+                return dumps[cmd]
+            raise AssertionError(cmd)
+
+        phone._sh = sh
+        return phone
+
+    def dumps(self, window, policy=None):
+        out = {"dumpsys power | grep -m1 mWakefulness=": "mWakefulness=Awake",
+               "dumpsys window": window}
+        if policy is not None:
+            out["dumpsys window policy"] = policy
+        return out
+
+    def test_a_modern_build_reads_is_keyguard_showing(self):
+        for text, locked in [("isKeyguardShowing=true", True),
+                             ("isKeyguardShowing=false", False)]:
+            with self.subTest(text=text):
+                phone = self.phone(self.dumps(f"Window #1\n    {text}\n"))
+                self.assertEqual(phone._screen_status(), (True, locked))
+
+    def test_an_emui_build_falls_back_to_the_policy_indicators(self):
+        phone = self.phone(self.dumps("no keyguard field on this build",
+                                      self.EMUI_POLICY))
+        self.assertEqual(phone._screen_status(), (True, False))
+
+    def test_a_true_indicator_is_not_overridden_by_a_false_one(self):
+        policy = self.EMUI_POLICY.replace("showing=false", "showing=true", 1)
+        phone = self.phone(self.dumps("no keyguard field", policy))
+        self.assertEqual(phone._screen_status(), (True, True))
+
+    def test_no_indicator_anywhere_fails_closed(self):
+        phone = self.phone(self.dumps("nothing known", "nothing known either"))
+        with self.assertRaises(LockStateUnknown):
+            phone._screen_status()
+
+    def test_session_state_reports_lock_unknown_not_no_adb(self):
+        phone = self.phone(self.dumps("nothing known", "nothing known either"))
+        phone._resolve = lambda: "USB1"
+        self.assertEqual(phone._session_state(), "lock-unknown")
+        with self.assertRaises(RuntimeError) as cm:
+            phone._session_require()
+        self.assertIn("lock-state", str(cm.exception))
+        self.assertNotIn("adb isn't available", str(cm.exception))
+
+    def test_a_real_adb_failure_still_reports_no_adb(self):
+        phone = Android.__new__(Android)
+        phone._gate_at = 0.0
+
+        def sh(cmd, timeout=60):
+            raise RuntimeError(f"adb shell {cmd} failed: error: device gone")
+
+        phone._sh = sh
+        phone._resolve = lambda: "USB1"
+        self.assertEqual(phone._session_state(), "no-adb")
 
 
 class ResolvePrimary(unittest.TestCase):

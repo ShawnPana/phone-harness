@@ -194,6 +194,12 @@ class PrimaryUnreachable(RuntimeError):
     """The saved primary phone is not reachable. Not a cue to use another."""
 
 
+class LockStateUnknown(RuntimeError):
+    """adb answers, but this Android build prints no keyguard indicator
+    phone-harness knows. Not an adb failure, and never a licence to treat
+    the phone as unlocked."""
+
+
 class Android(Backend):
     name = "android"
 
@@ -319,9 +325,29 @@ class Android(Backend):
         """(awake, locked) from two dumpsys reads, ~0.2s. adb happily taps a
         lock screen and dumps its PIN pad; nothing errors — so we ask."""
         awake = "Awake" in self._sh("dumpsys power | grep -m1 mWakefulness=")
-        locked = "isKeyguardShowing=true" in self._sh(
-            "dumpsys window | grep -m1 isKeyguardShowing")
-        return awake, locked
+        return awake, self._lock_state()
+
+    def _lock_state(self):
+        """Locked or not, from whichever keyguard indicator this Android
+        build prints. Newer builds put isKeyguardShowing in `dumpsys
+        window`; Android 9 / EMUI builds omit that field but print the same
+        fact in `dumpsys window policy`. Any true indicator wins: a lock
+        one source reports is not cancelled by another reading false. No
+        recognised indicator at all raises LockStateUnknown — guessing
+        "unlocked" would type into a PIN pad, and calling it an adb failure
+        sends the user to fix a connection that works."""
+        m = re.search(r"isKeyguardShowing=(true|false)",
+                      self._sh("dumpsys window"))
+        if m:
+            return m.group(1) == "true"
+        seen = re.findall(
+            r"(?:mIsShowing|showing|mInputRestricted|inputRestricted)"
+            r"=(true|false)", self._sh("dumpsys window policy"))
+        if seen:
+            return "true" in seen
+        raise LockStateUnknown(
+            "no keyguard indicator in `dumpsys window` or "
+            "`dumpsys window policy` on this Android build")
 
     def _gate(self):
         """Refuse to drive a phone that is asleep or locked. Waking it is
@@ -584,12 +610,15 @@ class Android(Backend):
     # --- session ------------------------------------------------------------
 
     def _session_state(self):
-        """'ready' | 'locked' | 'unauthorized' | 'offline' | 'no-device' | 'no-adb'."""
+        """'ready' | 'locked' | 'lock-unknown' | 'unauthorized' | 'offline'
+        | 'no-device' | 'no-adb'."""
         from .cloud import CloudPhoneError
         try:
             if self._resolve() is not None:
                 try:
                     self._gate()
+                except LockStateUnknown:
+                    return "lock-unknown"
                 except RuntimeError as e:
                     if "locked" in str(e):
                         return "locked"
@@ -625,6 +654,16 @@ class Android(Backend):
         if state == "locked":
             self._gate_at = 0.0
             self._gate()                       # raises with the unlock message
+        if state == "lock-unknown":
+            raise RuntimeError(
+                "adb answers and the phone is attached, but this Android "
+                "build reports no lock-state field phone-harness knows "
+                "(isKeyguardShowing, or the keyguard indicators in "
+                "`dumpsys window policy`), so it cannot tell whether the "
+                "phone is locked. It will not drive a phone whose lock "
+                "state it cannot read. Unlock the phone and retry; if it "
+                "still fails, report the build with the output of "
+                "`adb shell dumpsys window policy`.")
         if state == "no-adb":
             raise RuntimeError(
                 "adb isn't available. Install Android platform-tools "
@@ -800,6 +839,10 @@ def _awake(mirror=True):
                 return 0
             try:
                 awake, locked = phone._screen_status()
+            except LockStateUnknown:
+                print("this build reports no lock state phone-harness can "
+                      "read — ending", flush=True)
+                return 0
             except RuntimeError:
                 print("phone gone — ending", flush=True)
                 return 0

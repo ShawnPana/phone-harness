@@ -103,7 +103,7 @@ it is in [SKILL.md](SKILL.md). `phone-harness cloud` lists the rest, including
 
 ## MCP server
 
-Prefer MCP? **Phone Harness Cloud** has a hosted MCP server at
+Prefer MCP? **Phone Harness** has a hosted MCP server at
 `https://mcp.phone-harness.com/mcp`. Add it as a custom connector in Claude,
 ChatGPT, Cursor or any MCP client and sign in; no key to paste, nothing to
 install. Or run it yourself with `uvx phone-harness-mcp`. Source and setup for

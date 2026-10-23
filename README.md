@@ -1,10 +1,12 @@
-<a href="https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.png">
-    <img alt="Phone Harness: let your agent use your phone." src="assets/banner-light.png" width="100%">
-  </picture>
-</a>
+<div align="center">
+  <a href="https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated-dark.svg">
+      <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated.svg" alt="phone-harness" width="560">
+    </picture>
+  </a>
+  <h3>Let your agent use your phone.</h3>
+</div>
 
 <div align="center">
 

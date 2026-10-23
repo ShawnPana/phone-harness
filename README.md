@@ -101,6 +101,22 @@ it is in [SKILL.md](SKILL.md). `phone-harness cloud` lists the rest, including
 `watch`, `open`, `history`, and `phone` for the saved Android. A file goes to the phone with the `push_file(path)` helper (cloud iPhone only for now). `--session SID`
 (or `PHONE_HARNESS_SESSION`) pins one rented phone for this process.
 
+## MCP server
+
+Prefer MCP? **Phone Harness Cloud** has a hosted MCP server at
+`https://mcp.phone-harness.com/mcp`. Add it as a custom connector in Claude,
+ChatGPT, Cursor or any MCP client and sign in; no key to paste, nothing to
+install. Or run it yourself with `uvx phone-harness-mcp`. Source and setup for
+every client: [github.com/phone-harness/mcp](https://github.com/phone-harness/mcp).
+
+```bash
+claude mcp add --transport http phone-harness https://mcp.phone-harness.com/mcp
+```
+
+> The MCP server drives cloud phones only. Local phone control (your iPhone
+> through iPhone Mirroring, an Android over adb) is coming soon; until then,
+> use the CLI above for the phone on your desk.
+
 ## Updates
 
 `phone-harness update` upgrades a [uv](https://docs.astral.sh/uv/) tool

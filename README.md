@@ -1,6 +1,22 @@
-# Phone Harness 📱
+<a href="https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.png">
+    <img alt="Phone Harness: let your agent use your phone." src="assets/banner-light.png" width="100%">
+  </picture>
+</a>
 
-**[phone-harness](https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header)** · let your agent control your phone.
+<div align="center">
+
+[![PyPI](https://img.shields.io/pypi/v/phone-harness?color=ff4438&label=pypi)](https://pypi.org/project/phone-harness/)
+[![Downloads](https://img.shields.io/pypi/dm/phone-harness?color=20231e)](https://pypi.org/project/phone-harness/)
+[![GitHub stars](https://img.shields.io/github/stars/ShawnPana/phone-harness?style=flat&color=20231e)](https://github.com/ShawnPana/phone-harness)
+[![Docs](https://img.shields.io/badge/docs-phone--harness.com-20231e)](https://phone-harness.com/docs)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/7FwGsjvjS)
+[![X](https://img.shields.io/badge/follow-%40phone__harness-000000?logo=x)](https://x.com/phone_harness)
+[![Phone Harness Cloud](https://img.shields.io/badge/cloud-try%20it-ff4438)](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-badge-cloud)
+
+</div>
 
 Connect Claude Code, Codex, or any agent to your real phone. **iPhone** through
 the Mac's iPhone Mirroring window, **Android** over adb from macOS, Linux or

@@ -101,33 +101,16 @@ phone-harness cloud stop             # ends the session; a saved Android is writ
 
 The same helpers drive a cloud phone: an Android over adb, an iPhone over HTTPS. `cloud start` takes a phone's name or id from `cloud ls`, or `ios` / `android`; with none it starts a temporary Android. `phone-harness cloud` lists every command.
 
-## Updates
-
-`phone-harness update` upgrades a [uv](https://docs.astral.sh/uv/) tool
-(`uv tool upgrade phone-harness`) or a git checkout (`git pull --ff-only`).
-Any other install prints `pip install -U phone-harness` and leaves it for
-you to run. The tool never updates itself. On a terminal, once a day, it
-prints one line on stderr when PyPI has a newer version. Set
-`PHONE_HARNESS_NO_UPDATE_CHECK=1` to silence that notice.
-
 ## How it works
 
-**iPhone.** iPhone Mirroring renders the phone as a Mac window and forwards
-mouse and keyboard as touches. The harness captures that window, OCRs it with
-Apple's Vision framework for text with tap-ready coordinates, and posts
-HID-level events for taps, swipes, and typing.
+Every phone sits behind the same helpers, so a script written for one runs on the others.
 
-**Android.** adb is the transport. `screencap` is the capture, the phone's
-accessibility tree is the text source, `input` is the hands. Works over USB or
-Wi‑Fi, no window needed.
+- **iPhone:** captures the iPhone Mirroring window, reads it with Apple's Vision OCR, and sends taps, swipes and typing as input events.
+- **Android:** adb for screenshots and input, the accessibility tree for text. USB or Wi-Fi.
+- **Cloud Android:** the same as Android, over adb to a hosted phone.
+- **Cloud iPhone:** ops over HTTPS from any OS; the host runs OCR.
 
-**Cloud iPhone.** `phone-harness cloud start` with that phone's catalog id,
-label, or `ios` when it is the only one, drives it over HTTPS from any OS.
-The host runs OCR; taps use the phone's screen points. No adb and no
-accessibility tree. Day-to-day steps are in [SKILL.md](SKILL.md).
-
-Same helpers throughout. `phone-harness config set platform ios|android` picks
-the desk default.
+`phone-harness config set platform ios|android` picks the default phone. `phone-harness update` upgrades the CLI, and it prints one line when a new version is out (`PHONE_HARNESS_NO_UPDATE_CHECK=1` silences it).
 
 ## Limits
 

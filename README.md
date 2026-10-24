@@ -53,7 +53,7 @@ coding agent.
 
 ## Setup
 
-Send this setup prompt to your agent (Claude Code, Codex, Grok Bot, and more):
+For the CLI, send this setup prompt to your agent (Claude Code, Codex, Grok Bot, and more):
 
 ```text
 Install or upgrade phone-harness to the latest stable version with uv using Python 3.12, register the skill from `phone-harness skill`, then read https://github.com/ShawnPana/phone-harness/blob/main/onboarding.md and walk me through it. Follow https://github.com/ShawnPana/phone-harness/blob/main/install.md if setup or connection fails.

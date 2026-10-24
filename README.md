@@ -49,7 +49,7 @@ coding agent.
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."
 
-<a href="https://github.com/user-attachments/assets/80b6d38e-0222-481c-93db-9de60d79247a"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/demo-waymo.gif?v=6f742c0" width="100%" alt="An agent orders a Waymo to Delah Coffee on a real iPhone through phone-harness"></a>
+<img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/demo-waymo.gif?v=6f742c0" width="100%" alt="An agent orders a Waymo to Delah Coffee on a real iPhone through phone-harness">
 
 ## Setup
 

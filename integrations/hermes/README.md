@@ -1,5 +1,7 @@
 # phone-harness for Hermes Agent
 
+![phone-harness](assets/banner.png)
+
 A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that lets
 Hermes drive a real phone with one tool, `phone_exec`. The model writes a short
 Python script with the phone-harness helpers pre-imported, and the plugin runs

@@ -20,6 +20,9 @@ class Recorded(Android):
         self._bounds = {"x": 0, "y": 0, "w": 720, "h": 1280, "id": "fake"}
         self._resolved = True
 
+    def _screen_bounds(self):
+        return self._bounds
+
     def _screen_require(self):
         return self._bounds
 

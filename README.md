@@ -87,13 +87,7 @@ phone-harness --version
 
 `phone-harness --version` (or `-V`) prints `phone-harness <version>`.
 
-Helpers are pre-imported. [SKILL.md](SKILL.md) is the agent's day-to-day
-guide; [helpers.py](src/phone_harness/helpers.py) is the full list.
-Task-specific helpers live in `~/.phone-harness/agent-workspace`
-(see [install.md](install.md)). The first run creates that folder from
-the packaged defaults and never overwrites an existing one. Delete the
-folder for a fresh default; the next run recreates it. A checkout uses
-its own `agent-workspace/` instead.
+Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the full list. The agent saves its own helpers in `~/.phone-harness/agent-workspace`.
 
 ## No phone on your desk? Rent one
 

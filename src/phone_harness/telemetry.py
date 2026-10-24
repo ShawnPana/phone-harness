@@ -43,7 +43,10 @@ def _version() -> str:
 
 
 def is_enabled() -> bool:
-    return bool(_config.get("telemetry"))
+    val = _config.get("telemetry")
+    if isinstance(val, str):
+        return val.strip().lower() in ("1", "true", "yes", "on")
+    return bool(val)
 
 
 # Env markers each coding agent injects into subprocesses

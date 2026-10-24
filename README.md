@@ -69,7 +69,7 @@ The agent installs the CLI, asks which phone to use, and walks you through the s
 
 `phone-harness doctor` checks the setup. Full details: [install.md](install.md) and [setup/](setup/).
 
-**MCP:** for cloud phones, add the hosted server at `https://mcp.phone-harness.com/mcp` to Claude, ChatGPT, Cursor or any MCP client and sign in, or run it yourself with `uvx phone-harness-mcp`. Setup for every client: [phone-harness/mcp](https://github.com/phone-harness/mcp). Local phones over MCP are coming soon.
+**MCP:** add `https://mcp.phone-harness.com/mcp` to any MCP client ([setup](https://github.com/phone-harness/mcp)). Cloud phones only for now.
 
 **Hermes Agent:** `hermes plugins install ShawnPana/phone-harness/integrations/hermes`. See [integrations/hermes](integrations/hermes/README.md).
 

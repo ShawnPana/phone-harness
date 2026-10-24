@@ -53,23 +53,25 @@ coding agent.
 
 ## Setup
 
-Paste into Claude Code or Codex:
+Send this setup prompt to your agent (Claude Code, Codex, Grok Bot, and more):
 
 ```text
 Install or upgrade phone-harness to the latest stable version with uv using Python 3.12, register the skill from `phone-harness skill`, then read https://github.com/ShawnPana/phone-harness/blob/main/onboarding.md and walk me through it. Follow https://github.com/ShawnPana/phone-harness/blob/main/install.md if setup or connection fails.
 ```
 
-The agent asks which phone is your default and walks you through the parts
-that need your hands: pairing iPhone Mirroring and granting Accessibility and
-Screen Recording, or turning on Android developer options and approving adb.
-It also offers a cloud Android — the same helpers with nothing to pair, and
-the first 100 minutes free; only cloud Android bills by the minute — so an iPhone user can test on Android too.
-No Mac or no phone? The agent uses a cloud phone instead; nothing to install
-but the CLI. `phone-harness doctor` checks the chain. Details in
-[install.md](install.md) and [setup/](setup/).
+The agent installs the CLI, asks which phone to use, and walks you through the steps that need your hands. What each phone needs:
 
-**Hermes Agent:** `hermes plugins install ShawnPana/phone-harness/integrations/hermes`
-adds a `phone_exec` tool and this skill. See [integrations/hermes](integrations/hermes/README.md).
+| Phone | Needs |
+| --- | --- |
+| **iPhone** | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility and Screen Recording permission |
+| **Android** | adb and USB debugging, on macOS, Linux or Windows |
+| **Cloud phone** | a [Phone Harness Cloud](https://phone-harness.com/cloud) account; a cloud Android also needs adb |
+
+`phone-harness doctor` checks the setup. Full details: [install.md](install.md) and [setup/](setup/).
+
+**MCP:** for cloud phones, add the hosted server at `https://mcp.phone-harness.com/mcp` to Claude, ChatGPT, Cursor or any MCP client and sign in, or run it yourself with `uvx phone-harness-mcp`. Setup for every client: [phone-harness/mcp](https://github.com/phone-harness/mcp). Local phones over MCP are coming soon.
+
+**Hermes Agent:** `hermes plugins install ShawnPana/phone-harness/integrations/hermes`. See [integrations/hermes](integrations/hermes/README.md).
 
 ## Usage
 
@@ -122,22 +124,6 @@ no shell: the helpers POST ops over HTTPS, OCR runs on the host, and driving
 it is in [SKILL.md](SKILL.md). `phone-harness cloud` lists the rest, including
 `watch`, `open`, `history`, and `phone` for the saved Android. A file goes to the phone with the `push_file(path)` helper (cloud iPhone only for now). `--session SID`
 (or `PHONE_HARNESS_SESSION`) pins one rented phone for this process.
-
-## MCP server
-
-Prefer MCP? **Phone Harness** has a hosted MCP server at
-`https://mcp.phone-harness.com/mcp`. Add it as a custom connector in Claude,
-ChatGPT, Cursor or any MCP client and sign in; no key to paste, nothing to
-install. Or run it yourself with `uvx phone-harness-mcp`. Source and setup for
-every client: [github.com/phone-harness/mcp](https://github.com/phone-harness/mcp).
-
-```bash
-claude mcp add --transport http phone-harness https://mcp.phone-harness.com/mcp
-```
-
-> The MCP server drives cloud phones only. Local phone control (your iPhone
-> through iPhone Mirroring, an Android over adb) is coming soon; until then,
-> use the CLI above for the phone on your desk.
 
 ## Updates
 

@@ -23,12 +23,13 @@
 
 ---
 
-Connect Claude Code, Codex, or any agent to your real phone. **iPhone** through
-the Mac's iPhone Mirroring window, **Android** over adb from macOS, Linux or
-Windows, or a Phone Harness Cloud phone — an Android over adb, or an iPhone
-over HTTPS. No jailbreak, no
-Xcode, nothing installed on the phone. The agent sees the screen, taps, types,
-and reads the result.
+Enable Claude Code, Codex, or any agent to use your real phone. The agent can
+scroll, tap, type, and read your phone with no jailbreak, no Xcode, and nothing
+installed on the phone.
+
+> **iPhone** through the Mac's iPhone Mirroring window <br/>
+> **Android** over adb from macOS, Linux or Windows <br/>
+> **Phone Harness Cloud** phone: an Android over adb, or an iPhone over HTTPS
 
 ```
   ● agent: wants to open Weather

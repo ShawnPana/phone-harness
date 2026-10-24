@@ -446,12 +446,9 @@ events into it for hands. All coordinates are global macOS screen points.
   rather than sitting out a timeout. It is the cheapest first line a script
   can have: a phone that cannot be driven fails there, not five taps in.
   Call it once in the first script of a task, not before every action.
-  After that, the default build works the phone **without taking the user's focus**: capture
-  is by window id and taps and keystrokes are event records delivered straight
-  to the app. Scrolling is the exception - macOS routes a scroll to whichever
-  window sits under the pointer, so a scroll raises the mirroring window for
-  the length of the gesture and hands focus straight back. Expect a brief
-  flicker on scrolls and nothing on anything else. `PHONE_HARNESS_BACKGROUND=0`
+  After that, the default build works the phone **without taking the user's focus
+  or moving the mouse cursor**: capture is by window id, and taps, scrolls,
+  and keystrokes are delivered straight to the app. `PHONE_HARNESS_BACKGROUND=0`
   forces the classic path, which focuses before every action.
 - **Icons without labels:** `screenshot()`, view the image, and use
   `tap_image_point(x, y, image_size=...)` with coordinates measured in the

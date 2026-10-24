@@ -107,8 +107,8 @@ class IPhone(Backend):
     def _input_keys(self, combo):
         self.mirror.press(combo)
 
-    def _input_text(self, s, delay=0.03, keystrokes=False):
-        self.mirror.type_text(s, delay=delay, keystrokes=keystrokes)
+    def _input_text(self, s, delay=0.03, keystrokes=False, clear=False):
+        self.mirror.type_text(s, delay=delay, keystrokes=keystrokes, clear=clear)
 
     # --- navigation -----------------------------------------------------
 

@@ -490,10 +490,15 @@ class Android(Backend):
             raise Unsupported(f"android has no key named {combo!r}")
         self._sh(f"input keyevent KEYCODE_{code}")
 
-    def _input_text(self, s, delay=0.03, keystrokes=False):
+    def _input_text(self, s, delay=0.03, keystrokes=False, clear=False):
         self._gate()
         """`input text` takes one ASCII token; newlines and backspaces become
         keyevents, spaces become %s, and the rest is shell-quoted."""
+        if clear:
+            try:
+                self._sh("input keyevent 29 --meta 113 && input keyevent KEYCODE_DEL")
+            except RuntimeError:
+                pass
         for i, line in enumerate(s.split("\n")):
             if i:
                 self._sh("input keyevent KEYCODE_ENTER")

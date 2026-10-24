@@ -162,8 +162,9 @@ class Remote(Backend):
         path.write_bytes(base64.b64decode(r["png_b64"]))
         return str(path), r["bounds"]
 
-    def _input_text(self, s, delay=0.03, keystrokes=False):
-        return self._op("input.text", timeout=max(60, 0.2 * len(s) + 30), s=s, delay=delay, keystrokes=keystrokes)
+    def _input_text(self, s, delay=0.03, keystrokes=False, clear=False):
+        return self._op("input.text", timeout=max(60, 0.2 * len(s) + 30),
+                        s=s, delay=delay, keystrokes=keystrokes, clear=clear)
 
     def _apps_launch(self, name, fresh=False):
         return self._op("apps.launch", timeout=90, name=name, fresh=fresh)

@@ -382,12 +382,19 @@ def _type_keystrokes(text, delay=0.03):
             time.sleep(delay)
 
 
-def type_text(text, delay=0.03, keystrokes=False):
+def type_text(text, delay=0.03, keystrokes=False, clear=False):
     """Type into the focused iOS field, no focus change.
 
     Pastes by default so the text arrives exactly as written, past autocorrect
     and keyboard layout both. keystrokes=True sends real key events instead.
+
+    clear=True selects all and deletes existing content before typing.
     """
+    if clear:
+        press("cmd+a")
+        time.sleep(0.05)
+        press("delete")
+        time.sleep(0.05)
     if keystrokes or not text:
         return _type_keystrokes(text, delay)
     mirror.paste_with(press, text)

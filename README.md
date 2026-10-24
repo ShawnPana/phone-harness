@@ -1,24 +1,24 @@
 <div align="center">
   <a href="https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated-dark.svg">
-      <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated.svg" alt="phone-harness" width="560">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated-dark.svg?v=721f3d5">
+      <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated.svg?v=721f3d5" alt="phone-harness" width="560">
     </picture>
   </a>
   <br>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline-dark.svg">
-    <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline.svg" width="600" height="48" alt="Let your agent use your phone.">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline-dark.svg?v=721f3d5">
+    <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline.svg?v=721f3d5" width="600" height="48" alt="Let your agent use your phone.">
   </picture>
 </div>
 
 ---
 
 <div align="center">
-  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg" width="132" height="40" alt="Try Phone Harness Cloud"></picture></a>
-  <a href="https://phone-harness.com/docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg" width="98" height="40" alt="Docs"></picture></a>
+  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg?v=721f3d5" width="132" height="40" alt="Try Phone Harness Cloud"></picture></a>
+  <a href="https://phone-harness.com/docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg?v=721f3d5" width="98" height="40" alt="Docs"></picture></a>
   <img width="220" height="1" alt="">
-  <a href="https://x.com/phone_harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x.svg" width="32" height="40" alt="X"></picture></a><img width="2" height="1" alt=""><a href="https://github.com/ShawnPana/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github.svg" width="32" height="40" alt="GitHub"></picture></a><img width="2" height="1" alt=""><a href="https://www.linkedin.com/company/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin.svg" width="32" height="40" alt="LinkedIn"></picture></a><img width="2" height="1" alt=""><a href="https://discord.gg/7FwGsjvjS"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord-dark.svg"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord.svg" width="32" height="40" alt="Discord"></picture></a>
+  <a href="https://x.com/phone_harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x.svg?v=721f3d5" width="32" height="40" alt="X"></picture></a><img width="2" height="1" alt=""><a href="https://github.com/ShawnPana/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github.svg?v=721f3d5" width="32" height="40" alt="GitHub"></picture></a><img width="2" height="1" alt=""><a href="https://www.linkedin.com/company/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin.svg?v=721f3d5" width="32" height="40" alt="LinkedIn"></picture></a><img width="2" height="1" alt=""><a href="https://discord.gg/7FwGsjvjS"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord-dark.svg?v=721f3d5"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord.svg?v=721f3d5" width="32" height="40" alt="Discord"></picture></a>
 </div>
 
 ---

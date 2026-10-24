@@ -118,6 +118,15 @@ Every phone sits behind the same helpers, so a script written for one runs on th
 
 `phone-harness config set platform ios|android` picks the default phone. `phone-harness update` upgrades the CLI, and it prints one line when a new version is out (`PHONE_HARNESS_NO_UPDATE_CHECK=1` silences it).
 
+## Usage telemetry
+
+Usage telemetry is enabled by default and sends metadata such as runtime versions,
+command, phone type, agent/client/model labels, duration, counts and exit status
+with an anonymous install ID. It does not send script source, task/step comments,
+screen output, helper arguments or error text. Disable it with
+`phone-harness config set telemetry false` or `PHONE_HARNESS_TELEMETRY=0`.
+See [install.md](install.md) for the recorded fields.
+
 ## Limits
 
 - Unlocking the iPhone pauses mirroring; a PIN-locked Android needs the user.

@@ -15,9 +15,9 @@
 ---
 
 <p>
-  <a href="https://phone-harness.com/docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg?v=6f742c0" width="98" height="40" align="top" alt="Docs"></picture></a>
-  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg?v=6f742c0" width="104" height="40" align="top" alt="Phone Harness Cloud"></picture></a>
-  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-callout"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout.svg?v=6f742c0" width="230" height="40" align="top" alt="Try your own cloud Android phone for free!"></picture></a>
+  <a href="https://phone-harness.com/docs?utm_source=github&utm_medium=readme&utm_campaign=button-docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg?v=6f742c0" width="98" height="40" align="top" alt="Docs"></picture></a>
+  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg?v=6f742c0" width="104" height="40" align="top" alt="Phone Harness Cloud"></picture></a>
+  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=callout"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout.svg?v=6f742c0" width="230" height="40" align="top" alt="Try your own cloud Android phone for free!"></picture></a>
   <a href="https://discord.gg/7FwGsjvjS"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord.svg?v=6f742c0" width="32" height="40" align="right" alt="Discord"></picture></a><a href="https://www.linkedin.com/company/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin.svg?v=6f742c0" width="32" height="40" align="right" alt="LinkedIn"></picture></a><a href="https://github.com/ShawnPana/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github.svg?v=6f742c0" width="32" height="40" align="right" alt="GitHub"></picture></a><a href="https://x.com/phone_harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x.svg?v=6f742c0" width="32" height="40" align="right" alt="X"></picture></a>
 </p>
 
@@ -65,7 +65,7 @@ The agent installs the CLI, asks which phone to use, and walks you through the s
 | --- | --- |
 | **iPhone** | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility and Screen Recording permission |
 | **Android** | adb and USB debugging, on macOS, Linux or Windows |
-| **Cloud Android / iPhone** | [Phone Harness Cloud](https://phone-harness.com/cloud) account; cloud Android also needs adb |
+| **Cloud Android / iPhone** | [Phone Harness Cloud](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=setup-table) account; cloud Android also needs adb |
 
 `phone-harness doctor` checks the setup. Full details: [install.md](install.md) and [setup/](setup/).
 
@@ -88,7 +88,7 @@ Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the ful
 
 ## Phone Harness Cloud
 
-No phone on your desk, or need more than one? [Phone Harness Cloud](https://phone-harness.com/cloud) hosts them for you:
+No phone on your desk, or need more than one? [Phone Harness Cloud](https://phone-harness.com/cloud?utm_source=github&utm_medium=readme&utm_campaign=cloud-section) hosts them for you:
 
 - **Android phones** on demand: a fresh one per session, or a saved phone that keeps its apps and logins.
 - **Dedicated real iPhones**, driven over HTTPS from any OS.

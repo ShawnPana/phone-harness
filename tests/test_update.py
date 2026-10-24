@@ -177,9 +177,9 @@ class UpdateCommand(unittest.TestCase):
         self.assertIn("phone-harness update", skill)
         self.assertIn("PHONE_HARNESS_NO_UPDATE_CHECK=1", skill)
         skill.encode("ascii")
-        readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
-        self.assertIn("phone-harness update", readme)
-        self.assertIn("pip install -U phone-harness", readme)
+        install = Path(__file__).resolve().parents[1].joinpath("install.md").read_text(encoding="utf-8")
+        self.assertIn("phone-harness update", install)
+        self.assertIn("pip install -U phone-harness", install)
 
 
 if __name__ == "__main__":

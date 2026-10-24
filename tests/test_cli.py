@@ -454,12 +454,9 @@ class TopLevel(unittest.TestCase):
 
     def test_docs_mention_version(self):
         root = Path(__file__).resolve().parents[1]
-        readme = (root / "README.md").read_text(encoding="utf-8")
+        # The README is a landing page; SKILL.md is where the agent learns the flag.
         skill = (root / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("phone-harness --version", readme)
         self.assertIn("phone-harness --version", skill)
-        version_line = next(line for line in readme.splitlines() if "phone-harness --version" in line)
-        version_line.encode("ascii")
         skill.encode("ascii")
 
 

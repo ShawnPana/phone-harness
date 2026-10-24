@@ -94,8 +94,6 @@ No phone on your desk, or need more than one? [Phone Harness Cloud](https://phon
 - **Dedicated real iPhones**, driven over HTTPS from any OS.
 - **A live view** of the phone in your browser while the agent works.
 
-The first 100 minutes are free.
-
 ```bash
 phone-harness cloud login            # once: approve in your browser
 phone-harness cloud ls               # phones on the account, and any live session

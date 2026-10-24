@@ -122,7 +122,17 @@ def _doctor_ios():
             os.unlink(path)
 
     from . import ios
-    state = ios.IPhone().send("session.state")
+    phone = ios.IPhone()
+    # Not a failure: the mirror backend works, it just brings the window to
+    # the front for every action. Worth a line so "why is the phone stealing
+    # my screen" has an answer in the doctor instead of in the source.
+    _check("background backend (window stays back)", phone.background,
+           (f"SkyLight did not load, using the mirror backend — "
+            f"{ios.background_unavailable}") if ios.background_unavailable
+           else "disabled by PHONE_HARNESS_BACKGROUND, using the mirror backend",
+           fatal=False)
+
+    state = phone.send("session.state")
     _check(f"session state: {state}", state == "ready",
            "an interstitial is up (iPhone in Use / Connect / Mac Locked) — "
            "clear it on the Mac; lock the iPhone if it says in use", fatal=False)

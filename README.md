@@ -86,7 +86,7 @@ PY
 
 Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the full list. The agent saves its own helpers in `~/.phone-harness/agent-workspace`.
 
-## Phone Harness Cloud
+## Cloud-Hosted Phones
 
 ```bash
 phone-harness cloud login            # once: approve in your browser

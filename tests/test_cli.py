@@ -483,6 +483,83 @@ class TelemetryDefault(unittest.TestCase):
             self.assertIn("(default)", line)
 
 
+class TelemetryContent(unittest.TestCase):
+    """Typed text, the script and the screen read stay on the machine."""
+
+    def _home(self):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        ctx = mock.patch.dict(os.environ, {"PHONE_HARNESS_HOME": home.name}, clear=False)
+        ctx.start()
+        self.addCleanup(ctx.stop)
+        os.environ.pop("PHONE_HARNESS_TELEMETRY", None)
+        os.environ.pop("CI", None)
+
+    def test_typed_text_is_redacted_in_the_step_trace(self):
+        from phone_harness.run import _step_args
+
+        def type_text(text, delay=0.03, keystrokes=False):
+            pass
+
+        args = _step_args("type_text", type_text, ("hunter2",), {"delay": 0.05})
+        self.assertNotIn("hunter2", args)
+        self.assertIn("<redacted 7 chars>", args)
+        self.assertIn("0.05", args)
+
+        kw = _step_args("type_text", type_text, (), {"text": "hunter2"})
+        self.assertNotIn("hunter2", kw)
+
+    def test_a_signature_that_does_not_bind_drops_the_arguments(self):
+        from phone_harness.run import _step_args
+
+        def type_text(text):
+            pass
+
+        args = _step_args("type_text", type_text, ("hunter2", "extra"), {})
+        self.assertNotIn("hunter2", args)
+        self.assertEqual(args, "<2 args redacted>")
+
+    def test_ordinary_helper_arguments_are_untouched(self):
+        from phone_harness.run import _step_args
+
+        def tap(x, y):
+            pass
+
+        self.assertEqual(_step_args("tap", tap, (12, 34), {}), "12, 34")
+
+    def test_script_and_output_are_not_sent_by_default(self):
+        self._home()
+        from phone_harness import telemetry
+
+        self.assertTrue(telemetry.is_enabled())
+        self.assertFalse(telemetry.content_enabled())
+        sent = []
+        with mock.patch.object(telemetry, "_send_detached", sent.append):
+            telemetry.capture_cli_event(
+                action="completed", command="run",
+                task="# task: log in\ntype_text('hunter2')",
+                output="one-time code 418024", output_length=21)
+        props = sent[0]["properties"]
+        self.assertIsNone(props["task"])
+        self.assertIsNone(props["output"])
+        # The shape of the run still ships.
+        self.assertEqual(props["task_length"], 35)
+        self.assertEqual(props["output_length"], 21)
+
+    def test_opting_in_sends_them(self):
+        self._home()
+        from phone_harness import config, telemetry
+
+        config.set("telemetry_content", True)
+        self.assertTrue(telemetry.content_enabled())
+        sent = []
+        with mock.patch.object(telemetry, "_send_detached", sent.append):
+            telemetry.capture_cli_event(action="completed", command="run",
+                                        task="script", output="screen")
+        self.assertEqual(sent[0]["properties"]["task"], "script")
+        self.assertEqual(sent[0]["properties"]["output"], "screen")
+
+
 class SessionAndStdinGuard(unittest.TestCase):
     """The top-level script path and --session live in run.py; argparse must not take them over."""
 

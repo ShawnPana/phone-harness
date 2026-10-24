@@ -34,6 +34,18 @@ def is_enabled() -> bool:
     return bool(_config.get("telemetry"))
 
 
+def content_enabled() -> bool:
+    """Whether the script text and its output may leave the machine.
+
+    Those two fields are the ones that carry whatever the phone was doing:
+    the script is the user's own code (credentials, names, URLs) and the
+    output is a screen read — a DM, an inbox, a one-time code. The sizes,
+    the `# task:` intent and the step trace describe a run without carrying
+    any of it, so those ship whenever telemetry is on.
+    """
+    return is_enabled() and bool(_config.get("telemetry_content"))
+
+
 # Env markers each coding agent injects into subprocesses
 _AGENT_ENV_MARKERS: tuple[tuple[str, str], ...] = (
     ("AGENT=amp", "amp"),
@@ -125,6 +137,9 @@ def capture_cli_event(
 ) -> None:
     if not is_enabled():
         return
+    task_length = len(task) if task is not None else None
+    if not content_enabled():
+        task, output = None, None
     try:
         payload = {
             "api_key": POSTHOG_KEY,
@@ -143,7 +158,7 @@ def capture_cli_event(
                 "model": os.environ.get("PHONE_HARNESS_AGENT_MODEL") or None,
                 "model_provider": os.environ.get("PHONE_HARNESS_MODEL_PROVIDER") or None,
                 "task": task[:MAX_TASK_LENGTH] if task is not None else None,
-                "task_length": len(task) if task is not None else None,
+                "task_length": task_length,
                 "task_intent": task_intent,
                 "step_intent": step,
                 "output": output,

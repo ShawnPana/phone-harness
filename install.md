@@ -121,6 +121,10 @@ the iPhone is driven through the mirroring window, the Android over adb. A
 cloud iPhone is a third path: HTTPS ops, covered in the skill.
 
 `phone-harness config set telemetry false` turns off anonymous usage telemetry.
+What it sends by default is the shape of a run: command, timings, exit code,
+which helpers ran, and how big the script and its output were. The script
+text and the output itself stay on the machine unless you opt in with
+`phone-harness config set telemetry_content true`.
 
 ## If It Fails
 

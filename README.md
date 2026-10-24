@@ -1,24 +1,24 @@
 <div align="center">
   <a href="https://phone-harness.com?utm_source=github&utm_medium=readme&utm_campaign=header">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated-dark.svg?v=c56b788">
-      <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated.svg?v=c56b788" alt="phone-harness" width="560">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated-dark.svg?v=6f742c0">
+      <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/logo-animated.svg?v=6f742c0" alt="phone-harness" width="560">
     </picture>
   </a>
   <br>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline-dark.svg?v=c56b788">
-    <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline.svg?v=c56b788" width="600" height="48" alt="Let your agent use your phone.">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline-dark.svg?v=6f742c0">
+    <img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/tagline.svg?v=6f742c0" width="600" height="48" alt="Let your agent use your phone.">
   </picture>
 </div>
 
 ---
 
 <p>
-  <a href="https://phone-harness.com/docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg?v=c56b788" width="98" height="40" align="top" alt="Docs"></picture></a>
-  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg?v=c56b788" width="104" height="40" align="top" alt="Phone Harness Cloud"></picture></a>
-  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-callout"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout.svg?v=c56b788" width="230" height="40" align="top" alt="Try your own cloud Android phone for free!"></picture></a>
-  <a href="https://discord.gg/7FwGsjvjS"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord.svg?v=c56b788" width="32" height="40" align="right" alt="Discord"></picture></a><a href="https://www.linkedin.com/company/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin.svg?v=c56b788" width="32" height="40" align="right" alt="LinkedIn"></picture></a><a href="https://github.com/ShawnPana/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github.svg?v=c56b788" width="32" height="40" align="right" alt="GitHub"></picture></a><a href="https://x.com/phone_harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x-dark.svg?v=c56b788"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x.svg?v=c56b788" width="32" height="40" align="right" alt="X"></picture></a>
+  <a href="https://phone-harness.com/docs"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-docs.svg?v=6f742c0" width="98" height="40" align="top" alt="Docs"></picture></a>
+  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-button-cloud"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/button-cloud.svg?v=6f742c0" width="104" height="40" align="top" alt="Phone Harness Cloud"></picture></a>
+  <a href="https://phone-harness.com/cloud?utm_source=github&utm_medium=readme-callout"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/callout.svg?v=6f742c0" width="230" height="40" align="top" alt="Try your own cloud Android phone for free!"></picture></a>
+  <a href="https://discord.gg/7FwGsjvjS"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-discord.svg?v=6f742c0" width="32" height="40" align="right" alt="Discord"></picture></a><a href="https://www.linkedin.com/company/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-linkedin.svg?v=6f742c0" width="32" height="40" align="right" alt="LinkedIn"></picture></a><a href="https://github.com/ShawnPana/phone-harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-github.svg?v=6f742c0" width="32" height="40" align="right" alt="GitHub"></picture></a><a href="https://x.com/phone_harness"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x-dark.svg?v=6f742c0"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/icon-x.svg?v=6f742c0" width="32" height="40" align="right" alt="X"></picture></a>
 </p>
 
 ---
@@ -49,7 +49,7 @@ coding agent.
 
 **Task:** "Buy me a Waymo to Delah Coffee from my current location."
 
-https://github.com/user-attachments/assets/80b6d38e-0222-481c-93db-9de60d79247a
+<a href="https://github.com/user-attachments/assets/80b6d38e-0222-481c-93db-9de60d79247a"><img src="https://raw.githubusercontent.com/phone-harness/media/main/phone-harness/demo-waymo.gif?v=6f742c0" width="100%" alt="An agent orders a Waymo to Delah Coffee on a real iPhone through phone-harness"></a>
 
 ## Setup
 

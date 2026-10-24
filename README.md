@@ -92,7 +92,7 @@ No phone on your desk, or need more than one? [Phone Harness Cloud](https://phon
 
 - **Android phones** on demand: a fresh one per session, or a saved phone that keeps its apps and logins.
 - **Dedicated real iPhones**, driven over HTTPS from any OS.
-- **A live view** of the phone in your browser while the agent works, and the [MCP server](https://github.com/phone-harness/mcp) for any MCP client.
+- **A live view** of the phone in your browser while the agent works.
 
 The first 100 minutes are free.
 

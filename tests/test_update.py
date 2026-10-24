@@ -182,5 +182,32 @@ class UpdateCommand(unittest.TestCase):
         self.assertIn("pip install -U phone-harness", install)
 
 
+class Docs(unittest.TestCase):
+    """Docs reference the released version so a user installing that tag
+    sees a matching CHANGELOG and install command."""
+
+    def _repo_root(self):
+        return Path(__file__).resolve().parents[1]
+
+    def _version(self):
+        import tomllib
+        with open(self._repo_root() / "pyproject.toml", "rb") as f:
+            return tomllib.load(f)["project"]["version"]
+
+    def test_changelog_exists_with_current_version(self):
+        changelog = self._repo_root() / "CHANGELOG.md"
+        self.assertTrue(changelog.exists(), "CHANGELOG.md must exist")
+        version = self._version()
+        self.assertIn(version, changelog.read_text(encoding="utf-8"),
+                       "CHANGELOG.md must mention the current version")
+
+    def test_install_md_pins_the_published_version(self):
+        version = self._version()
+        install_md = self._repo_root() / "install.md"
+        text = install_md.read_text(encoding="utf-8")
+        self.assertIn(f"phone-harness=={version}", text,
+                       "install.md must pin the published version for pip")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -86,7 +86,15 @@ PY
 
 Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the full list. The agent saves its own helpers in `~/.phone-harness/agent-workspace`.
 
-## Cloud-Hosted Phones
+## Phone Harness Cloud
+
+No phone on your desk, or need more than one? [Phone Harness Cloud](https://phone-harness.com/cloud) hosts them for you:
+
+- **Android phones** on demand: a fresh one per session, or a saved phone that keeps its apps and logins.
+- **Dedicated real iPhones**, driven over HTTPS from any OS.
+- **A live view** of the phone in your browser while the agent works, and the [MCP server](https://github.com/phone-harness/mcp) for any MCP client.
+
+The first 100 minutes are free.
 
 ```bash
 phone-harness cloud login            # once: approve in your browser

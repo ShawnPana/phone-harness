@@ -108,7 +108,7 @@ Every phone sits behind the same helpers, so a script written for one runs on th
 - **iPhone:** captures the iPhone Mirroring window, reads it with Apple's Vision OCR, and sends taps, swipes and typing as input events.
 - **Android:** adb for screenshots and input, the accessibility tree for text. USB or Wi-Fi.
 - **Cloud Android:** the same as Android, over adb to a hosted phone.
-- **Cloud iPhone:** ops over HTTPS from any OS; the host runs OCR.
+- **Cloud iPhone:** ops over HTTPS.
 
 `phone-harness config set platform ios|android` picks the default phone. `phone-harness update` upgrades the CLI, and it prints one line when a new version is out (`PHONE_HARNESS_NO_UPDATE_CHECK=1` silences it).
 

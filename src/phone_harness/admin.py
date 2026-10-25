@@ -148,7 +148,7 @@ def _doctor_ios():
         except ImportError as e:
             return ("pyobjc frameworks", False,
                     f"pip install pyobjc-framework-Quartz pyobjc-framework-Vision "
-                    f"pyobjc-framework-Cocoa ({e})")
+                    f"pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices ({e})")
         return ("pyobjc frameworks (Quartz, Vision, AppKit, ApplicationServices)",
                  True, "")
 

@@ -164,6 +164,8 @@ class DoctorIosPyobjcGuard(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("pyobjc frameworks", failures[0])
         self.assertTrue(any("[FAIL] pyobjc frameworks" in l for l in out))
+        # The hint must name the package that provides the missing module.
+        self.assertIn("pyobjc-framework-ApplicationServices", out[1])
         # Host-OS PASS, then pyobjc FAIL — nothing past that ran:
         self.assertEqual(len(out), 2)
 

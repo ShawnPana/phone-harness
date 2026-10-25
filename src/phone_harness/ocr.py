@@ -5,7 +5,7 @@ bounding box, converted here into global screen points ready for tap().
 """
 import Quartz
 import Vision
-from Foundation import NSURL
+from Foundation import NSURL, NSDictionary
 
 
 def image_size(path):
@@ -23,8 +23,9 @@ def recognize(path, window):
     screen points — pass straight to tap(). Vision's normalized boxes have a
     bottom-left origin; screen points have a top-left origin, hence the flip.
     """
+    # A bare Python {} raises "key does not exist" on newer pyobjc/macOS.
     handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(
-        NSURL.fileURLWithPath_(path), {})
+        NSURL.fileURLWithPath_(path), NSDictionary.dictionary())
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
     ok, err = handler.performRequests_error_([request], None)

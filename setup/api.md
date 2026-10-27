@@ -4,7 +4,12 @@ For agents that can make HTTPS requests but cannot install the CLI.
 Full reference: https://phone-harness.com/docs
 
 All calls send `Authorization: Bearer $PHONE_HARNESS_API_KEY` (see
-[cloud.md](cloud.md) for getting a key).
+[cloud.md](cloud.md) for getting a key). The CLI also sends
+`X-Install-Id: <uuid>`, this machine's install id. Other clients may omit
+it. It is not a credential. On an authenticated call the API should store it
+against the account uid (`install_id`, `first_seen`, `last_seen`); a missing
+or non-UUID value is ignored, and a later account for the same install
+replaces the uid.
 
 ```bash
 API=https://api.phone-harness.com

@@ -70,6 +70,7 @@ def _fake_resolve(c, body):
 class FakeCloud(BaseHTTPRequestHandler):
     sessions, profile, polls, posts, keys = {}, {}, {}, [], []
     valid, token_polls, refreshes, revoked = set(), 0, 0, []
+    install_headers, posthog = [], []
     closing_reads = 0
     forbid = False
     control_url = None            # set: an iPhone's control grant points here
@@ -117,6 +118,13 @@ class FakeCloud(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n) if n else b""
         path, m = self.path.split("?")[0], self.command
+        c.install_headers.append((path, self.headers.get("X-Install-Id")))
+        if path.rstrip("/") == "/i/v0/e":
+            try:
+                c.posthog.append(json.loads(raw) if raw else {})
+            except ValueError:
+                c.posthog.append({})
+            return self._send(200, {})
         if path.startswith("/oauth/"):
             return self._oauth(path, dict(urllib.parse.parse_qsl(raw.decode())))
         if self.headers.get("Authorization", "")[7:] not in c.valid:
@@ -275,6 +283,7 @@ class CloudCli(unittest.TestCase):
         FakeCloud.sessions, FakeCloud.polls, FakeCloud.posts, FakeCloud.keys = {}, {}, [], []
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
+        FakeCloud.install_headers, FakeCloud.posthog = [], []
         FakeCloud.forbid = False
         FakeCloud.control_url = None
         FakeCloud.available = None
@@ -310,6 +319,24 @@ class CloudCli(unittest.TestCase):
     def adb_log(self):
         return (Path(self.home.name) / "adb.log").read_text()
 
+    def telemetry_file(self):
+        return json.loads((Path(self.home.name) / "state" / "telemetry.json").read_text())
+
+    def _settle_posthog(self, timeout=5):
+        """Wait until events stop arriving, so a late identify is not missed."""
+        deadline = time.time() + timeout
+        last = -1
+        changed = time.time()
+        while time.time() < deadline:
+            current = len(FakeCloud.posthog)
+            if current != last:
+                last = current
+                changed = time.time()
+            elif current and time.time() - changed >= 0.5:
+                return
+            time.sleep(0.05)
+        self.fail(f"posthog events did not settle: {FakeCloud.posthog}")
+
     def test_needs_login(self):
         r = self.run_cli("cloud", "start")
         self.assertEqual(r.returncode, 1)
@@ -317,6 +344,71 @@ class CloudCli(unittest.TestCase):
 
     def auth(self):
         return json.loads((Path(self.home.name) / "config" / "auth.json").read_text())
+
+    def test_api_calls_send_the_install_id_and_the_sign_in_host_does_not(self):
+        self.login()
+        install = self.telemetry_file()["install_id"]
+        self.assertNotIn("account_id", self.telemetry_file())
+        oauth = [value for path, value in FakeCloud.install_headers if path.startswith("/oauth/")]
+        api = [value for path, value in FakeCloud.install_headers if not path.startswith("/oauth/")]
+        self.assertTrue(oauth)
+        self.assertTrue(all(value is None for value in oauth))
+        self.assertTrue(api)
+        self.assertTrue(all(value == install for value in api))
+        self.assertEqual(FakeCloud.posthog, [])
+
+        started = self.run_cli("cloud", "start", "Temporary phone", "--no-watch")
+        self.assertEqual(started.returncode, 0, started.stderr)
+        session_calls = [value for path, value in FakeCloud.install_headers
+                         if path == "/sessions" or path.startswith("/sessions/")]
+        self.assertTrue(session_calls)
+        self.assertTrue(all(value == install for value in session_calls))
+
+    def test_a_refused_sign_in_still_names_the_install_but_does_not_link_it(self):
+        FakeCloud.forbid = True
+        refused = self.run_cli("cloud", "login", "--no-browser")
+        self.assertEqual(refused.returncode, 1)
+        data = self.telemetry_file()
+        self.assertTrue(data["install_id"])
+        self.assertNotIn("account_id", data)
+        me = [value for path, value in FakeCloud.install_headers if path == "/me"]
+        self.assertEqual(me, [data["install_id"]])
+
+    def test_login_links_the_install_to_the_account_id_and_not_the_email(self):
+        env = {"PHONE_HARNESS_TELEMETRY": "1",
+               "PH_POSTHOG_HOST": self.env["PHONE_HARNESS_CLOUD_API"]}
+        signed_in = self.run_cli("cloud", "login", "--no-browser", env=env)
+        self.assertEqual(signed_in.returncode, 0, signed_in.stderr)
+        self.assertEqual(self.telemetry_file()["account_id"], "u1")
+        self._settle_posthog()
+        identify = [event for event in FakeCloud.posthog if event.get("event") == "$identify"]
+        self.assertEqual(len(identify), 1, FakeCloud.posthog)
+        event = identify[0]
+        self.assertEqual(event["distinct_id"], self.telemetry_file()["install_id"])
+        self.assertEqual(event["properties"]["$set"], {"account_id": "u1"})
+        self.assertNotIn("a@b.c", json.dumps(event))
+        self.assertNotIn("email", json.dumps(event["properties"]))
+        self.assertNotIn("prof-1", json.dumps(event))
+
+        # Same account again: cloud start must not send another identify.
+        started = self.run_cli("cloud", "start", "Temporary phone", "--no-watch", env=env)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self._settle_posthog()
+        identify = [event for event in FakeCloud.posthog if event.get("event") == "$identify"]
+        self.assertEqual(len(identify), 1, FakeCloud.posthog)
+
+        # A start that has not linked this install yet still does.
+        stored = self.telemetry_file()
+        stored.pop("account_id")
+        (Path(self.home.name) / "state" / "telemetry.json").write_text(json.dumps(stored))
+        FakeCloud.posthog.clear()
+        again = self.run_cli("cloud", "start", "Temporary phone", "--no-watch", env=env)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.telemetry_file()["account_id"], "u1")
+        self._settle_posthog()
+        identify = [event for event in FakeCloud.posthog if event.get("event") == "$identify"]
+        self.assertEqual(len(identify), 1, FakeCloud.posthog)
+        self.assertEqual(identify[0]["properties"]["$set"], {"account_id": "u1"})
 
     def test_login_is_a_device_flow_and_the_tokens_stay_private(self):
         r = self.login()

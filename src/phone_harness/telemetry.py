@@ -1,10 +1,18 @@
 """Best-effort, opt-out telemetry for phone-harness.
 
 One `cli_event` per CLI invocation, sent to PostHog from a detached helper
-process so the CLI never blocks on the network.
+process so the CLI never blocks on the network. The distinct id is the
+random install id from the state dir (see config.py). Events do not carry
+the email, access token, or API key.
+
+After a cloud sign-in, one `$identify` sets `account_id` (the cloud uid)
+on that same install id, so the install can be joined to the account.
+The person stays the install: aliasing it to the account would merge two
+people if a later sign-in on this machine used a different account. The
+email is not sent. The same account is not identified twice.
 
 Off: `phone-harness config set telemetry false`, or PHONE_HARNESS_TELEMETRY=0
-for one call. The install id lives in the state dir; see config.py.
+for one call. Nothing is sent while telemetry is off, including `$identify`.
 """
 
 from __future__ import annotations
@@ -104,6 +112,35 @@ def _base_properties() -> dict:
         "os_version": platform.mac_ver()[0] or platform.release() or "unknown",
         "machine": platform.machine() or "unknown",
     }
+
+
+def identify_account(account_id) -> None:
+    """Link this install to a Phone Harness Cloud account id.
+
+    No-op when telemetry is off, when `account_id` is blank, or when this
+    install was already linked to that same account.
+    """
+    if not is_enabled():
+        return
+    if not isinstance(account_id, str) or not account_id.strip():
+        return
+    account_id = account_id.strip()
+    try:
+        if _config.install_account() == account_id:
+            return
+        payload = {
+            "api_key": POSTHOG_KEY,
+            "distinct_id": _config.install_id(),
+            "event": "$identify",
+            "properties": {
+                "$process_person_profile": True,
+                "$set": {"account_id": account_id},
+            },
+        }
+        _send_detached(payload)
+        _config.set_install_account(account_id)
+    except Exception:
+        return
 
 
 def capture_cli_event(

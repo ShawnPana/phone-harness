@@ -120,7 +120,20 @@ Set up each as above; `phone-harness config set platform …` picks the default,
 the iPhone is driven through the mirroring window, the Android over adb. A
 cloud iPhone is a third path: HTTPS ops, covered in the skill.
 
-`phone-harness config set telemetry false` turns off anonymous usage telemetry.
+`phone-harness config set telemetry false` (or `PHONE_HARNESS_TELEMETRY=0` for one
+command) turns usage telemetry off. Nothing is sent to PostHog while it is off.
+
+While it is on, events are keyed by a random install id from the state dir
+(`telemetry.json`), not by your email. After `phone-harness cloud login`, and
+on `cloud start` when this install is not linked yet, telemetry sends a PostHog
+`$identify` that sets `account_id` to the cloud account id (`uid` from
+`GET /me`). The email is not sent.
+
+Calls to the Phone Harness Cloud API include that same install id as the
+`X-Install-Id` header, so the service can store which install belongs to the
+account. The header goes to the Phone Harness API, not to PostHog, and it is
+still sent when telemetry is off. It is not sent to the sign-in host. Delete
+`telemetry.json` to mint a new install id.
 
 ## If It Fails
 

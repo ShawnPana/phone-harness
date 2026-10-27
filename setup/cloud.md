@@ -26,6 +26,13 @@ Android. If installing is not possible at all, use the [API](api.md).
   Mint one with `phone-harness cloud keys create LABEL` from a signed-in
   machine; it is shown once.
 
+Each cloud call sends this machine's install id to the Phone Harness API as
+`X-Install-Id` (login, start, and the rest), so the service can store it on
+the account. It is not sent to the sign-in host. With telemetry on, `cloud login`
+links that install to the account id in PostHog, and `cloud start` does too
+when login has not already. The email is not included. Telemetry off stops
+those PostHog events; the header is still sent. See [install.md](../install.md).
+
 Never sign up, join or approve for the user.
 
 ## Use

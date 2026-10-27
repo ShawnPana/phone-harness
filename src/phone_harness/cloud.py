@@ -12,6 +12,10 @@ branches on.
                                    `cloud login`, refreshed here as they expire
   cloud.json   (state dir)         the attached session and the cached profile id
 
+Every call to the Phone Harness API sends X-Install-Id, the install id from
+telemetry.json, so the service can store that id on the account. The OAuth
+host is not told, and the header is not a credential.
+
 Signing in is the browser's job (OAuth device flow); nobody pastes a key.
 PHONE_HARNESS_API_KEY, if set, is used instead: that is for CI, where there
 is no one to click Approve.
@@ -212,9 +216,29 @@ def _api(method, path, body=None, token=None, headers=None, timeout=40):
         return _request(method, path, body, fresh, headers, timeout)
 
 
+def _install_id():
+    """This machine's install id, or None when the state file cannot be written.
+
+    A missing id must not fail a cloud call. The API treats the header as
+    optional.
+    """
+    try:
+        return config.install_id()
+    except Exception:
+        return None
+
+
 def _request(method, path, body, token, headers, timeout):
+    # X-Install-Id is this machine's install id (a uuid4). The API is not in
+    # this repo. On an authenticated call it should ignore a missing or
+    # non-UUID value and upsert install_id -> the caller's account uid, with
+    # first_seen and last_seen. A later account for the same install replaces
+    # the uid. The header is not a credential. OAuth requests do not send it.
     h = {"Authorization": f"Bearer {token}", "Accept": "application/json",
          "User-Agent": USER_AGENT, **(headers or {})}
+    install_id = _install_id()
+    if install_id:
+        h["X-Install-Id"] = install_id
     data = None
     if body is not None:
         h["Content-Type"] = "application/json"
@@ -929,6 +953,7 @@ def _login(args):
     state = _load_state()
     state["profile_id"] = (me.get("profile") or {}).get("id")
     _save_state(state)
+    _identify(me)
     print(f"{term.mark()} Signed in as {me.get('email') or me.get('uid')}")
     _print_account(me)
     print("\nStart your phone with: phone-harness cloud start")
@@ -953,6 +978,22 @@ def _logout(args):
     if attached():
         print("A cloud phone is still running; sign in again to stop it.")
     return 0
+
+
+def _identify(me):
+    """Link this install to the account when telemetry is on.
+
+    The cloud uid, not the email and not the phone profile id. Never fails
+    the command. Telemetry sends nothing when it is off.
+    """
+    uid = me.get("uid") if isinstance(me, dict) else None
+    if not uid:
+        return
+    try:
+        from . import telemetry
+        telemetry.identify_account(uid)
+    except Exception:
+        return
 
 
 def _credit(me):
@@ -1201,6 +1242,7 @@ def _start(args):
                  f"(raise the cap with `phone-harness config set cloud.max_minutes N`).")
 
     me = _api("GET", "/me")
+    _identify(me)
     catalog = _catalog(me)
     entry = None
     if phone:

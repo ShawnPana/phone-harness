@@ -75,7 +75,7 @@ _load_env_files()
 
 DEFAULTS = {
     "platform": "ios" if sys.platform == "darwin" else "android",   # iPhone needs a Mac
-    "telemetry": True,         # anonymous usage events; `config set telemetry false`
+    "telemetry": True,         # usage events; `config set telemetry false` sends none
     "android": {
         "adb": "adb",          # the binary; a path if it is not on PATH
         "poke_every": 25,      # seconds between keep-awake pokes
@@ -302,8 +302,12 @@ def save_devices_of(kind, section):
 # --- telemetry (state) -------------------------------------------------------
 
 def install_id():
-    """A random id minted once per machine, so runs can be counted without
-    knowing who ran them. Delete the file to get a new one."""
+    """A random id minted once per machine.
+
+    Telemetry uses it as the PostHog distinct id. Cloud API calls send it
+    as X-Install-Id so an account can be tied to this install. Delete the
+    file to mint a new one.
+    """
     import uuid
     p = paths()["telemetry"]
     data = _read(p, {})
@@ -311,6 +315,27 @@ def install_id():
         data["install_id"] = str(uuid.uuid4())
         _write(p, data)
     return data["install_id"]
+
+
+def install_account():
+    """Cloud account id last linked from this install, or None.
+
+    Set only after a telemetry `$identify`. Absent when telemetry is off,
+    so a later opt-in still sends the link.
+    """
+    value = _read(paths()["telemetry"], {}).get("account_id")
+    return value if isinstance(value, str) and value else None
+
+
+def set_install_account(account_id):
+    """Remember which cloud account this install was linked to.
+
+    Keeps `install_id`. A different account replaces this one.
+    """
+    p = paths()["telemetry"]
+    data = _read(p, {})
+    data["account_id"] = account_id
+    _write(p, data)
 
 
 # --- CLI (phone-harness config ...) -----------------------------------------

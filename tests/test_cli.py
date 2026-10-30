@@ -24,10 +24,14 @@ def _run(*args, stdin=None, env=None):
     merged["PYTHONPATH"] = SRC + os.pathsep + merged.get("PYTHONPATH", "")
     merged["PHONE_HARNESS_TELEMETRY"] = "0"
     merged.pop("NO_COLOR", None)
-    if env:
-        merged.update(env)
-    return subprocess.run([sys.executable, "-m", "phone_harness.run", *args],
-                          input=stdin, capture_output=True, text=True, env=merged)
+    with tempfile.TemporaryDirectory() as home:
+        # Not the developer's own home: a phone remembered there changes what
+        # `android connect` says. A test that needs saved state passes its own.
+        merged["PHONE_HARNESS_HOME"] = home
+        if env:
+            merged.update(env)
+        return subprocess.run([sys.executable, "-m", "phone_harness.run", *args],
+                              input=stdin, capture_output=True, text=True, env=merged)
 
 
 class Tty(io.StringIO):

@@ -15,6 +15,7 @@ import json
 import os
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -180,7 +181,8 @@ class Remote(Backend):
         return None
 
     def _session_detail(self):
-        return f"cloud phone at {self.url}"
+        # The control URL's path is the grant, so only its host is named.
+        return f"cloud phone at {urllib.parse.urlsplit(self.url).netloc}"
 
     def _focus_probe(self):
         return (True,)

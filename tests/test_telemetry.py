@@ -15,6 +15,7 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from phone_harness import config, run, telemetry  # noqa: E402
+from phone_harness.remote import Remote  # noqa: E402
 
 AGENT_MARKERS = [m.partition("=")[0] for m, _ in telemetry._AGENT_ENV_MARKERS]
 
@@ -151,6 +152,13 @@ class CommandLine(unittest.TestCase):
                          ["android", "pair", "<code>"])
         self.assertEqual(run._telemetry_argv(["android", "connect", "10.0.0.2:5555"]),
                          ["android", "connect", "10.0.0.2:5555"])
+
+
+class RemoteDetail(unittest.TestCase):
+    def test_the_detail_names_the_host_not_the_grant_in_the_control_url(self):
+        detail = Remote("https://api.example/iphone/c/grant-token-0123456789", "bearer")._session_detail()
+        self.assertIn("api.example", detail)
+        self.assertNotIn("grant-token", detail)
 
 
 if __name__ == "__main__":

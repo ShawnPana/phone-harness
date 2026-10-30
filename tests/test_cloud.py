@@ -1402,6 +1402,19 @@ class CloudCli(unittest.TestCase):
         for secret in ("ph_code", "watch.example", "at-1", "rt-1"):
             self.assertNotIn(secret, blob)
 
+    def test_a_script_pinned_with_session_sends_its_task_like_any_script(self):
+        self.posthog()
+        self.login()
+        self.assertEqual(self.run_cli("cloud", "start", "--no-watch").returncode, 0)
+        [sid] = FakeCloud.sessions
+        script = "# task: say hi\n# step: through the pin\nprint(6 * 7)\n"
+        r = self.run_cli("--session", sid, stdin=script)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ran = self.cli_event(3, command="script")
+        self.assertEqual((ran["task"], ran["task_intent"], ran["step_intent"], ran["output"]),
+                         (script, "say hi", "through the pin", "42\n"))
+        self.assertEqual((ran["session_id"], ran["argv"]), (sid, None))
+
     def test_cloud_calls_name_the_version_and_client_only_while_telemetry_is_on(self):
         control = ThreadingHTTPServer(("127.0.0.1", 0), FakeControl)
         threading.Thread(target=control.serve_forever, daemon=True).start()

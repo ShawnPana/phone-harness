@@ -212,7 +212,8 @@ def main():
     invocation = {"command": command, "argv": argv or None,
                   "subcommand": argv[1] if command in _OWNED and len(argv) > 1 else None}
     task = None
-    if not args and not sys.stdin.isatty():
+    # A script's text is its task, pinned with `--session SID` or not.
+    if command == "script" and not sys.stdin.isatty():
         task = sys.stdin.read()
         sys.stdin = io.StringIO(task)
     # `cloud` prints account keys and viewer links; none of it is telemetry.

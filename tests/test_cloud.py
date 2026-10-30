@@ -24,6 +24,8 @@ if SUPPORT not in sys.path:
 import browser_recorder
 browser_recorder.install()
 
+from phone_harness import telemetry  # noqa: E402
+
 FAKE_ADB = r'''#!/bin/sh
 # Locked until `shell unlock CODE`; state is a file next to this script.
 DIR="$(dirname "$0")"
@@ -263,6 +265,25 @@ class FakeControl(BaseHTTPRequestHandler):
         return self._send(404, {"error": "not found"})
 
     do_GET = do_POST = _handle
+
+
+class FakePostHog(BaseHTTPRequestHandler):
+    """PostHog's capture endpoint: every event the CLI's detached sender posts."""
+    events = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        FakePostHog.events.append(json.loads(self.rfile.read(n)))
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+# What each coding agent sets; a test that checks the client must not inherit one.
+AGENT_MARKERS = [m.partition("=")[0] for m, _ in telemetry._AGENT_ENV_MARKERS] + ["PH_CLIENT"]
 
 
 class CloudCli(unittest.TestCase):
@@ -1262,6 +1283,44 @@ class CloudCli(unittest.TestCase):
         self.assertNotIn(android_sid, FakeCloud.sessions)
         self.assertIn(ios_sid, FakeCloud.sessions)
         self.assertIn("your iPhone", self.run_cli("cloud").stdout)
+
+    # --- telemetry -------------------------------------------------------------
+
+    def posthog(self, client="test-agent"):
+        """Telemetry on, posting to a fake PostHog; the client is PH_CLIENT alone."""
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakePostHog)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        FakePostHog.events = []
+        for name in AGENT_MARKERS:
+            self.env.pop(name, None)
+        self.env.update({"PHONE_HARNESS_TELEMETRY": "1", "PH_CLIENT": client,
+                         "PH_POSTHOG_HOST": f"http://127.0.0.1:{server.server_port}"})
+
+    def events(self, name, count=1, timeout=10.0):
+        """The `name` events, once `count` have arrived (the sender is a detached
+        process), or whatever arrived by the deadline."""
+        deadline = time.monotonic() + timeout
+        while True:
+            got = [e for e in FakePostHog.events if e["event"] == name]
+            if len(got) >= count or time.monotonic() >= deadline:
+                return got
+            time.sleep(0.05)
+
+    def test_a_leading_session_pin_still_keeps_cloud_output_out_of_telemetry(self):
+        self.posthog()
+        self.login()
+        self.assertEqual(self.run_cli("cloud", "start", "--no-watch").returncode, 0)
+        [sid] = FakeCloud.sessions
+        shown = self.run_cli("--session", sid, "cloud", "show", "--json")
+        self.assertIn("ph_code", shown.stdout)                    # the unlock code, on screen
+        events = self.events("cli_event", count=3)
+        self.assertEqual([e["properties"]["command"] for e in events], ["cloud"] * 3)
+        self.assertEqual([e["properties"]["output"] for e in events], [None] * 3)
+        blob = json.dumps(FakePostHog.events)
+        for secret in ("ph_code", "watch.example"):
+            self.assertNotIn(secret, blob)
 
     def test_phone_reset_describes_the_saved_android_only(self):
         self.login()

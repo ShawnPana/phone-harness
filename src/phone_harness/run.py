@@ -127,6 +127,18 @@ class _StreamTail:
         return getattr(self._wrapped, name)
 
 
+def _telemetry_argv(args):
+    """The command line as cli_event records it. `--session SID` is left out:
+    it pins a phone and is not the command."""
+    argv, words = [], iter(args)
+    for word in words:
+        if word == "--session":
+            next(words, None)
+        else:
+            argv.append(word)
+    return argv
+
+
 def _telemetry_command(args):
     if not args:
         return "script"
@@ -192,7 +204,7 @@ def main():
     _helper_trace.clear()
     _helper_call_count = 0
     start_time = time.monotonic()
-    command = _telemetry_command(args)
+    command = _telemetry_command(_telemetry_argv(args))
     task = None
     if not args and not sys.stdin.isatty():
         task = sys.stdin.read()

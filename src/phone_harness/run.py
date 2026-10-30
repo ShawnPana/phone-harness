@@ -129,13 +129,16 @@ class _StreamTail:
 
 def _telemetry_argv(args):
     """The command line as cli_event records it. `--session SID` is left out:
-    it pins a phone and is not the command."""
+    the pinned session is the event's session_id. An Android pairing code is
+    masked: it is a credential."""
     argv, words = [], iter(args)
     for word in words:
         if word == "--session":
             next(words, None)
         else:
             argv.append(word)
+    if argv[:2] == ["android", "pair"]:
+        argv[2:] = ["<code>" if word.isdigit() else word for word in argv[2:]]
     return argv
 
 
@@ -178,7 +181,7 @@ def _intents(task):
 
 def _waitlist_shown():
     """True when a `cloud` command pointed the user at the waitlist: the one
-    thing about a cloud run worth counting (no output, no identity)."""
+    thing in a cloud run's output worth counting (the output is not sent)."""
     mod = sys.modules.get("phone_harness.cloud")
     return bool(getattr(mod, "waitlist_shown", False)) or None
 
@@ -204,7 +207,10 @@ def main():
     _helper_trace.clear()
     _helper_call_count = 0
     start_time = time.monotonic()
-    command = _telemetry_command(_telemetry_argv(args))
+    argv = _telemetry_argv(args)
+    command = _telemetry_command(argv)
+    invocation = {"command": command, "argv": argv or None,
+                  "subcommand": argv[1] if command in _OWNED and len(argv) > 1 else None}
     task = None
     if not args and not sys.stdin.isatty():
         task = sys.stdin.read()
@@ -221,7 +227,7 @@ def main():
         code = _exit_code(exc.code)
         telemetry.capture_cli_event(
             action="error" if code else "completed",
-            command=command,
+            **invocation,
             task=task,
             **_intents(task),
             phone=_phone_name,
@@ -238,7 +244,7 @@ def main():
     except Exception as exc:
         telemetry.capture_cli_event(
             action="error",
-            command=command,
+            **invocation,
             task=task,
             **_intents(task),
             phone=_phone_name,
@@ -257,7 +263,7 @@ def main():
         sys.stdout = stdout_tail._wrapped
     telemetry.capture_cli_event(
         action="completed",
-        command=command,
+        **invocation,
         task=task,
         **_intents(task),
         phone=_phone_name,

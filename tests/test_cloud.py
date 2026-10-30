@@ -71,6 +71,7 @@ def _fake_resolve(c, body):
 
 class FakeCloud(BaseHTTPRequestHandler):
     sessions, profile, polls, posts, keys = {}, {}, {}, [], []
+    requests = []                 # (method, path, headers with lowercase names)
     valid, token_polls, refreshes, revoked = set(), 0, 0, []
     closing_reads = 0
     forbid = False
@@ -119,6 +120,7 @@ class FakeCloud(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(n) if n else b""
         path, m = self.path.split("?")[0], self.command
+        c.requests.append((m, path, {k.lower(): v for k, v in self.headers.items()}))
         if path.startswith("/oauth/"):
             return self._oauth(path, dict(urllib.parse.parse_qsl(raw.decode())))
         if self.headers.get("Authorization", "")[7:] not in c.valid:
@@ -221,6 +223,7 @@ class FakeCloud(BaseHTTPRequestHandler):
 class FakeControl(BaseHTTPRequestHandler):
     """What a phone driven by ops over HTTPS answers: /ops, /op, /frame.png."""
     calls = []
+    requests = []             # (method, path, headers with lowercase names)
     launch_error = None       # set: apps.launch returns this JSON body with HTTP 400
     PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
                         "0000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
@@ -240,6 +243,8 @@ class FakeControl(BaseHTTPRequestHandler):
         import base64
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n)) if n else {}
+        FakeControl.requests.append((self.command, self.path,
+                                     {k.lower(): v for k, v in self.headers.items()}))
         if self.headers.get("Authorization") != "Bearer ct_1":
             return self._send(404, {"error": "not found"})
         if self.path == "/ops":
@@ -294,6 +299,7 @@ class CloudCli(unittest.TestCase):
         adb.write_text(FAKE_ADB)
         adb.chmod(adb.stat().st_mode | stat.S_IEXEC)
         FakeCloud.sessions, FakeCloud.polls, FakeCloud.posts, FakeCloud.keys = {}, {}, [], []
+        FakeCloud.requests, FakeControl.requests = [], []
         FakeCloud.valid, FakeCloud.token_polls = set(), 0
         FakeCloud.refreshes, FakeCloud.revoked, FakeCloud.closing_reads = 0, [], 0
         FakeCloud.forbid = False
@@ -1308,6 +1314,19 @@ class CloudCli(unittest.TestCase):
                 return got
             time.sleep(0.05)
 
+    def cli_event(self, count, **match):
+        """The properties of the one cli_event that matches, once `count` have
+        arrived. Each run's sender is its own process, so arrival order is not
+        run order."""
+        hits = [e["properties"] for e in self.events("cli_event", count)
+                if all(e["properties"].get(k) == v for k, v in match.items())]
+        self.assertEqual(len(hits), 1, (match, FakePostHog.events))
+        return hits[0]
+
+    def telemetry_state(self):
+        path = Path(self.home.name) / "state" / "telemetry.json"
+        return json.loads(path.read_text()) if path.exists() else None
+
     def test_a_leading_session_pin_still_keeps_cloud_output_out_of_telemetry(self):
         self.posthog()
         self.login()
@@ -1321,6 +1340,113 @@ class CloudCli(unittest.TestCase):
         blob = json.dumps(FakePostHog.events)
         for secret in ("ph_code", "watch.example"):
             self.assertNotIn(secret, blob)
+
+    def test_signing_in_links_this_install_to_the_account_once(self):
+        self.posthog()
+        self.login()
+        install = self.telemetry_state()["install_id"]
+        [identify] = self.events("$identify")
+        self.assertEqual(identify["distinct_id"], "u1")
+        self.assertEqual(identify["properties"]["$anon_distinct_id"], install)
+        self.assertEqual(identify["properties"]["client"], "test-agent")
+        [login] = self.events("cli_event")
+        self.assertEqual(login["distinct_id"], install)          # still one id per install
+        props = login["properties"]
+        self.assertEqual((props["command"], props["subcommand"], props["user_id"], props["channel"]),
+                         ("cloud", "login", "u1", "cli"))
+
+        self.run_cli("cloud", "whoami")                           # GET /me again: no second link
+        self.assertEqual(self.cli_event(2, subcommand="whoami")["user_id"], "u1")
+        time.sleep(0.5)
+        self.assertEqual(len(self.events("$identify")), 1)
+
+        self.run_cli("cloud", "logout")
+        self.assertIsNone(self.cli_event(3, subcommand="logout")["user_id"])
+        self.assertNotIn("user_id", self.telemetry_state())
+        self.login()                                              # a new sign-in links again
+        self.assertEqual(len(self.events("$identify", count=2)), 2)
+        self.assertEqual(self.telemetry_state()["install_id"], install)
+        blob = json.dumps(FakePostHog.events)
+        for secret in ("at-1", "rt-1", "dev-1", "BCDF-GHJK"):
+            self.assertNotIn(secret, blob)
+
+    def test_cloud_runs_carry_the_account_and_the_session_they_drove(self):
+        self.posthog()
+        self.login()
+        r = self.run_cli("cloud", "start", "Saved phone", "--for", "5m", "--no-watch")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        [sid] = FakeCloud.sessions
+        start = self.cli_event(2, subcommand="start")
+        self.assertEqual((start["subcommand"], start["session_id"], start["platform"], start["user_id"]),
+                         ("start", sid, "android", "u1"))
+        self.assertEqual(start["argv"], ["cloud", "start", "Saved phone", "--for", "5m", "--no-watch"])
+        self.assertIsNone(start["output"])
+
+        script = "# task: say hi\nprint(6 * 7)\n"
+        r = self.run_cli(stdin=script)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ran = self.cli_event(3, command="script")
+        self.assertEqual((ran["command"], ran["phone"], ran["platform"], ran["session_id"], ran["user_id"]),
+                         ("script", "android", "android", sid, "u1"))
+        self.assertEqual((ran["task"], ran["task_intent"], ran["output"]), (script, "say hi", "42\n"))
+
+        # `--session` before `cloud` is still a cloud command, whose output (the
+        # unlock code, the watch link) is never sent.
+        shown = self.run_cli("--session", sid, "cloud", "show", "--json")
+        self.assertIn("ph_code", shown.stdout)
+        show = self.cli_event(4, subcommand="show")
+        self.assertEqual((show["command"], show["subcommand"], show["session_id"], show["argv"]),
+                         ("cloud", "show", sid, ["cloud", "show", "--json"]))
+        self.assertIsNone(show["output"])
+        blob = json.dumps(FakePostHog.events)
+        for secret in ("ph_code", "watch.example", "at-1", "rt-1"):
+            self.assertNotIn(secret, blob)
+
+    def test_cloud_calls_name_the_version_and_client_only_while_telemetry_is_on(self):
+        control = ThreadingHTTPServer(("127.0.0.1", 0), FakeControl)
+        threading.Thread(target=control.serve_forever, daemon=True).start()
+        self.addCleanup(control.server_close)
+        self.addCleanup(control.shutdown)
+        FakeCloud.control_url = f"http://127.0.0.1:{control.server_port}"
+        FakeControl.calls = []
+        FakeCloud.available = [{"platform": "ios", "kind": "device", "id": "iph-1",
+                                "label": "My iPhone SE", "state": "available"}]
+        no_adb = {"PHONE_HARNESS_ADB": "/nonexistent/adb"}
+        self.posthog(client="hermes")
+
+        # Off, as for a Hermes run that did not opt in: the calls are what they
+        # were, nothing is posted, and nothing is linked.
+        off = {**no_adb, "PHONE_HARNESS_TELEMETRY": "0"}
+        self.assertEqual(self.run_cli("cloud", "login", "--no-browser", env=off).returncode, 0)
+        r = self.run_cli("cloud", "start", "ios", "--no-watch", env=off)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.run_cli(stdin="tap(10, 20)\n", env=off)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(FakeControl.requests)
+        for _, path, headers in FakeCloud.requests + FakeControl.requests:
+            self.assertNotIn("x-agent-client", headers, path)
+            self.assertNotIn("x-phone-harness-version", headers, path)
+        time.sleep(0.5)
+        self.assertEqual(FakePostHog.events, [])
+        self.assertIsNone(self.telemetry_state())
+
+        # On: every call to the API and to the phone's control URL names both.
+        FakeCloud.requests, FakeControl.requests = [], []
+        r = self.run_cli(stdin="tap(10, 20)\n", env=no_adb)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.run_cli("cloud", "ls", env=no_adb).returncode, 0)
+        api = [(p, h) for _, p, h in FakeCloud.requests if not p.startswith("/oauth/")]
+        ops = [(p, h) for _, p, h in FakeControl.requests]
+        self.assertTrue(api and ops)
+        for path, headers in api + ops:
+            self.assertEqual(headers.get("x-agent-client"), "hermes", path)
+            self.assertEqual(headers.get("x-phone-harness-version"), telemetry._version() or "unknown", path)
+        [sid] = FakeCloud.sessions
+        ran = self.cli_event(2, command="script")
+        self.assertEqual((ran["phone"], ran["platform"], ran["session_id"], ran["client"]),
+                         ("remote", "ios", sid, "hermes"))
+        self.assertEqual(ran["steps"][0]["helper"], "tap")
+        self.assertNotIn("ct_1", json.dumps(FakePostHog.events))
 
     def test_phone_reset_describes_the_saved_android_only(self):
         self.login()

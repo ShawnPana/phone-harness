@@ -75,7 +75,7 @@ _load_env_files()
 
 DEFAULTS = {
     "platform": "ios" if sys.platform == "darwin" else "android",   # iPhone needs a Mac
-    "telemetry": True,         # anonymous usage events; `config set telemetry false`
+    "telemetry": True,         # usage events; `config set telemetry false`
     "android": {
         "adb": "adb",          # the binary; a path if it is not on PATH
         "poke_every": 25,      # seconds between keep-awake pokes
@@ -302,8 +302,9 @@ def save_devices_of(kind, section):
 # --- telemetry (state) -------------------------------------------------------
 
 def install_id():
-    """A random id minted once per machine, so runs can be counted without
-    knowing who ran them. Delete the file to get a new one."""
+    """A random id minted once per machine: telemetry's distinct_id. Signing
+    in to the cloud links it to the account (telemetry.link_user). Delete the
+    file to get a new one."""
     import uuid
     p = paths()["telemetry"]
     data = _read(p, {})
@@ -311,6 +312,23 @@ def install_id():
         data["install_id"] = str(uuid.uuid4())
         _write(p, data)
     return data["install_id"]
+
+
+def telemetry_user():
+    """The uid of the cloud account this install's telemetry is linked to, or None."""
+    uid = _read(paths()["telemetry"], {}).get("user_id")
+    return uid if isinstance(uid, str) and uid else None
+
+
+def set_telemetry_user(uid):
+    """Link telemetry to the cloud account `uid`; None unlinks it (sign-out)."""
+    p = paths()["telemetry"]
+    data = _read(p, {})
+    if uid:
+        data["user_id"] = uid
+    elif data.pop("user_id", None) is None:
+        return
+    _write(p, data)
 
 
 # --- CLI (phone-harness config ...) -----------------------------------------

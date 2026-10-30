@@ -120,7 +120,8 @@ Set up each as above; `phone-harness config set platform …` picks the default,
 the iPhone is driven through the mirroring window, the Android over adb. A
 cloud iPhone is a third path: HTTPS ops, covered in the skill.
 
-`phone-harness config set telemetry false` turns off anonymous usage telemetry.
+`phone-harness config set telemetry false` turns off usage telemetry. Once you
+sign in to Phone Harness Cloud, it is linked to your account.
 
 ## If It Fails
 

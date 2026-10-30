@@ -32,6 +32,7 @@ import uuid
 import webbrowser
 
 from . import config
+from . import telemetry
 from . import term
 
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
@@ -212,9 +213,17 @@ def _api(method, path, body=None, token=None, headers=None, timeout=40):
         return _request(method, path, body, fresh, headers, timeout)
 
 
+def _me(token=None):
+    """GET /me: the signed-in account. Its uid is what this install's
+    telemetry is linked to."""
+    me = _api("GET", "/me", token=token)
+    telemetry.link_user(me.get("uid"))
+    return me
+
+
 def _request(method, path, body, token, headers, timeout):
     h = {"Authorization": f"Bearer {token}", "Accept": "application/json",
-         "User-Agent": USER_AGENT, **(headers or {})}
+         "User-Agent": USER_AGENT, **telemetry.cloud_headers(), **(headers or {})}
     data = None
     if body is not None:
         h["Content-Type"] = "application/json"
@@ -536,6 +545,7 @@ def attached(kind=None):
         return None
     if _expired(sess):
         return None
+    telemetry.note_session(sess["sid"], sess.get("platform"))
     return sess
 
 
@@ -668,6 +678,7 @@ def _store_session(record, make_attached=True):
     _reported_dead.clear()
     global _reported_fallback
     _reported_fallback = None
+    telemetry.note_session(record["sid"], record.get("platform"))
     state = _load_state()
     sessions = _known_sessions(state)
     sessions[record["sid"]] = record
@@ -847,12 +858,14 @@ def _resolve_sid(given):
         if not sess:
             sys.exit("No cloud phone attached. Pass --session SID, or `phone-harness cloud ls`.")
         return sess["sid"]
-    ids = [s["id"] for s in _api("GET", "/sessions")]
-    hits = [i for i in ids if i == given] or [i for i in ids if i.startswith(given)]
+    sessions = _api("GET", "/sessions")
+    hits = ([s for s in sessions if s["id"] == given]
+            or [s for s in sessions if s["id"].startswith(given)])
     if len(hits) != 1:
         sys.exit(f"{given!r} matches {len(hits)} running sessions"
-                 + (f": {', '.join(hits)}" if hits else ""))
-    return hits[0]
+                 + (f": {', '.join(s['id'] for s in hits)}" if hits else ""))
+    telemetry.note_session(hits[0]["id"], hits[0].get("platform"))
+    return hits[0]["id"]
 
 
 def _wait_ready(sid):
@@ -922,7 +935,7 @@ def _login(args):
         sys.exit("Sign-in timed out. Run `phone-harness cloud login` again when you can "
                  f"sign in. No account yet? {SIGNUP}")
     try:
-        me = _api("GET", "/me", token=tok["access_token"])
+        me = _me(token=tok["access_token"])
     except CloudError as e:
         sys.exit(f"Signed in, but the Phone Harness API refused the sign-in: {_explain(e)}")
     _store_tokens(tok, email=me.get("email"))
@@ -949,6 +962,7 @@ def _logout(args):
             except OSError:
                 pass
     _auth_path().unlink(missing_ok=True)
+    telemetry.unlink_user()
     print("Signed out.")
     if attached():
         print("A cloud phone is still running; sign in again to stop it.")
@@ -1111,7 +1125,7 @@ def _wait_out_save(profile_id):
     deadline = time.monotonic() + SAVE_WAIT
     told = False
     while True:
-        me = _api("GET", "/me")
+        me = _me()
         profile = me.get("profile") or {}
         if profile.get("id") != profile_id:
             return
@@ -1200,7 +1214,7 @@ def _start(args):
         sys.exit(f"Duration must be between 1 and {cap} minutes "
                  f"(raise the cap with `phone-harness config set cloud.max_minutes N`).")
 
-    me = _api("GET", "/me")
+    me = _me()
     catalog = _catalog(me)
     entry = None
     if phone:
@@ -1323,6 +1337,7 @@ def _stop(args):
     for sid in sids:
         try:
             before = _api("GET", f"/sessions/{sid}")
+            telemetry.note_session(sid, before.get("platform"))
             held_profile = held_profile or _keeps_state(before)
             _api("DELETE", f"/sessions/{sid}")
             print(f"{term.mark()} Session {sid} ended.")
@@ -1344,7 +1359,7 @@ def _stop(args):
     state = "saving"
     while time.monotonic() < deadline:
         time.sleep(3)
-        state = (_api("GET", "/me").get("profile") or {}).get("state")
+        state = (_me().get("profile") or {}).get("state")
         if state not in ("saving", "running"):
             break
     print(f" {state}.")
@@ -1358,7 +1373,7 @@ def _status(args):
         print(term.err("Not signed in. Run: phone-harness cloud login", sys.stdout))
         print(term.note(_waitlist_line()))
         return 1
-    me = _api("GET", "/me")
+    me = _me()
     if os.environ.get("PHONE_HARNESS_CLOUD_API"):
         print(f"api         {_target('API')}")
     print(f"signed in   {me.get('email') or me.get('uid')}")
@@ -1591,7 +1606,7 @@ def _ls(args):
     as_json = _flag(args, "--json")
     if args:
         sys.exit(CLI_USAGE)
-    me = _api("GET", "/me")
+    me = _me()
     sessions = _api("GET", "/sessions")
     rows = _ls_rows(me, sessions)
     if as_json:
@@ -1659,7 +1674,7 @@ def _open(args):
 
 
 def _whoami(args):
-    me = _api("GET", "/me")
+    me = _me()
     if _flag(args, "--json"):
         print(json.dumps(me, indent=2))
         return 0
@@ -1678,7 +1693,7 @@ def _phone(args):
         _api("POST", "/me/profile/reset")
         print("Wiped the saved Android's stored state. The next start of that phone begins fresh.")
         return 0
-    profile = _api("GET", "/me").get("profile") or {}
+    profile = _me().get("profile") or {}
     print(json.dumps(profile, indent=2) if _flag(args, "--json") else _describe_profile(profile))
     return 0
 

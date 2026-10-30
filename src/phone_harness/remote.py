@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import telemetry
 from .transport import Backend, Unsupported
 
 USER_AGENT = "phone-harness-cli"
@@ -97,7 +98,8 @@ class Remote(Backend):
 
     def _call(self, method, path, body=None, timeout=60):
         data = json.dumps(body).encode() if body is not None else None
-        headers = {"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT}
+        headers = {"Authorization": f"Bearer {self.token}", "User-Agent": USER_AGENT,
+                   **telemetry.cloud_headers()}
         if data:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(self.url + path, data=data, method=method, headers=headers)

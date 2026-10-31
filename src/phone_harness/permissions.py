@@ -1,16 +1,18 @@
-"""macOS permission status and guided grant for iPhone Mirroring.
+"""macOS permission status and the guided grant for iPhone Mirroring.
 
 Accessibility (taps and typing) and Screen Recording (seeing the window)
 are recorded against the app that launched this process. A command running
 under tmux, SSH, or launchd has no such app, so the Python binary is the
-thing to grant. Each poll is a new process: the process that already asked
-keeps the first answer it got.
+thing to grant. A running process can keep the answer it got first (Screen
+Recording does), so every read runs in a new process (permission_probe).
 
 When a check succeeds, the code hashes of that app and of Python are
 saved. A later failure against a different hash means macOS still has the
 old entry and it no longer matches.
+
+`phone-harness doctor ios` reads the state. `--fix` acts on it: the panel in
+permission_panel when someone is at the Mac in a terminal, text otherwise.
 """
-import argparse
 import json
 import os
 import platform
@@ -20,47 +22,39 @@ import sys
 import time
 from pathlib import Path
 
-from . import config
-from .term import Parser
+from . import config, permission_panel
+from .permission_probe import parse as parse_probe, preflight as local_preflight
 
 # Same labels `doctor ios` already prints, so a check stays one line.
 ACCESSIBILITY_LABEL = "Accessibility permission (taps & keystrokes)"
 SCREEN_RECORDING_LABEL = "Screen Recording permission (seeing the phone)"
 
+CHECK_COMMAND = "phone-harness doctor ios"
+FIX_COMMAND = "phone-harness doctor ios --fix"
+
+GUIDE_TIMEOUT = 600
 _KINDS = ("accessibility", "screen_recording")
 _PANE = {"accessibility": "Privacy_Accessibility", "screen_recording": "Privacy_ScreenCapture"}
 _MAX_ANCESTORS = 64
-_GUIDE_TIMEOUT = 600
 _GUIDE_INTERVAL = 1.0
 _PROBE_TIMEOUT = 8
-
-CLI_USAGE = """Usage:
-  phone-harness permissions              status; does not prompt or open Settings
-  phone-harness permissions --json       the same status as JSON
-  phone-harness permissions --guide      open the missing pane and, in a terminal, wait
-  phone-harness permissions --yes        never open Settings and never wait
-  phone-harness permissions --request    show the system prompts, then report again
-
-Accessibility and Screen Recording are granted to the app that launches
-this command (Terminal, iTerm, Cursor, Hermes), not to the shell. If
-System Settings lists the Python binary on its own, grant that too.
---yes and --non-interactive never open Settings and never wait. A pipe
-opens the pane once and returns; it does not wait.
-"""
 
 
 def bundle_root(executable):
     """The outer `.app` directory that contains `executable`, if any.
 
-    A nested helper is its own `.app` inside the one System Settings lists.
-    Walking from the root and stopping at the first `.app` yields that outer
-    bundle. The helper's own bundle is ignored.
+    A nested helper is its own `.app` inside the one System Settings lists,
+    so the first `.app` from the root is the answer. An `.app` inside a
+    `.framework` (Python.app in a framework build of Python) is part of the
+    interpreter, not an app anyone launched, so it does not count.
     """
     if not executable:
         return None
     built = None
     for part in Path(executable).parts:
         built = Path(part) if built is None else built / part
+        if part.endswith(".framework"):
+            return None
         if part.endswith(".app"):
             return str(built)
     return None
@@ -94,8 +88,7 @@ def host_target(pid=None, parent_of=None, executable_of=None, self_exe=None):
         if nxt is None or nxt == seen:
             break
         seen = nxt
-    exe = self_exe or (executable_of(start) if start else None) or sys.executable
-    exe = exe or sys.executable
+    exe = self_exe or _python_binary()
     return {"kind": "binary", "name": Path(exe).name, "path": exe, "executable": exe}
 
 
@@ -114,6 +107,11 @@ def default_parent(pid):
     return ps_ppid
 
 
+def _python_binary():
+    """This interpreter's real path: the file macOS names when it lists Python."""
+    return _proc_pidpath(os.getpid()) or os.path.realpath(sys.executable)
+
+
 def _proc_pidpath(pid):
     """Full executable path. `ps` shortens the command and hides the bundle."""
     if sys.platform != "darwin" or not pid or pid <= 0:
@@ -124,7 +122,7 @@ def _proc_pidpath(pid):
         libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
         buf = ctypes.create_string_buffer(4 * 1024)
         n = libc.proc_pidpath(int(pid), buf, ctypes.sizeof(buf))
-    except (OSError, AttributeError, ValueError):
+    except (ImportError, OSError, AttributeError, ValueError):
         return None
     if n <= 0:
         return None
@@ -178,13 +176,12 @@ def settings_url(kind, version):
 
 
 def list_name(kind, version):
-    """Label System Settings shows for this list on that macOS version."""
-    # macOS 27 renames the Accessibility list. The id in the URL stays the same.
-    if kind == "accessibility" and tuple(version) >= (27, 0):
-        return "Device Control and Data Access"
+    """Label System Settings shows for this list on that macOS version.
+    The anchor in the URL stays the same when the label changes."""
+    version = tuple(version)
     if kind == "accessibility":
-        return "Accessibility"
-    return "Screen Recording"
+        return "Device Control and Data Access" if version >= (27, 0) else "Accessibility"
+    return "Screen & System Audio Recording" if version >= (15, 0) else "Screen Recording"
 
 
 def parse_codesign(text):
@@ -271,7 +268,8 @@ def _summary(kind, state, host, binary, version, reason, prev):
     if state == "granted":
         return ""
     if state == "unknown":
-        return "could not check (install pyobjc-framework-Quartz and pyobjc-framework-Cocoa)"
+        return ("could not check (install pyobjc-framework-Quartz and "
+                "pyobjc-framework-ApplicationServices)")
     if state == "stale" and reason == "binary_moved":
         return (f"stale grant: the Python binary moved from {prev.get('binary_path')} "
                 f"to {binary.get('path')}. Remove the old entry and grant the new binary")
@@ -283,7 +281,7 @@ def _summary(kind, state, host, binary, version, reason, prev):
                 f"in {name}, remove the old entry and add it again")
     where = f"System Settings > Privacy & Security > {name}"
     return (f"{where}: turn on {subject}. If it is not in the list, drag it in. "
-            f"If the toggle is already on, the grant is stale: remove the entry and add it again")
+            f"If the switch is already on, the grant is stale: remove the entry and add it again")
 
 
 def _suggestion(kind, state, host, version, summary):
@@ -396,7 +394,7 @@ def updated_grants(grants, report):
     """Record signatures only for permissions that just read as granted.
 
     A failed check keeps the previous record so the next failure can tell a
-    stale signature from a toggle that was never on.
+    stale signature from a switch that was never on.
     """
     grants = {kind: dict(value) for kind, value in (grants or {}).items() if isinstance(value, dict)}
     if not report.get("needed"):
@@ -422,26 +420,24 @@ def updated_grants(grants, report):
     return grants
 
 
-def live_preflight():
-    """True, False, or None. Never prompts.
+def fresh_preflight(runner=None):
+    """{kind: True/False/None}, read by a new interpreter. Never prompts.
 
-    None means the frameworks are missing, so the report says unknown
-    instead of claiming the grant was refused.
+    None means it could not be read, so the report says unknown instead of
+    claiming the grant was refused. When the new process cannot run, this
+    process reads it once itself.
     """
-    accessibility = None
-    screen = None
+    runner = runner or subprocess.run
     try:
-        from ApplicationServices import AXIsProcessTrusted
-        accessibility = bool(AXIsProcessTrusted())
-    except Exception:
-        accessibility = None
-    try:
-        import Quartz
-        fn = getattr(Quartz, "CGPreflightScreenCaptureAccess", None)
-        screen = None if fn is None else bool(fn())
-    except Exception:
-        screen = None
-    return {"accessibility": accessibility, "screen_recording": screen}
+        proc = runner(
+            [sys.executable, "-m", "phone_harness.permission_probe"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=_PROBE_TIMEOUT,
+        )
+        states = parse_probe(proc.stdout)
+    except (OSError, subprocess.SubprocessError):
+        states = None
+    return states if states is not None else local_preflight()
 
 
 def _load_grants():
@@ -457,15 +453,11 @@ def _save_grants(grants):
 
 
 def collect(preflight=None, host=None, identify=None, version=None, grants=None, save=True):
-    """Build the report. Pass `preflight` to skip the live permission APIs.
-
-    The process that already called them keeps that answer, so a guide
-    poll reads through a child process and passes the result in.
-    """
+    """Build the report. Pass `preflight` to skip reading the grants."""
     if preflight is None and sys.platform != "darwin":
         return not_needed_report()
     if preflight is None:
-        preflight = live_preflight()
+        preflight = fresh_preflight()
     host = dict(host or host_target())
     identify = identify or code_identity
     if not host.get("cdhash"):
@@ -473,7 +465,7 @@ def collect(preflight=None, host=None, identify=None, version=None, grants=None,
         if host.get("kind") == "app":
             bundle = (identify(host.get("path")) or {}).get("cdhash", "")
         host["cdhash"] = bundle or (identify(host.get("executable")) or {}).get("cdhash", "")
-    binary_path = sys.executable
+    binary_path = _python_binary()
     binary_id = identify(binary_path) or {"cdhash": "", "adhoc": False}
     binary = {
         "path": binary_path,
@@ -497,13 +489,28 @@ def collect(preflight=None, host=None, identify=None, version=None, grants=None,
     return report
 
 
-def explain(report):
+def _missing(report):
+    return [kind for kind in _KINDS if report[kind]["state"] != "granted"]
+
+
+def python_row_note(report, full=False):
+    """The extra row some setups show: the Python binary, apart from the app.
+    Empty when the app is the only thing to grant."""
+    host = report.get("host") or {}
+    binary = report.get("binary") or {}
+    if host.get("kind") != "app" or not binary.get("path") or binary.get("inside_host"):
+        return ""
+    if full:
+        return f"If the list also shows the Python binary ({binary['path']}) on its own row, turn that on too."
+    return f"If the list also shows {Path(binary['path']).name} on its own row, turn that on too."
+
+
+def explain(report, hint=True):
     """Shared diagnosis under the two checks. Empty when nothing is wrong."""
     if not report or report.get("ok") or not report.get("needed"):
         return ""
     lines = []
     host = report.get("host") or {}
-    binary = report.get("binary") or {}
     if host.get("kind") == "app":
         lines.append(f'Grant "{host.get("name")}" ({host.get("path")}).')
     else:
@@ -511,87 +518,17 @@ def explain(report):
             "No launching app was found (tmux, SSH, or a service). "
             f"Grant the Python binary ({host.get('path')}), or grant the terminal app that started this session."
         )
-    if host.get("kind") == "app" and binary.get("path") and not binary.get("inside_host"):
-        lines.append(
-            "If macOS lists the Python binary separately, grant it too: "
-            + binary["path"]
-        )
+    row = python_row_note(report, full=True)
+    if row:
+        lines.append(row)
     if report.get("note"):
         lines.append(report["note"])
-    for kind in _KINDS:
-        entry = report[kind]
-        if entry["state"] == "granted":
-            continue
-        lines.append(f"{entry['list'] or kind}: {entry['summary']}")
-        if entry.get("url"):
-            lines.append("  " + entry["url"])
-    lines.append("Open the pane and wait until it is granted: phone-harness permissions --guide")
-    lines.append("Status only, no Settings window: phone-harness permissions --json")
+    links = [report[kind] for kind in _missing(report) if report[kind].get("url")]
+    for entry in links:
+        lines.append(f"{entry['list']}: {entry['url']}")
+    if hint and links:
+        lines.append(f"Guided fix: {FIX_COMMAND}")
     return "\n".join(lines)
-
-
-def format_text(report, guide=None):
-    if not report.get("needed"):
-        text = ("phone-harness permissions\n\n"
-                "macOS permissions are not required on this machine. "
-                "iPhone Mirroring is a Mac feature; a cloud phone needs none of these grants.\n")
-        if guide:
-            text += f"\nguide: {guide}\n"
-        return text
-    rows = (
-        (ACCESSIBILITY_LABEL, report["accessibility"]),
-        (SCREEN_RECORDING_LABEL, report["screen_recording"]),
-    )
-    lines = ["phone-harness permissions", ""]
-    for label, entry in rows:
-        mark = "PASS" if entry["state"] == "granted" else "FAIL"
-        line = f"  [{mark}] {label}"
-        if mark == "FAIL" and entry.get("summary"):
-            line += " - " + entry["summary"]
-        lines.append(line)
-    body = explain(report)
-    if body:
-        lines.append("")
-        lines.append(body)
-    if guide == "granted":
-        lines.append("")
-        lines.append("all clear")
-    elif guide == "timeout":
-        lines.append("")
-        lines.append("Timed out waiting for the grant.")
-    elif guide == "opened":
-        lines.append("")
-        lines.append("Opened System Settings. Grant the app named above, then run "
-                     "phone-harness permissions again. This run did not wait.")
-    elif guide == "skipped":
-        lines.append("")
-        lines.append("Non-interactive: System Settings was not opened and this run did not wait.")
-    elif guide == "already_running":
-        lines.append("")
-        lines.append("A permission guide is already waiting in another terminal.")
-    elif report.get("ok"):
-        lines.append("")
-        lines.append("all clear")
-    else:
-        lines.append("")
-        lines.append("fix the FAILs above, then re-run")
-    return "\n".join(lines) + "\n"
-
-
-def format_json(report, guide=None):
-    payload = {
-        "ok": report["ok"],
-        "needed": report["needed"],
-        "platform": report["platform"],
-        "host": report["host"],
-        "binary": report["binary"],
-        "accessibility": report["accessibility"],
-        "screen_recording": report["screen_recording"],
-        "note": report.get("note") or "",
-    }
-    if guide:
-        payload["guide"] = guide
-    return json.dumps(payload, indent=2) + "\n"
 
 
 def doctor_lines(report):
@@ -605,41 +542,86 @@ def doctor_lines(report):
     return lines
 
 
-def emit_probe(kind):
-    """One word for a fresh-process poll. Exit 0 only when granted."""
-    if kind not in _KINDS:
-        print("unknown", file=sys.stderr)
-        return 2
-    value = live_preflight().get(kind)
-    if value is True:
-        print("granted")
-        return 0
-    if value is False:
-        print("denied")
-        return 1
-    print("unknown")
-    return 1
+def report_payload(report):
+    """The report as `doctor --json` prints it."""
+    return {
+        "ok": report["ok"],
+        "needed": report["needed"],
+        "platform": report["platform"],
+        "host": report["host"],
+        "binary": report["binary"],
+        "accessibility": report["accessibility"],
+        "screen_recording": report["screen_recording"],
+        "note": report.get("note") or "",
+    }
 
 
-def fresh_probe(kind):
-    """Ask a new interpreter so this process is not the one that read the grant."""
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "phone_harness.run", "permissions", "--probe", kind],
-            capture_output=True, text=True, timeout=_PROBE_TIMEOUT,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    word = ""
-    for line in reversed((proc.stdout or "").splitlines()):
-        if line.strip():
-            word = line.strip()
-            break
-    if word == "granted":
-        return True
-    if word == "denied":
+# --- doctor --fix -------------------------------------------------------------
+
+def gui_session():
+    """True when a window from this process would be seen at the Mac: the
+    process is in a window server session and that session is on the
+    console. SSH and launchd sessions have no window server session."""
+    if sys.platform != "darwin":
         return False
-    return None
+    try:
+        import Quartz
+        info = Quartz.CGSessionCopyCurrentDictionary()
+    except Exception:
+        return False
+    if not info:
+        return False
+    # The key's string differs from the constant's name.
+    key = getattr(Quartz, "kCGSessionOnConsoleKey", "kCGSSessionOnConsoleKey")
+    try:
+        on_console = info.get(key)
+    except Exception:
+        on_console = None
+    return on_console is None or bool(on_console)
+
+
+def over_ssh(environ=None):
+    environ = os.environ if environ is None else environ
+    return any(environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+
+
+def fix_mode(report, tty, noninteractive=False, gui=False, ssh=False):
+    """How `doctor --fix` acts on this report.
+
+    none           nothing is missing
+    skip           --yes or --non-interactive: nothing opens, nothing waits
+    manual         text only: the state could not be read, or a pipe with
+                   nobody at the Mac
+    open           a pipe at the Mac: open the first missing pane, return
+    panel          a terminal at the Mac and an app to drag: the panel
+    open_and_wait  a terminal at the Mac, no app (the Python binary): open
+                   each pane and wait here
+    wait           a terminal over SSH or without a display: wait here and
+                   open nothing
+    """
+    if not report.get("needed") or report.get("ok"):
+        return "none"
+    if noninteractive:
+        return "skip"
+    if any(report[kind]["state"] == "unknown" for kind in _missing(report)):
+        return "manual"
+    desktop = bool(gui) and not ssh
+    if not tty:
+        return "open" if desktop else "manual"
+    if not desktop:
+        return "wait"
+    if (report.get("host") or {}).get("kind") == "app" and report["host"].get("path"):
+        return "panel"
+    return "open_and_wait"
+
+
+def guide_lock_path():
+    return config.run_dir() / "permission-guide.lock"
+
+
+def acquire_guide_lock():
+    """One guide at a time, panel or text. The lock goes away with its process."""
+    return permission_panel.take_lock(str(guide_lock_path()))
 
 
 def open_settings(url):
@@ -652,196 +634,216 @@ def open_settings(url):
     return True
 
 
-def acquire_guide_lock():
-    """One waiting guide. The lock dies with the process that holds it."""
+def panel_spec(report, timeout=GUIDE_TIMEOUT):
+    """What permission_panel reads on stdin."""
+    host = report.get("host") or {}
+    steps = [{"kind": kind, "list": report[kind]["list"], "url": report[kind]["url"],
+              "state": report[kind]["state"]} for kind in _missing(report)]
+    return {
+        "host": {"name": host.get("name") or "", "path": host.get("path") or ""},
+        "steps": steps,
+        "note": python_row_note(report),
+        "timeout": timeout,
+        "lock": str(guide_lock_path()),
+    }
+
+
+def _panel_result(out):
+    for line in reversed((out or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("outcome") in permission_panel.OUTCOMES:
+            return data["outcome"], str(data.get("detail") or "")
+    return None
+
+
+def run_panel(report, timeout=GUIDE_TIMEOUT, popen=None):
+    """Show the panel in its own process and wait for it. (outcome, detail)."""
+    popen = popen or subprocess.Popen
     try:
-        import fcntl
-    except ImportError:
-        return None
-    path = config.run_dir() / "permission-guide.lock"
-    handle = None
+        proc = popen(
+            [sys.executable, "-m", "phone_harness.permission_panel"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        return "error", f"could not start the panel ({exc})"
+    spec = json.dumps(panel_spec(report, timeout)) + "\n"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(path, "a+")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        if handle is not None:
-            handle.close()
-        return None
-    return handle
+        # The panel ends itself at its own timeout. This is the backstop.
+        out, err = proc.communicate(spec, timeout=timeout + 60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, err = proc.communicate()
+        return _panel_result(out) or ("timeout", "")
+    except KeyboardInterrupt:
+        # Ctrl-C reached the panel too. Make sure it is gone.
+        proc.kill()
+        proc.communicate()
+        return "dismissed", "interrupted"
+    result = _panel_result(out)
+    if result is not None:
+        return result
+    last = [line for line in (err or "").splitlines() if line.strip()][-1:]
+    return "error", last[0].strip() if last else f"the panel exited with status {proc.returncode}"
 
 
-def _missing(report):
-    return [kind for kind in _KINDS if report[kind]["state"] != "granted"]
+def _duration(seconds):
+    seconds = int(seconds)
+    if seconds >= 120 and seconds % 60 == 0:
+        return f"{seconds // 60} minutes"
+    return f"{seconds} seconds"
 
 
-def run_guide(wait, open_pane, timeout=_GUIDE_TIMEOUT, interval=_GUIDE_INTERVAL,
-              opener=None, probe=None, sleep=None, clock=None, say=None,
-              host=None, identify=None, version=None):
-    """Open the missing pane and optionally poll until both are granted.
-
-    `wait` is the terminal case. A pipe opens once and returns (`opened`)
-    so an agent is not stuck for the timeout. `--yes` sets both false.
-    Off macOS there is nothing to grant: iPhone Mirroring is the Mac path,
-    and a cloud phone does not use these permissions.
-    """
-    if sys.platform != "darwin":
-        return "not_needed", not_needed_report()
+def wait_for_grant(report, open_pane, timeout=GUIDE_TIMEOUT, interval=_GUIDE_INTERVAL,
+                   opener=None, probe=None, sleep=None, clock=None, say=None, lock=None):
+    """Text guide: poll a new process every `interval` seconds until each
+    missing grant lands, opening its pane first when `open_pane`. Returns
+    granted, timeout, dismissed (Ctrl-C), or already_running."""
     opener = opener or open_settings
-    probe = probe or fresh_probe
+    probe = probe or fresh_preflight
     sleep = sleep or time.sleep
     clock = clock or time.monotonic
-    say = say or (lambda _message: None)
-
-    def snapshot():
-        return collect(
-            preflight={kind: probe(kind) for kind in _KINDS},
-            host=host, identify=identify, version=version,
-        )
-
-    report = snapshot()
-    if not report["needed"] or report["ok"]:
-        return "not_needed", report
-    if not open_pane and not wait:
-        return "skipped", report
-    if not wait:
-        kind = _missing(report)[0]
-        opener(report[kind]["url"])
-        return "opened", report
-
-    lock = acquire_guide_lock()
-    if lock is None:
-        return "already_running", report
+    say = say or (lambda _line: None)
+    held = (lock or acquire_guide_lock)()
+    if held is None:
+        return "already_running"
     try:
-        deadline = clock() + max(0, timeout)
-        opened = None
-        while _missing(report) and clock() < deadline:
-            kind = _missing(report)[0]
-            entry = report[kind]
-            if opened != kind:
-                opener(entry["url"])
-                opened = kind
-                say(f'Waiting for {entry["list"]} (up to {int(timeout)}s).')
-                say(f"Grant {_subject(report['host'])}.")
-                if entry.get("url"):
-                    say(entry["url"])
-            if probe(kind) is True:
-                say(f'{entry["list"]} granted.')
-                report = snapshot()
-                opened = None
+        deadline = clock() + max(0.0, float(timeout))
+        granted = set()
+        for kind in _missing(report):
+            if kind in granted:
                 continue
-            remaining = deadline - clock()
-            if remaining <= 0:
-                break
-            before = clock()
-            sleep(min(interval, remaining))
-            if clock() <= before:
-                break
-        report = snapshot()
-        if report["ok"]:
-            return "granted", report
-        return "timeout", report
+            entry = report[kind]
+            if open_pane:
+                opener(entry["url"])
+                say(f"Opened System Settings > Privacy & Security > {entry['list']}.")
+            else:
+                say("This session has no display at the Mac, so nothing was opened. At the Mac:")
+            say(entry["summary"].rstrip(".") + ".")
+            row = python_row_note(report)
+            if row:
+                say(row)
+            say(f"Waiting up to {_duration(timeout)} for the grant. Ctrl-C stops.")
+            while True:
+                states = probe() or {}
+                granted.update(name for name in _KINDS if states.get(name) is True)
+                if kind in granted:
+                    say(f"{entry['list']}: on.")
+                    break
+                remaining = deadline - clock()
+                if remaining <= 0:
+                    return "timeout"
+                before = clock()
+                sleep(min(interval, remaining))
+                if clock() <= before:
+                    return "timeout"
+        return "granted"
+    except KeyboardInterrupt:
+        return "dismissed"
     finally:
-        lock.close()
+        held.close()
 
 
-def _prompt_accessibility():
+def fix(report, tty, noninteractive=False, gui=None, ssh=None, timeout=GUIDE_TIMEOUT,
+        panel=None, wait=None, opener=None, recollect=None, say=None):
+    """Act on the missing grants the way this run allows (see fix_mode).
+
+    Returns (result, report): result is {"mode", "outcome", "detail",
+    "steps"}, and the report is read again when a grant may have landed.
+    """
+    say = say or (lambda _line: None)
+    gui = gui_session() if gui is None else gui
+    ssh = over_ssh() if ssh is None else ssh
+    mode = fix_mode(report, tty, noninteractive, gui, ssh)
+    steps = _missing(report) if report.get("needed") else []
+
+    def result(outcome, detail=""):
+        return {"mode": mode, "outcome": outcome, "detail": detail, "steps": steps}
+
+    if mode == "none":
+        return result("none"), report
+    if mode == "skip":
+        return result("skipped"), report
+    if mode == "manual":
+        unknown = any(report[kind]["state"] == "unknown" for kind in steps)
+        return result("manual", "unknown" if unknown else "no_desktop"), report
+    if mode == "open":
+        if (opener or open_settings)(report[steps[0]]["url"]):
+            return result("opened"), report
+        return result("manual", "open_failed"), report
+
+    outcome, detail = "error", ""
+    if mode == "panel":
+        name = report["host"].get("name") or "the app"
+        say(f'Opening a panel beside System Settings. Drag "{name}" into the list, '
+            "then confirm with Touch ID or your password. Not Now closes it.")
+        try:
+            outcome, detail = (panel or run_panel)(report, timeout)
+        except Exception as exc:
+            outcome, detail = "error", f"{type(exc).__name__}: {exc}"
+        if outcome == "error":
+            say(f"The panel could not run ({detail}). Guiding here instead.")
+            mode = "open_and_wait"
+    if mode in ("open_and_wait", "wait"):
+        try:
+            outcome = (wait or wait_for_grant)(
+                report, open_pane=mode == "open_and_wait", timeout=timeout,
+                opener=opener, say=say,
+            )
+        except Exception as exc:
+            outcome, detail = "error", f"{type(exc).__name__}: {exc}"
     try:
-        from ApplicationServices import AXIsProcessTrustedWithOptions
-    except Exception:
-        return
-    options = {"AXTrustedCheckOptionPrompt": True}
-    try:
-        from ApplicationServices import kAXTrustedCheckOptionPrompt
-        options = {kAXTrustedCheckOptionPrompt: True}
+        report = (recollect or (lambda: collect(host=report["host"])))()
     except Exception:
         pass
-    try:
-        AXIsProcessTrustedWithOptions(options)
-    except Exception:
-        return
+    if report.get("ok"):
+        outcome = "granted"
+    return result(outcome, detail), report
 
 
-def _prompt_screen_recording():
-    try:
-        import Quartz
-        fn = getattr(Quartz, "CGRequestScreenCaptureAccess", None)
-        if fn:
-            fn()
-    except Exception:
-        return
-
-
-def request_prompts():
-    """Show the system dialogs. Those dialogs pick a name on their own, so
-    `--guide` is how the user is shown the app this report already chose."""
-    _prompt_accessibility()
-    _prompt_screen_recording()
-
-
-def _parser():
-    parser = Parser(
-        prog="phone-harness permissions",
-        description=CLI_USAGE.strip("\n"),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--json", action="store_true", help="print the status as JSON")
-    parser.add_argument("--guide", action="store_true",
-                        help="open System Settings at the missing permission and wait in a terminal")
-    parser.add_argument("--request", action="store_true",
-                        help="show the system permission prompts, then report again")
-    parser.add_argument("--yes", action="store_true",
-                        help="do not open System Settings and do not wait")
-    parser.add_argument("--non-interactive", action="store_true",
-                        help="do not open System Settings and do not wait")
-    parser.add_argument("--timeout", type=_timeout_value, default=_GUIDE_TIMEOUT,
-                        help=f"seconds --guide waits in a terminal (default {_GUIDE_TIMEOUT})")
-    parser.add_argument("--probe", choices=_KINDS, help=argparse.SUPPRESS)
-    return parser
-
-
-def _timeout_value(value):
-    try:
-        number = float(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("timeout must be a number of seconds") from exc
-    if number < 0:
-        raise argparse.ArgumentTypeError("timeout must be >= 0")
-    return number
-
-
-def cli(argv):
-    ns = _parser().parse_args(list(argv))
-    if ns.probe:
-        return emit_probe(ns.probe)
-    noninteractive = bool(ns.yes or ns.non_interactive)
-    guide = None
-    if sys.platform != "darwin":
-        report = not_needed_report()
-        guide = "not_needed" if ns.guide else None
-    else:
-        if ns.request and not noninteractive:
-            request_prompts()
-        if ns.guide:
-            tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
-            wait = tty and not noninteractive
-            say = None if ns.json or not wait else (lambda message: print(message, flush=True))
-            guide, report = run_guide(
-                wait=wait,
-                open_pane=not noninteractive,
-                timeout=ns.timeout,
-                say=say,
-            )
-        elif ns.request:
-            # The prompt APIs cache a denial in this process. Read the
-            # answer from a fresh interpreter.
-            report = collect(preflight={kind: fresh_probe(kind) for kind in _KINDS})
-        else:
-            report = collect()
-    if ns.json:
-        sys.stdout.write(format_json(report, guide))
-    else:
-        sys.stdout.write(format_text(report, guide))
-    if guide == "already_running":
-        return 0
-    return 0 if report.get("ok") else 1
+def outcome_line(result, report):
+    """One line after the checks: what `--fix` did, and what is next."""
+    if not result:
+        return ""
+    outcome = result.get("outcome")
+    detail = result.get("detail") or ""
+    host = report.get("host") or {}
+    steps = result.get("steps") or []
+    first = report.get(steps[0]) if steps and isinstance(report.get(steps[0]), dict) else {}
+    where = first.get("list") or "the list"
+    if outcome == "granted":
+        line = "Granted."
+        if host.get("kind") == "app" and "screen_recording" in steps:
+            line += (f' If macOS asks to quit "{host.get("name")}", choose Later: '
+                     "a new phone-harness process already sees the grant.")
+        return line
+    if outcome == "dismissed":
+        return f"Not now. Run {FIX_COMMAND} when you are ready."
+    if outcome == "timeout":
+        return f"Timed out waiting for the grant. Run {FIX_COMMAND} to try again."
+    if outcome == "opened":
+        return (f"Opened System Settings > Privacy & Security > {where}. Turn on "
+                f"{_subject(host)}, then run {CHECK_COMMAND} again. This run did not "
+                "wait: its output is not a terminal.")
+    if outcome == "skipped":
+        return "Non-interactive: System Settings was not opened and this run did not wait."
+    if outcome == "already_running":
+        return (f"A permission guide is already open in another terminal. Finish or "
+                f"close it, then run {CHECK_COMMAND} again.")
+    if outcome == "manual" and detail == "unknown":
+        return "Could not read the permission state, so nothing was opened."
+    if outcome == "manual" and detail == "open_failed":
+        return (f"Could not open System Settings. Open Privacy & Security > {where} "
+                f"yourself, then run {CHECK_COMMAND} again.")
+    if outcome == "manual":
+        return (f"No desktop session here (SSH or no display), so nothing was opened. "
+                f"Grant it at the Mac, then run {CHECK_COMMAND} again.")
+    if outcome == "error":
+        return f"The guide stopped ({detail}). Run {FIX_COMMAND} to try again."
+    return ""

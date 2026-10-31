@@ -63,7 +63,7 @@ The agent installs the CLI, asks which phone to use, and walks you through the s
 
 | Phone | Needs |
 | --- | --- |
-| **iPhone** | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility and Screen Recording (`phone-harness permissions`) |
+| **iPhone** | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility and Screen Recording permission (`phone-harness doctor ios --fix` walks through them) |
 | **Android** | adb and USB debugging, on macOS, Linux or Windows |
 | **Cloud Android / iPhone** | [Phone Harness Cloud](https://phone-harness.com/dashboard?utm_source=github&utm_medium=readme&utm_campaign=setup-table) account; cloud Android also needs adb |
 

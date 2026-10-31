@@ -30,34 +30,37 @@ Works through the macOS iPhone Mirroring app. Two things only the user can do:
   need the physical phone).
 - Grant **Accessibility** and **Screen Recording** to the app that launches
   your commands (Terminal, iTerm, Cursor, Hermes, or your own agent app).
-  macOS does not grant these to the shell. If System Settings lists the
-  Python binary separately, that binary needs the same grants.
+  macOS does not grant these to the shell.
 
 Check first, and only ask for what is missing:
 
 ```bash
-phone-harness permissions
+phone-harness doctor ios
 ```
 
-`phone-harness permissions --json` is the same report for a script.
-`phone-harness doctor ios` includes it and stays non-interactive.
-
-When a permission is missing, open the exact pane and wait:
+It reads both permissions without prompting or opening System Settings and
+names the app to grant (`--json` is the same check for a script). When one
+is missing, ask the user to run this in a terminal on the Mac:
 
 ```bash
-phone-harness permissions --guide
+phone-harness doctor ios --fix
 ```
 
-That opens System Settings at Accessibility (named Device Control and Data
-Access on macOS 27 and later) or Screen Recording, names the app or binary
-to grant, and in a terminal returns when the grant lands. On a pipe it opens
-the pane once and returns. `--yes` and `--non-interactive` do not open
-Settings and do not wait.
+System Settings opens at the missing list, with a small panel beside it that
+shows the app's icon. They drag the icon into the list and confirm with
+Touch ID or their password. The panel shows a checkmark when the grant
+lands, moves on to the next missing list, then says all set and closes. Not
+Now closes it, and it gives up after 10 minutes. From a pipe, which is how
+most agents run commands, `--fix` opens the first missing pane and returns
+instead of waiting. Over SSH or without a display it prints the steps.
+`--yes` and `--non-interactive` never open System Settings and never wait.
 
-If the toggle is already on and the report says `stale`, or a fresh check
-is still denied, the app or the Python binary was updated or re-signed.
-Remove the old entry and grant the one the report names. A new
-phone-harness process sees a new grant; do not restart the terminal.
+If System Settings also lists the Python binary on its own row, turn that on
+too. If the switch is already on and the check says `stale`, the app or the
+Python binary was updated or re-signed: remove that entry and add it again.
+If macOS offers to quit the app after the Screen Recording grant, choose
+Later: a new phone-harness process already sees the grant, so the terminal
+does not need a restart.
 
 Whenever you capture or verify the screen, bring the Mirroring window forward
 so the user can see what you're doing.

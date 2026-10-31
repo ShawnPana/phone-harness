@@ -348,8 +348,7 @@ class TopLevel(unittest.TestCase):
             self.assertEqual(got.stderr, "")
             got.stdout.encode("ascii")
         for args in (["cloud", "--version"], ["android", "-V"], ["config", "--version"],
-                     ["update", "-V"], ["skill", "--version"], ["doctor", "-V"],
-                     ["permissions", "--version"]):
+                     ["update", "-V"], ["skill", "--version"], ["doctor", "-V"]):
             got = _run(*args)
             self.assertEqual(got.returncode, 0, (args, got.stderr, got.stdout))
             self.assertEqual(got.stdout, expected, args)
@@ -375,8 +374,7 @@ class TopLevel(unittest.TestCase):
         cases = (
             (["doctor", "--help"], "ios|android"),
             (["doctor", "-h"], "ios or android"),
-            (["permissions", "--help"], "--guide"),
-            (["permissions", "-h"], "--json"),
+            (["doctor", "--help"], "--fix"),
             (["skill", "--help"], "phone-harness skill"),
             (["skill", "-h"], "show this help message"),
             (["config", "--help"], "config get"),

@@ -119,8 +119,9 @@ def interruption(before, after):
     if b_front is None or a_front is None:
         raise RuntimeError(
             "focus_probe() could not read AXFrontmost. Grant Accessibility "
-            "to the app `phone-harness permissions` names. Refusing to report "
-            "an unmeasured result as no interruption.")
+            "to the app `phone-harness doctor ios` names (`--fix` walks "
+            "through it). Refusing to report an unmeasured result as no "
+            "interruption.")
     raised = a_depth is not None and (b_depth is None or a_depth < b_depth)
     return {"raised": bool(raised), "stole_focus": bool(a_front and not b_front)}
 

@@ -23,7 +23,7 @@ no hardware and is always the fallback.
 
 | Mode | Needs |
 | --- | --- |
-| Personal iPhone | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility + Screen Recording for the app that runs Python |
+| Personal iPhone | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility + Screen Recording for the app that launches the command (`phone-harness permissions`) |
 | Android on the desk | macOS, Linux or Windows; adb; USB debugging (or Wireless debugging, Android 11+) |
 | Cloud iPhone | HTTPS to phone-harness.com hosts; a signed-in account. No adb, any OS |
 | Cloud Android | the cloud iPhone list, plus adb and outbound TCP to the phone's adb port |
@@ -436,7 +436,10 @@ PY
 The Mac's iPhone Mirroring app renders the phone as a window; the harness
 captures that window and OCRs it with Vision for eyes, and posts HID-level
 events into it for hands. All coordinates are global macOS screen points.
+iPhone Mirroring stays the default on a Mac. The permission check does not
+run unless you ask.
 
+- **macOS permissions, before the first tap.** Accessibility (taps and typing) and Screen Recording (seeing the window) belong to the app that launches the command, such as Terminal, iTerm, Cursor, Hermes, or the agent's own app, not to the shell. If System Settings lists the Python binary separately, grant that too. `phone-harness permissions` reports each one and does not prompt. `phone-harness permissions --json` is that report for a script. When one is missing, `phone-harness permissions --guide` opens that System Settings pane and, in a terminal, waits until it is granted. `--yes` and `--non-interactive` never open Settings and never wait. A pipe opens the pane once and returns, so you are not stuck. If the toggle is already on and the state is `stale`, or a fresh check is still denied, the app or the Python binary was updated or re-signed: remove the old entry and grant the one the report names. A new phone-harness process sees a new grant; do not restart the terminal.
 - **Start every task with `ensure_device()`.** It is the first call on every
   phone, including iPhone Mirroring. It opens iPhone Mirroring
   if it is not running, brings the window to the front so the user sees what
@@ -525,7 +528,8 @@ is a git checkout). A checkout of this repo uses its own
 that directory from the packaged defaults when it does not exist yet;
 an existing workspace is left as it is. To get a fresh default, delete
 the workspace folder; it is recreated on the next run. For setup or
-permission problems, read
+permission problems, run `phone-harness permissions` (add `--json` when you
+need a machine-readable report) and read
 https://github.com/ShawnPana/phone-harness/blob/main/install.md.
 
 ## Updates

@@ -21,6 +21,8 @@ Commands:
   phone-harness --version, -V           print phone-harness <version>
   phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
   phone-harness doctor [ios|android]     same diagnosis as --doctor
+  phone-harness permissions [--json] [--guide]
+                                     macOS Accessibility and Screen Recording
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
   phone-harness cloud ...   rent a catalog phone: `cloud login`, `cloud ls`, `cloud start [PHONE]`
@@ -152,7 +154,7 @@ def _telemetry_command(args):
         return "version"
     if first in {"--doctor", "doctor"}:
         return "doctor"
-    if first in {"android", "cloud", "config", "skill", "update"}:
+    if first in {"android", "cloud", "config", "skill", "update", "permissions"}:
         return first
     return "usage"
 
@@ -197,6 +199,11 @@ def _exit_code(code):
 def main():
     global _helper_call_count
     args = sys.argv[1:]
+    # A grant poll is a fresh process on purpose, and it must not record
+    # telemetry or print the daily update line. One word on stdout, then exit.
+    if args[:2] == ["permissions", "--probe"] and len(args) == 3:
+        from .permissions import emit_probe
+        sys.exit(emit_probe(args[2]))
     # Once a day, on a terminal. Never delays or fails the command.
     if args[:1] != ["update"]:
         try:
@@ -299,7 +306,7 @@ def _take_session(args):
 # These three parse their own argv, including --help. A leading --help is
 # the top-level parser, so only a bare command name takes this path.
 # --version is handled before this, in any position.
-_OWNED = {"android", "cloud", "config"}
+_OWNED = {"android", "cloud", "config", "permissions"}
 
 
 def _version_text():
@@ -323,7 +330,7 @@ def _build_parser():
                         help=argparse.SUPPRESS)
     sub = parser.add_subparsers(
         dest="command", required=False,
-        metavar="{doctor,skill,config,update,cloud,android}",
+        metavar="{doctor,permissions,skill,config,update,cloud,android}",
     )
 
     doctor = sub.add_parser(
@@ -379,6 +386,8 @@ def _dispatch_owned(name, rest):
         from .android import cli
     elif name == "cloud":
         from .cloud import cli
+    elif name == "permissions":
+        from .permissions import cli
     else:
         from .config import cli
     sys.exit(cli(rest))

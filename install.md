@@ -15,7 +15,7 @@ the helper names and signatures are in the skill (`SKILL.md`, printed by
 
 | Mode | Needs | Detail |
 | --- | --- | --- |
-| Personal iPhone | macOS 15+, paired iPhone Mirroring (iOS 18+), Accessibility + Screen Recording for the app that runs Python | [setup/ios.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md) |
+| Personal iPhone | macOS 15+, paired iPhone Mirroring (iOS 18+), Accessibility + Screen Recording for the launching app (`phone-harness permissions`) | [setup/ios.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md) |
 | Android on the desk | macOS, Linux or Windows; adb; USB or Wireless debugging | [setup/android.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/android.md) |
 | Cloud iPhone | HTTPS only; a signed-in account | [setup/cloud.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md) |
 | Cloud Android | HTTPS, adb, and outbound TCP to the phone's adb port | [setup/cloud.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md) |
@@ -128,11 +128,15 @@ sign in to Phone Harness Cloud, it is linked to your account.
 `phone-harness doctor` walks the ladder in order and names the missing step. When a
 local check fails it also points at the cloud. Common ones:
 
-- **iPhone — capture is blank/black**: Screen Recording granted but the
-  app that runs your commands wasn't restarted; or Mirroring shows an interstitial (iPhone in Use /
+- **iPhone — capture is blank/black**: Screen Recording is missing, or the
+  toggle is on for an app or Python binary that was updated or re-signed.
+  `phone-harness permissions` names which one, and `stale` means remove that
+  entry and grant it again. A new phone-harness process sees a grant that
+  just landed. Or Mirroring shows an interstitial (iPhone in Use /
   Connect / Mac Locked) — clear it on the Mac, lock the iPhone if it says in use.
-- **iPhone — taps do nothing**: Accessibility missing, or another window stole
-  focus (helpers re-activate the window; check for a macOS prompt).
+- **iPhone — taps do nothing**: Accessibility missing or stale (same
+  `phone-harness permissions` report), or another window stole focus
+  (helpers re-activate the window; check for a macOS prompt).
 - **iPhone — `--doctor` says pyobjc missing on an install that works**: it is
   running a different Python than the one that has pyobjc. Re-run the Fast
   Path command, or use the interpreter `pip install -e .` used in a checkout.

@@ -13,6 +13,7 @@ Kept apart because they live differently:
              ~/.local/state/phone-harness/devices.json
              ~/.local/state/phone-harness/cloud.json
              ~/.local/state/phone-harness/telemetry.json
+             ~/.local/state/phone-harness/permissions.json
              ~/.local/state/phone-harness/run/awake.pid
   cache    the once-a-day update check: when it last looked, and the latest
            version it saw.
@@ -136,6 +137,7 @@ def paths():
             "devices": state_dir() / "devices.json",
             "cloud": state_dir() / "cloud.json",
             "telemetry": state_dir() / "telemetry.json",
+            "permissions": state_dir() / "permissions.json",
             "update": cache_dir() / "update.json",
             "run": run_dir()}
 

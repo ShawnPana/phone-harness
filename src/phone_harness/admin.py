@@ -45,23 +45,27 @@ CLOUD_HINT = ("\nNo working phone here? A cloud phone needs no hardware: "
               "https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md")
 
 
-def _host_app():
-    """The app macOS asks about: the outermost .app this process runs under
-    (a terminal, or an agent's own app). Falls back to a description."""
-    found, pid = None, os.getppid()
-    for _ in range(40):
-        if pid <= 1:
-            break
-        try:
-            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)],
-                                 capture_output=True, text=True, timeout=5).stdout.strip()
-            ppid, comm = out.split(None, 1)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            break
-        if ".app/" in comm:
-            found = comm.split(".app/")[0].rsplit("/", 1)[-1]
-        pid = int(ppid)
-    return f'"{found}"' if found else "the app that runs this command (your terminal or agent app)"
+def _check_permissions():
+    """Accessibility and Screen Recording, with the app or binary to grant.
+
+    Does not open System Settings and does not wait. `permissions --guide`
+    is the interactive path; doctor stays a single non-interactive pass.
+    """
+    from . import permissions
+    try:
+        report = permissions.collect()
+    except Exception as exc:
+        _check(permissions.ACCESSIBILITY_LABEL, False,
+               f"could not check permissions ({exc})")
+        _check(permissions.SCREEN_RECORDING_LABEL, False, "could not check permissions")
+        return
+    for label, ok, hint in permissions.doctor_lines(report):
+        _check(label, ok, hint)
+    text = permissions.explain(report)
+    if text:
+        print()
+        print(text)
+        print()
 
 
 # --- iPhone: pyobjc -> permissions -> Mirroring -> capture -> OCR -----------
@@ -76,16 +80,7 @@ def _doctor_ios():
                f"pyobjc-framework-Cocoa ({e})")
         return
 
-    from ApplicationServices import AXIsProcessTrusted
-    host = _host_app()
-    _check("Accessibility permission (taps & keystrokes)", AXIsProcessTrusted(),
-           f"System Settings > Privacy & Security > Accessibility: turn on {host}")
-
-    import Quartz as Q
-    _check("Screen Recording permission (seeing the phone)",
-           bool(Q.CGPreflightScreenCaptureAccess()),
-           f"System Settings > Privacy & Security > Screen Recording: turn on {host}, "
-           f"then quit and reopen it")
+    _check_permissions()
 
     from . import mirror
     _check(f"{mirror.APP_NAME} installed", Path(mirror.APP_PATH).exists(),
@@ -111,8 +106,9 @@ def _doctor_ios():
         size = os.path.getsize(path) if os.path.exists(path) else 0
         good = r.returncode == 0 and size > 20_000
         _check(f"window capture works ({size} bytes)", good,
-               "capture failed or is blank — Screen Recording permission "
-               "needs a terminal restart to take effect")
+               "capture failed or is blank. `phone-harness permissions` "
+               "names the app or Python binary; if the toggle is already on, "
+               "the grant is stale and has to be removed and added again")
         if good:
             from . import ocr
             n = len(ocr.recognize(path, win))

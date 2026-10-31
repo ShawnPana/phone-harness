@@ -86,7 +86,7 @@ That reaches the default phone. If it fails, use the sections below.
   or a number of minutes). New accounts get $5 of credit (100 Android minutes). Only a cloud Android
   bills by the minute; a cloud iPhone does not.
 
-No uv? `pip install phone-harness` works too. Upgrade that install with
+No uv? `pip install phone-harness==0.3.2` works too. Upgrade that install with
 `pip install -U phone-harness` (what `phone-harness update` prints for it).
 
 ## Working from a checkout (contributors)

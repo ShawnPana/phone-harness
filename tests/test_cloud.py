@@ -34,8 +34,15 @@ echo "$@" >> "$DIR/adb.log"
 case "$1" in
   connect)    touch "$DIR/connected"; echo "connected to $2" ;;
   disconnect) rm -f "$DIR/connected" "$DIR/unlocked"; echo "disconnected $2" ;;
+  get-state)
+    [ -f "$DIR/connected" ] || { echo "error: device not found" >&2; exit 1; }
+    # offline_left: how many more looks see the handshake still pending
+    n=$(cat "$DIR/offline_left" 2>/dev/null || echo 0)
+    if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$DIR/offline_left"; echo offline; else echo device; fi ;;
   shell)
     [ -f "$DIR/connected" ] || { echo "adb: device not found" >&2; exit 1; }
+    n=$(cat "$DIR/offline_left" 2>/dev/null || echo 0)
+    [ "$n" -gt 0 ] && { echo "adb: device offline" >&2; exit 1; }
     if [ "$2" = "unlock" ]; then
       [ "$3" = "ph_code" ] && { touch "$DIR/unlocked"; echo unlocked; } || echo "wrong code"
     elif [ -f "$DIR/unlocked" ]; then shift; sh -c "$*"
@@ -409,6 +416,19 @@ class CloudCli(unittest.TestCase):
         line = next(l for l in ls.stdout.splitlines() if "sid001" in l)
         self.assertTrue(line.startswith("*"), ls.stdout)
         self.assertIn("Saved phone", line)
+
+    def test_start_waits_out_a_phone_whose_adb_is_still_offline(self):
+        # Right after ready the phone can answer adb "offline" for a few
+        # seconds; that used to end `cloud start` in "stayed locked".
+        self.login()
+        (Path(self.home.name) / "offline_left").write_text("6")
+        r = self.run_cli("cloud", "start", "Saved phone", "--no-watch")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("(connected, unlocked)", r.stdout)
+        log = self.adb_log()
+        self.assertEqual(log.count("connect live.example:22220") - log.count("disconnect live.example:22220"), 1, log)
+        self.assertIn("shell unlock ph_code", log)
+        self.assertLess(log.index("get-state"), log.index("shell unlock ph_code"))
 
     def test_start_opens_the_live_view_unless_told_not_to(self):
         self.login()

@@ -1,9 +1,11 @@
 """macOS permission status and the guided grant for iPhone Mirroring.
 
 Accessibility (taps and typing) and Screen Recording (seeing the window)
-are recorded against the app that launched this process. A command running
-under tmux, SSH, or launchd has no such app, so the Python binary is the
-thing to grant. A running process can keep the answer it got first (Screen
+are recorded against the app that launched this process. Under tmux or
+screen, that is the app that started the server. A job started by launchd
+has no such app, so the Python binary is the thing to grant. An SSH login
+is checked against the SSH service instead, which no grant for Terminal or
+Python reaches. A running process can keep the answer it got first (Screen
 Recording does), so every read runs in a new process (permission_probe).
 
 When a check succeeds, the code hashes of that app and of Python are
@@ -60,13 +62,19 @@ def bundle_root(executable):
     return None
 
 
-def host_target(pid=None, parent_of=None, executable_of=None, self_exe=None):
-    """App bundle that owns this process, or the Python binary when there is none.
+def host_target(pid=None, parent_of=None, executable_of=None, self_exe=None,
+                environ=None, app_for_bundle=None):
+    """App bundle macOS asks about for this process, or the Python binary
+    when there is none.
 
     Start at this process and walk parents. The first executable that lives
     inside an app bundle decides the result, and the path reported is that
-    bundle's outer `.app`. No bundle on the chain means macOS will ask about
-    the binary itself.
+    bundle's outer `.app` ("via": "parent"). A tmux or screen server leaves
+    no app above its panes, but macOS still holds the app that started the
+    server responsible, and the panes keep that app's bundle id in
+    __CFBundleIdentifier ("via": "session"). With neither, the binary is
+    reported: macOS asks about it under launchd, and about the SSH service
+    in an SSH login ("via": "ssh").
     """
     parent_of = parent_of or default_parent
     executable_of = executable_of or default_executable
@@ -78,18 +86,41 @@ def host_target(pid=None, parent_of=None, executable_of=None, self_exe=None):
         exe = executable_of(seen)
         app = bundle_root(exe)
         if app:
-            return {
-                "kind": "app",
-                "name": Path(app).name.removesuffix(".app"),
-                "path": app,
-                "executable": exe,
-            }
+            return _app_host(app, exe, "parent")
         nxt = parent_of(seen)
         if nxt is None or nxt == seen:
             break
         seen = nxt
+    environ = os.environ if environ is None else environ
+    started = (app_for_bundle or app_for_bundle_id)(environ.get("__CFBundleIdentifier"))
+    if started:
+        return _app_host(started, "", "session")
     exe = self_exe or _python_binary()
-    return {"kind": "binary", "name": Path(exe).name, "path": exe, "executable": exe}
+    return {"kind": "binary", "name": Path(exe).name, "path": exe, "executable": exe,
+            "via": "ssh" if over_ssh(environ) else ""}
+
+
+def _app_host(app, executable, via):
+    return {"kind": "app", "name": Path(app).name.removesuffix(".app"), "path": app,
+            "executable": executable, "via": via}
+
+
+def app_for_bundle_id(bundle_id):
+    """The `.app` with this bundle id: the running copy first, else the one
+    Launch Services would open. None off macOS, or when there is none."""
+    if sys.platform != "darwin" or not bundle_id:
+        return None
+    try:
+        import AppKit
+        running = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+        url = running[0].bundleURL() if running else None
+        if url is None:
+            url = AppKit.NSWorkspace.sharedWorkspace().URLForApplicationWithBundleIdentifier_(
+                bundle_id)
+        path = url.path() if url is not None else None
+    except Exception:
+        return None
+    return bundle_root(str(path)) if path else None
 
 
 def default_executable(pid):
@@ -215,6 +246,10 @@ def _inside_host(binary, host):
         return False
 
 
+def _ssh_login(host):
+    return host.get("kind") == "binary" and host.get("via") == "ssh"
+
+
 def _subject(host):
     if host.get("kind") == "app":
         return f'"{host.get("name") or "the app"}" ({host.get("path")})'
@@ -233,7 +268,7 @@ def _classify(kind, granted, host, binary, prev):
         return "unknown", ""
     if granted:
         return "granted", ""
-    if not prev:
+    if not prev or _ssh_login(host):
         return "denied", ""
     same_host = prev.get("host_path") and prev.get("host_path") == host.get("path")
     # A different launching app needs its own grant. A binary move is stale
@@ -270,6 +305,10 @@ def _summary(kind, state, host, binary, version, reason, prev):
     if state == "unknown":
         return ("could not check (install pyobjc-framework-Quartz and "
                 "pyobjc-framework-ApplicationServices)")
+    if _ssh_login(host):
+        return ("off for this SSH login, which macOS checks against the SSH service rather than "
+                "Python or a terminal app. Run phone-harness in a tmux session started from a "
+                f"terminal app at the Mac, and turn that app on in {name}")
     if state == "stale" and reason == "binary_moved":
         return (f"stale grant: the Python binary moved from {prev.get('binary_path')} "
                 f"to {binary.get('path')}. Remove the old entry and grant the new binary")
@@ -327,6 +366,7 @@ def build_report(accessibility, screen_recording, host, binary, version, grants,
             "path": host.get("path") or "",
             "executable": host.get("executable") or "",
             "cdhash": host.get("cdhash") or "",
+            "via": host.get("via") or "",
         },
         "binary": {
             "path": binary.get("path") or "",
@@ -339,9 +379,11 @@ def build_report(accessibility, screen_recording, host, binary, version, grants,
         "note": "",
     }
     extra = []
+    # No Python or app grant applies to an SSH login, so notes about them would mislead.
+    ssh = _ssh_login(host)
     for kind in _KINDS:
         prev = grants.get(kind) or {}
-        if states[kind] == "granted":
+        if states[kind] == "granted" or ssh:
             continue
         if prev.get("host_path") and prev.get("host_path") != host.get("path") and states[kind] != "stale":
             extra.append(
@@ -355,7 +397,7 @@ def build_report(accessibility, screen_recording, host, binary, version, grants,
                 f"The Python binary changed from {prev['binary_path']} to {binary['path']}. "
                 "If System Settings lists it on its own, remove the old path and grant the new one."
             )
-    if binary.get("adhoc") and not ok:
+    if binary.get("adhoc") and not ok and not ssh:
         extra.append(
             "This Python binary is ad-hoc signed, so a reinstall or re-sign gives it a new "
             "identity and leaves the previous grant stale."
@@ -382,7 +424,7 @@ def not_needed_report():
         "ok": True,
         "needed": False,
         "platform": sys.platform,
-        "host": {"kind": "none", "name": "", "path": "", "executable": "", "cdhash": ""},
+        "host": {"kind": "none", "name": "", "path": "", "executable": "", "cdhash": "", "via": ""},
         "binary": {"path": "", "cdhash": "", "adhoc": False, "inside_host": False},
         "accessibility": dict(entry),
         "screen_recording": dict(entry),
@@ -511,12 +553,21 @@ def explain(report, hint=True):
         return ""
     lines = []
     host = report.get("host") or {}
+    ssh = _ssh_login(host)
     if host.get("kind") == "app":
         lines.append(f'Grant "{host.get("name")}" ({host.get("path")}).')
+        if host.get("via") == "session":
+            lines.append("Nothing above this process is an app (tmux, screen, or a detached job), "
+                         "so this is the app its session was started from.")
+    elif ssh:
+        lines.append("This is an SSH login, so a grant for Python or a terminal app does not apply to it.")
+        lines.append(f"At the Mac, start tmux in a terminal app and run {FIX_COMMAND} in it. Then "
+                     "attach to that tmux session over SSH and run phone-harness there.")
     else:
         lines.append(
-            "No launching app was found (tmux, SSH, or a service). "
-            f"Grant the Python binary ({host.get('path')}), or grant the terminal app that started this session."
+            "No launching app was found (a job started by launchd, for example). "
+            f"Grant the Python binary ({host.get('path')}). If the job starts Python through a "
+            "shell or another program, grant that program instead."
         )
     row = python_row_note(report, full=True)
     if row:
@@ -526,7 +577,7 @@ def explain(report, hint=True):
     links = [report[kind] for kind in _missing(report) if report[kind].get("url")]
     for entry in links:
         lines.append(f"{entry['list']}: {entry['url']}")
-    if hint and links:
+    if hint and links and not ssh:
         lines.append(f"Guided fix: {FIX_COMMAND}")
     return "\n".join(lines)
 
@@ -590,7 +641,8 @@ def fix_mode(report, tty, noninteractive=False, gui=False, ssh=False):
 
     none           nothing is missing
     skip           --yes or --non-interactive: nothing opens, nothing waits
-    manual         text only: the state could not be read, or a pipe with
+    manual         text only: the state could not be read, an SSH login
+                   (no grant made at the Mac reaches it), or a pipe with
                    nobody at the Mac
     open           a pipe at the Mac: open the first missing pane, return
     panel          a terminal at the Mac and an app to drag: the panel
@@ -604,6 +656,8 @@ def fix_mode(report, tty, noninteractive=False, gui=False, ssh=False):
     if noninteractive:
         return "skip"
     if any(report[kind]["state"] == "unknown" for kind in _missing(report)):
+        return "manual"
+    if _ssh_login(report.get("host") or {}):
         return "manual"
     desktop = bool(gui) and not ssh
     if not tty:
@@ -771,8 +825,13 @@ def fix(report, tty, noninteractive=False, gui=None, ssh=None, timeout=GUIDE_TIM
     if mode == "skip":
         return result("skipped"), report
     if mode == "manual":
-        unknown = any(report[kind]["state"] == "unknown" for kind in steps)
-        return result("manual", "unknown" if unknown else "no_desktop"), report
+        if any(report[kind]["state"] == "unknown" for kind in steps):
+            detail = "unknown"
+        elif _ssh_login(report.get("host") or {}):
+            detail = "ssh"
+        else:
+            detail = "no_desktop"
+        return result("manual", detail), report
     if mode == "open":
         if (opener or open_settings)(report[steps[0]]["url"]):
             return result("opened"), report
@@ -838,6 +897,8 @@ def outcome_line(result, report):
                 f"close it, then run {CHECK_COMMAND} again.")
     if outcome == "manual" and detail == "unknown":
         return "Could not read the permission state, so nothing was opened."
+    if outcome == "manual" and detail == "ssh":
+        return "This is an SSH login, so nothing was opened and this run did not wait."
     if outcome == "manual" and detail == "open_failed":
         return (f"Could not open System Settings. Open Privacy & Security > {where} "
                 f"yourself, then run {CHECK_COMMAND} again.")

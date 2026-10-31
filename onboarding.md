@@ -30,7 +30,9 @@ Works through the macOS iPhone Mirroring app. Two things only the user can do:
   need the physical phone).
 - Grant **Accessibility** and **Screen Recording** to the app that launches
   your commands (Terminal, iTerm, Cursor, Hermes, or your own agent app).
-  macOS does not grant these to the shell.
+  Under tmux or screen, that is the app that started the server. macOS does
+  not grant these to the shell, and no grant reaches a plain SSH login: over
+  SSH, work in a tmux session started from a terminal app at the Mac.
 
 Check first, and only ask for what is missing:
 
@@ -52,7 +54,8 @@ Touch ID or their password. The panel shows a checkmark when the grant
 lands, moves on to the next missing list, then says all set and closes. Not
 Now closes it, and it gives up after 10 minutes. From a pipe, which is how
 most agents run commands, `--fix` opens the first missing pane and returns
-instead of waiting. Over SSH or without a display it prints the steps.
+instead of waiting. Over SSH or without a display it prints the steps and
+opens nothing.
 `--yes` and `--non-interactive` never open System Settings and never wait.
 
 If System Settings also lists the Python binary on its own row, turn that on

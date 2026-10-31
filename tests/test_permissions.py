@@ -40,6 +40,10 @@ def _python_host():
     return _host(kind="binary", path=PYTHON, executable=PYTHON, name="python", cdhash="bin1")
 
 
+def _ssh_host():
+    return dict(_python_host(), via="ssh")
+
+
 def _binary(path=PYTHON, cdhash="bin1", adhoc=False, inside_host=False):
     return {"path": path, "cdhash": cdhash, "adhoc": adhoc, "inside_host": inside_host}
 
@@ -128,44 +132,85 @@ class HostAndLinks(unittest.TestCase):
                    "Python.app/Contents/MacOS/Python")
         self.assertEqual(permissions.bundle_root(shipped), EDITOR)
 
-    def test_walk_stops_at_the_nearest_app_and_keeps_its_outer_bundle(self):
-        exes = {10: PYTHON, 20: HELPER, 30: TERMINAL_BIN}
-        parents = {10: 20, 20: 30, 30: 1}
-        host = permissions.host_target(
-            pid=10, parent_of=parents.get, executable_of=exes.get, self_exe=PYTHON,
+    def walk(self, exes, parents, environ=None, apps=None, self_exe=PYTHON):
+        return permissions.host_target(
+            pid=10, parent_of=parents.get, executable_of=exes.get, self_exe=self_exe,
+            environ=environ or {}, app_for_bundle=(apps or {}).get,
         )
-        self.assertEqual(host["kind"], "app")
-        self.assertEqual(host["path"], EDITOR)
-        self.assertEqual(host["name"], "Editor")
-        self.assertEqual(host["executable"], HELPER)
+
+    def test_walk_stops_at_the_nearest_app_and_keeps_its_outer_bundle(self):
+        host = self.walk({10: PYTHON, 20: HELPER, 30: TERMINAL_BIN}, {10: 20, 20: 30, 30: 1})
+        self.assertEqual(host, {"kind": "app", "name": "Editor", "path": EDITOR,
+                                "executable": HELPER, "via": "parent"})
 
     def test_walk_passes_a_root_login_and_lands_on_terminal(self):
-        exes = {10: PYTHON, 20: "/bin/zsh", 30: "/usr/bin/login", 40: TERMINAL_BIN}
-        parents = {10: 20, 20: 30, 30: 40, 40: 1}
-        host = permissions.host_target(
-            pid=10, parent_of=parents.get, executable_of=exes.get, self_exe=PYTHON,
-        )
+        host = self.walk({10: PYTHON, 20: "/bin/zsh", 30: "/usr/bin/login", 40: TERMINAL_BIN},
+                         {10: 20, 20: 30, 30: 40, 40: 1})
         self.assertEqual(host["path"], TERMINAL)
         self.assertEqual(host["name"], "Terminal")
 
     def test_walk_passes_a_framework_python_and_lands_on_terminal(self):
-        exes = {10: FRAMEWORK_PYTHON, 20: "/bin/zsh", 30: TERMINAL_BIN}
-        parents = {10: 20, 20: 30, 30: 1}
-        host = permissions.host_target(
-            pid=10, parent_of=parents.get, executable_of=exes.get, self_exe=FRAMEWORK_PYTHON,
-        )
+        host = self.walk({10: FRAMEWORK_PYTHON, 20: "/bin/zsh", 30: TERMINAL_BIN},
+                         {10: 20, 20: 30, 30: 1}, self_exe=FRAMEWORK_PYTHON)
         self.assertEqual(host["kind"], "app")
         self.assertEqual(host["path"], TERMINAL)
 
     def test_no_app_means_the_python_binary_is_the_grant(self):
-        exes = {10: PYTHON, 20: "/bin/zsh"}
-        parents = {10: 20, 20: 1}
-        host = permissions.host_target(
-            pid=10, parent_of=parents.get, executable_of=exes.get, self_exe=PYTHON,
-        )
+        host = self.walk({10: PYTHON, 20: "/bin/zsh"}, {10: 20, 20: 1})
         self.assertEqual(host, {
-            "kind": "binary", "name": "python", "path": PYTHON, "executable": PYTHON,
+            "kind": "binary", "name": "python", "path": PYTHON, "executable": PYTHON, "via": "",
         })
+        unknown = self.walk({10: PYTHON, 20: "/bin/zsh"}, {10: 20, 20: 1},
+                            environ={"__CFBundleIdentifier": "com.example.gone"})
+        self.assertEqual(unknown["kind"], "binary")
+
+    def test_under_tmux_the_app_that_started_the_server_is_named(self):
+        # The tmux server is a child of launchd, so no app is above the pane.
+        tmux = ({10: PYTHON, 20: "/bin/zsh", 30: "/opt/homebrew/bin/tmux"}, {10: 20, 20: 30, 30: 1})
+        host = self.walk(*tmux, environ={"__CFBundleIdentifier": "com.apple.Terminal"},
+                         apps={"com.apple.Terminal": TERMINAL})
+        self.assertEqual(host, {"kind": "app", "name": "Terminal", "path": TERMINAL,
+                                "executable": "", "via": "session"})
+        # An app above the process wins over the environment it inherited.
+        above = self.walk({10: PYTHON, 20: HELPER}, {10: 20, 20: 1},
+                          environ={"__CFBundleIdentifier": "com.apple.Terminal"},
+                          apps={"com.apple.Terminal": TERMINAL})
+        self.assertEqual((above["path"], above["via"]), (EDITOR, "parent"))
+
+    def test_an_ssh_login_with_no_app_is_marked_as_one(self):
+        ssh = {"SSH_CONNECTION": "10.0.0.2 50000 10.0.0.1 22"}
+        login = self.walk({10: PYTHON, 20: "/bin/zsh", 30: "/usr/libexec/sshd-session"},
+                          {10: 20, 20: 30, 30: 1}, environ=ssh)
+        self.assertEqual((login["kind"], login["path"], login["via"]), ("binary", PYTHON, "ssh"))
+        # A tmux server started at the Mac and attached over SSH still names its app.
+        attached = self.walk({10: PYTHON, 20: "/bin/zsh", 30: "/opt/homebrew/bin/tmux"},
+                             {10: 20, 20: 30, 30: 1},
+                             environ=dict(ssh, __CFBundleIdentifier="com.apple.Terminal"),
+                             apps={"com.apple.Terminal": TERMINAL})
+        self.assertEqual((attached["path"], attached["via"]), (TERMINAL, "session"))
+
+    def test_a_bundle_id_resolves_to_the_running_app_first(self):
+        appkit = mock.Mock(spec=["NSRunningApplication", "NSWorkspace"])
+        running = mock.Mock()
+        running.bundleURL.return_value.path.return_value = TERMINAL
+        appkit.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value = [running]
+        workspace = appkit.NSWorkspace.sharedWorkspace.return_value
+        workspace.URLForApplicationWithBundleIdentifier_.return_value.path.return_value = EDITOR
+        resolve = permissions.app_for_bundle_id
+        with mock.patch.object(permissions.sys, "platform", "darwin"), \
+                mock.patch.dict(sys.modules, {"AppKit": appkit}):
+            self.assertEqual(resolve("com.apple.Terminal"), TERMINAL)
+            appkit.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value = []
+            self.assertEqual(resolve("com.example.editor"), EDITOR)
+            workspace.URLForApplicationWithBundleIdentifier_.return_value = None
+            self.assertIsNone(resolve("com.example.gone"))
+            self.assertIsNone(resolve(""))
+            appkit.NSRunningApplication.runningApplicationsWithBundleIdentifier_.side_effect = \
+                RuntimeError("no window server")
+            self.assertIsNone(resolve("com.apple.Terminal"))
+        with mock.patch.object(permissions.sys, "platform", "linux"), \
+                mock.patch.dict(sys.modules, {"AppKit": None}):
+            self.assertIsNone(resolve("com.apple.Terminal"))
 
     def test_deep_link_and_list_name_follow_the_os_version(self):
         self.assertEqual(permissions.settings_url("accessibility", (15, 0, 0)), ACCESSIBILITY_URL)
@@ -294,6 +339,42 @@ class Report(unittest.TestCase):
         self.assertIn("No launching app", text)
         self.assertIn(PYTHON, text)
         self.assertEqual(permissions.python_row_note(report), "")
+
+    def test_an_app_found_from_the_session_says_why_it_was_named(self):
+        report = _report(False, True, host=dict(_host(executable=""), via="session"))
+        self.assertEqual(report["host"]["via"], "session")
+        self.assertEqual(permissions.explain(report).splitlines()[:2], [
+            f'Grant "Terminal" ({TERMINAL}).',
+            "Nothing above this process is an app (tmux, screen, or a detached job), "
+            "so this is the app its session was started from.",
+        ])
+        self.assertEqual(permissions.fix_mode(report, tty=True, gui=True), "panel")
+        self.assertEqual(_report(False, True)["host"]["via"], "")
+        self.assertNotIn("session was started", permissions.explain(_report(False, True)))
+
+    def test_an_ssh_login_points_to_a_tmux_session_started_at_the_mac(self):
+        # Grants Terminal and an older Python once had do not make an SSH login stale.
+        grants = {kind: {"host_path": TERMINAL, "host_cdhash": "host1", "host_kind": "app",
+                         "binary_path": "/old/python", "binary_cdhash": "bin0"} for kind in
+                  ("accessibility", "screen_recording")}
+        report = _report(False, False, host=_ssh_host(), binary=_binary(adhoc=True), grants=grants)
+        for kind in ("accessibility", "screen_recording"):
+            self.assertEqual((report[kind]["state"], report[kind]["reason"]), ("denied", ""))
+            self.assertIn("SSH service", report[kind]["summary"])
+            self.assertIn("tmux session started from a terminal app at the Mac",
+                          report[kind]["summary"])
+        self.assertTrue(report["screen_recording"]["summary"].endswith(
+            f"turn that app on in {SCREEN_LIST}"))
+        self.assertEqual(report["note"], "")
+        text = permissions.explain(report)
+        self.assertEqual(text.splitlines(), [
+            "This is an SSH login, so a grant for Python or a terminal app does not apply to it.",
+            "At the Mac, start tmux in a terminal app and run phone-harness doctor ios --fix in it. "
+            "Then attach to that tmux session over SSH and run phone-harness there.",
+            "Accessibility: " + ACCESSIBILITY_URL,
+            f"{SCREEN_LIST}: " + SCREEN_URL,
+        ])
+        text.encode("ascii")
 
     def test_unknown_when_the_frameworks_are_missing(self):
         report = _report(None, None)
@@ -478,6 +559,18 @@ class FixMode(unittest.TestCase):
         self.assertEqual(mode(missing, tty=False, gui=True, ssh=True), "manual")
         self.assertEqual(mode(missing, tty=False, gui=False), "manual")
 
+    def test_an_ssh_login_gets_text_and_no_wait(self):
+        mode = permissions.fix_mode
+        login = _report(False, True, host=_ssh_host())
+        for tty in (True, False):
+            for gui in (True, False):
+                self.assertEqual(mode(login, tty=tty, gui=gui, ssh=True), "manual")
+                self.assertEqual(mode(login, tty=tty, noninteractive=True, gui=gui, ssh=True),
+                                 "skip")
+        # Under a tmux server started at the Mac, a grant made there lands, so it waits.
+        attached = _report(False, True, host=dict(_host(executable=""), via="session"))
+        self.assertEqual(mode(attached, tty=True, gui=True, ssh=True), "wait")
+
 
 class Fix(unittest.TestCase):
     def setUp(self):
@@ -519,14 +612,18 @@ class Fix(unittest.TestCase):
         self.assertEqual((failed["outcome"], failed["detail"]), ("manual", "open_failed"))
 
     def test_text_only_without_a_desktop_or_a_readable_state(self):
-        for options, detail in (({"tty": False, "gui": False}, "no_desktop"),
-                                ({"tty": False, "ssh": True}, "no_desktop"),
-                                ({}, "unknown")):
-            report = _report(None, None) if detail == "unknown" else _report(False, True)
+        missing = _report(False, True)
+        login = _report(False, True, host=_ssh_host())
+        for report, options, detail in ((missing, {"tty": False, "gui": False}, "no_desktop"),
+                                        (missing, {"tty": False, "ssh": True}, "no_desktop"),
+                                        (_report(None, None), {}, "unknown"),
+                                        (login, {"ssh": True}, "ssh"),
+                                        (login, {"ssh": True, "tty": False}, "ssh")):
             result, _report_after = self.run_fix(report, **options)
             self.assertEqual((result["mode"], result["outcome"], result["detail"]),
                              ("manual", "manual", detail), options)
         self.assertEqual(self.calls.log, [])
+        self.assertEqual(self.said, [])
 
     def test_a_terminal_at_the_mac_gets_the_panel_and_reads_again(self):
         before = _report(False, False)
@@ -833,6 +930,8 @@ class OutcomeLines(unittest.TestCase):
         self.assertIn("Could not read the permission state", self.line("manual", "unknown"))
         self.assertIn("Could not open System Settings", self.line("manual", "open_failed"))
         self.assertIn("No desktop session here", self.line("manual", "no_desktop"))
+        self.assertEqual(self.line("manual", "ssh", report=_report(False, False, host=_ssh_host())),
+                         "This is an SSH login, so nothing was opened and this run did not wait.")
         self.assertEqual(self.line("error", "AppKit is not available: x"),
                          "The guide stopped (AppKit is not available: x). "
                          "Run phone-harness doctor ios --fix to try again.")
@@ -878,6 +977,21 @@ class Doctor(TempHome):
         text = self.check(report)
         self.assertIn("stale grant", text)
         self.assertIn("Privacy_Accessibility", text)
+
+    def test_over_ssh_fix_says_why_and_neither_opens_nor_waits(self):
+        report = _report(False, False, host=_ssh_host())
+        with mock.patch.object(permissions, "gui_session", return_value=False), \
+                mock.patch.object(permissions, "over_ssh", return_value=True), \
+                mock.patch.object(permissions, "run_panel", side_effect=AssertionError("panel")), \
+                mock.patch.object(permissions, "wait_for_grant", side_effect=AssertionError("wait")), \
+                mock.patch.object(permissions, "open_settings", side_effect=AssertionError("open")):
+            text = self.check(report, fix=True, tty=True)
+        self.assertIn("This is an SSH login, so a grant for Python or a terminal app "
+                      "does not apply to it.", text)
+        self.assertIn("This is an SSH login, so nothing was opened and this run did not wait.", text)
+        self.assertNotIn("Guided fix", text)
+        self.assertEqual(admin._extra["fix"]["detail"], "ssh")
+        self.assertEqual(admin._extra["permissions"]["host"]["via"], "ssh")
 
     def test_fix_acts_first_and_the_checks_show_the_state_after_it(self):
         before, after = _report(False, False), _report(True, True)

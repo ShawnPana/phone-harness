@@ -9,9 +9,10 @@ Drives the user's own iPhone through the Mac's iPhone Mirroring window.
   Apple ID, nearby, locked, with Bluetooth and Wi-Fi on.
 - Python 3.10+ and the Mac-only dependencies, which the normal install pulls.
 - Two macOS permissions for **the app that launches the command** (Terminal,
-  iTerm, Cursor, Hermes, or the agent's own app). macOS does not grant them
-  to the shell. If System Settings lists the Python binary on its own row,
-  that row needs the same grants.
+  iTerm, Cursor, Hermes, or the agent's own app). Under tmux or screen, that
+  is the app that started the server, even when you attach from another
+  one. macOS does not grant them to the shell. If System Settings lists the
+  Python binary on its own row, that row needs the same grants.
   - **Accessibility** (on macOS 27 and later, the list is named Device
     Control and Data Access): taps and typing.
   - **Screen Recording** (named Screen & System Audio Recording on macOS 15
@@ -44,11 +45,17 @@ Without the panel:
 - From a pipe (an agent's shell, or `| cat`), `--fix` opens the first
   missing pane and returns. Run `phone-harness doctor ios` again once the
   switch is on.
-- Over SSH or without a display, nothing opens on the Mac. It prints the
-  steps and, in a terminal, waits until someone at the Mac grants it.
-- When no launching app can be found (tmux, a background service), the
-  Python binary is what to grant. `--fix` opens each pane and waits in the
-  terminal instead of showing the panel.
+- Without a display, or over SSH inside a tmux session started at the Mac,
+  nothing opens on the Mac. It prints the steps and, in a terminal, waits
+  until someone at the Mac grants them.
+- A plain SSH login is checked against the SSH service, not Python or a
+  terminal app, so no grant made at the Mac reaches it. `--fix` prints the
+  steps and does not wait. Start tmux in a terminal app at the Mac, run
+  `phone-harness doctor ios --fix` in it, then attach to that tmux session
+  over SSH and run phone-harness there.
+- When no app started the command (a job started by launchd, for example),
+  the Python binary is what to grant. In a terminal at the Mac, `--fix` then
+  opens each pane and waits there instead of showing the panel.
 - `--yes` and `--non-interactive` never open System Settings and never wait.
 
 If the switch is already on and the state is `stale`, or a new check is

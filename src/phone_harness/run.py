@@ -307,10 +307,12 @@ DOCTOR_HELP = """Diagnose the phone the helpers would drive.
 --fix walks through the macOS permissions iPhone Mirroring needs. In a
 terminal at the Mac it opens a panel beside System Settings: drag the app
 into the list, confirm with Touch ID or your password, and it moves on when
-each grant lands. Over SSH or without a display it prints the steps and, in
-a terminal, waits for the grant. From a pipe it opens the first missing
-pane and returns. --yes and --non-interactive never open System Settings
-and never wait."""
+each grant lands. Without a display it prints the steps and, in a
+terminal, waits for the grant. No grant made at the Mac reaches a plain SSH
+login, so there it prints the steps and does not wait: run phone-harness in
+a tmux session started at the Mac instead. From a pipe it opens the first
+missing pane and returns. --yes and --non-interactive never open System
+Settings and never wait."""
 
 
 def _version_text():

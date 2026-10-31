@@ -89,7 +89,8 @@ in the summary and move on. If yes:
   browser), then the same demo as step 5 on the cloud phone — open
   phone-harness.com in Chrome, offer the star — and `phone-harness cloud
   stop`. Keep it to a few minutes: a cloud Android bills by the minute and the
-  credit is theirs. (A cloud iPhone does not bill by the minute.)
+  credit is theirs. (A cloud iPhone is a flat subscription: it does not bill by
+  the minute.)
 
 ## Rules
 

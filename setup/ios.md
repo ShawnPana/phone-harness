@@ -8,29 +8,80 @@ Drives the user's own iPhone through the Mac's iPhone Mirroring window.
   Apple's own requirements apply: an iOS 18+ iPhone signed in to the same
   Apple ID, nearby, locked, with Bluetooth and Wi-Fi on.
 - Python 3.10+ and the Mac-only dependencies, which the normal install pulls.
-- Two macOS permissions for **the app that runs Python** (the terminal, or
-  the agent's own app if it runs commands itself), in System Settings >
-  Privacy & Security:
-  - **Accessibility**: taps and typing. Takes effect at once.
-  - **Screen Recording**: seeing the phone. Takes effect after that app
-    restarts.
-  macOS asks about the outermost app, not Python itself; `phone-harness
-  doctor ios` prints its name when a permission is missing.
+- Two macOS permissions for **the app that launches the command** (Terminal,
+  iTerm, Cursor, Hermes, or the agent's own app). Under tmux or screen, that
+  is the app that started the server, even when you attach from another
+  one. macOS does not grant them to the shell. If System Settings lists the
+  Python binary on its own row, that row needs the same grants.
+  - **Accessibility** (on macOS 27 and later, the list is named Device
+    Control and Data Access): taps and typing.
+  - **Screen Recording** (named Screen & System Audio Recording on macOS 15
+    and later): seeing the phone.
+
+## Check
+
+`phone-harness doctor ios` reads both permissions as part of the iPhone
+check. It does not prompt and does not open System Settings. It names the
+app or Python binary to grant and links the exact pane.
+`phone-harness doctor ios --json` is the same check for a script.
+
+## Grant
 
 ```bash
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+phone-harness doctor ios --fix
+```
+
+In a terminal on the Mac, this opens System Settings at the first missing
+list and a small panel beside it with the app's icon. Drag the icon into the
+list, then confirm with Touch ID or your password. The panel follows System
+Settings when you move it. A new process checks the grant every second; when
+it lands, the panel shows a checkmark, moves on to the next missing list,
+then says all set and closes. Not Now (or the panel's close button) stops
+it, Open Settings brings the list back, and it gives up after 10 minutes.
+One guide runs at a time.
+
+Without the panel:
+
+- From a pipe (an agent's shell, or `| cat`), `--fix` opens the first
+  missing pane and returns. Run `phone-harness doctor ios` again once the
+  switch is on.
+- Without a display, or over SSH inside a tmux session started at the Mac,
+  nothing opens on the Mac. It prints the steps and, in a terminal, waits
+  until someone at the Mac grants them.
+- A plain SSH login is checked against the SSH service, not Python or a
+  terminal app, so no grant made at the Mac reaches it. `--fix` prints the
+  steps and does not wait. Start tmux in a terminal app at the Mac, run
+  `phone-harness doctor ios --fix` in it, then attach to that tmux session
+  over SSH and run phone-harness there.
+- When no app started the command (a job started by launchd, for example),
+  the Python binary is what to grant. In a terminal at the Mac, `--fix` then
+  opens each pane and waits there instead of showing the panel.
+- `--yes` and `--non-interactive` never open System Settings and never wait.
+
+If the switch is already on and the state is `stale`, or a new check is
+still denied, the app or the Python binary was updated or re-signed. Remove
+the old entry with the minus button and add it again. If macOS offers to
+quit the app after the Screen Recording grant, choose Later: a new
+phone-harness process already sees the grant, so the terminal does not need
+a restart.
+
+Manual fallback, if System Settings does not open at the right list (iPhone
+Mirroring needs macOS 15, which uses this anchor):
+
+```bash
+open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility"
+open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture"
 ```
 
 ## Steps only the user can do
 
 1. Open iPhone Mirroring once and finish pairing (needs the phone in hand).
-2. Grant the two permissions above, then restart the app that runs Python.
+2. Grant the two permissions above (`phone-harness doctor ios --fix`).
 
-## Check
+## After that
 
-`phone-harness doctor ios`. It checks each step in order and names the first
-one that is missing. If it passes but taps or capture do nothing, look for a
-macOS permission prompt on the Mac.
+`phone-harness doctor ios` checks pairing, the mirroring window, capture,
+and OCR, and names the first step that is missing. If it passes but taps or
+capture do nothing, look for a macOS permission prompt on the Mac.
 
 Not on a Mac, or no iPhone nearby? Use a [cloud phone](cloud.md).

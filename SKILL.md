@@ -23,7 +23,7 @@ no hardware and is always the fallback.
 
 | Mode | Needs |
 | --- | --- |
-| Personal iPhone | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility + Screen Recording for the app that runs Python |
+| Personal iPhone | macOS 15+, iPhone Mirroring paired to an iOS 18+ iPhone, Accessibility + Screen Recording for the app that launches the command (`phone-harness doctor ios` checks them) |
 | Android on the desk | macOS, Linux or Windows; adb; USB debugging (or Wireless debugging, Android 11+) |
 | Cloud iPhone | HTTPS to phone-harness.com hosts; a signed-in account. No adb, any OS |
 | Cloud Android | the cloud iPhone list, plus adb and outbound TCP to the phone's adb port |
@@ -436,7 +436,10 @@ PY
 The Mac's iPhone Mirroring app renders the phone as a window; the harness
 captures that window and OCRs it with Vision for eyes, and posts HID-level
 events into it for hands. All coordinates are global macOS screen points.
+iPhone Mirroring stays the default on a Mac. Nothing checks permissions
+unless you run `phone-harness doctor ios`.
 
+- **macOS permissions, before the first tap.** Accessibility (taps and typing) and Screen Recording (seeing the window) belong to the app that launches the command, such as Terminal, iTerm, Cursor, Hermes, or the agent's own app, not to the shell. Under tmux or screen, that is the app that started the server, even when someone attaches from another app. `phone-harness doctor ios` reads both without prompting or opening anything and names the app to grant; `--json` is the same check for a script. When one is missing, ask the user to run `phone-harness doctor ios --fix` in a terminal on the Mac: a panel opens beside System Settings, they drag the app into the list and confirm with Touch ID or their password, and it moves on by itself as each grant lands (Not Now closes it; it gives up after 10 minutes). From a pipe, which is how most agent shells run, `--fix` opens the first missing pane and returns instead of waiting; without a display it prints the steps and opens nothing; `--yes` and `--non-interactive` never open System Settings and never wait. A plain SSH login is checked against the SSH service, so no grant made at the Mac reaches it and `--fix` only prints the steps: ask the user to start tmux in a terminal app at the Mac and run `phone-harness doctor ios --fix` there, then attach to that tmux session over SSH and run phone-harness inside it. If System Settings also lists the Python binary on its own row, that row needs turning on too. If the switch is already on and the state is `stale`, the app or the Python binary was updated or re-signed: remove that entry and add it again. If macOS offers to quit the app after the Screen Recording grant, Later is fine: a new phone-harness process already sees the grant, so do not restart the terminal.
 - **Start every task with `ensure_device()`.** It is the first call on every
   phone, including iPhone Mirroring. It opens iPhone Mirroring
   if it is not running, brings the window to the front so the user sees what
@@ -525,7 +528,8 @@ is a git checkout). A checkout of this repo uses its own
 that directory from the packaged defaults when it does not exist yet;
 an existing workspace is left as it is. To get a fresh default, delete
 the workspace folder; it is recreated on the next run. For setup or
-permission problems, read
+permission problems, run `phone-harness doctor ios` (add `--json` when you
+need a machine-readable report) and read
 https://github.com/ShawnPana/phone-harness/blob/main/install.md.
 
 ## Updates

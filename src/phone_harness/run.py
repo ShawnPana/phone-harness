@@ -21,6 +21,7 @@ Commands:
   phone-harness --version, -V           print phone-harness <version>
   phone-harness --doctor [ios|android]   diagnose the phone the helpers would drive
   phone-harness doctor [ios|android]     same diagnosis as --doctor
+  phone-harness doctor ios --fix         walk through the macOS permissions iPhone needs
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
   phone-harness cloud ...   rent a catalog phone: `cloud login`, `cloud ls`, `cloud start [PHONE]`
@@ -301,6 +302,18 @@ def _take_session(args):
 # --version is handled before this, in any position.
 _OWNED = {"android", "cloud", "config"}
 
+DOCTOR_HELP = """Diagnose the phone the helpers would drive.
+
+--fix walks through the macOS permissions iPhone Mirroring needs. In a
+terminal at the Mac it opens a panel beside System Settings: drag the app
+into the list, confirm with Touch ID or your password, and it moves on when
+each grant lands. Without a display it prints the steps and, in a
+terminal, waits for the grant. No grant made at the Mac reaches a plain SSH
+login, so there it prints the steps and does not wait: run phone-harness in
+a tmux session started at the Mac instead. From a pipe it opens the first
+missing pane and returns. --yes and --non-interactive never open System
+Settings and never wait."""
+
 
 def _version_text():
     from .update import installed_version
@@ -329,11 +342,17 @@ def _build_parser():
     doctor = sub.add_parser(
         "doctor",
         help="diagnose the phone the helpers would drive",
-        description="Diagnose the phone the helpers would drive.",
+        description=DOCTOR_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     doctor.add_argument("platform", nargs="?", metavar="ios|android",
                         help="ios or android (default: the configured platform)")
-    doctor.add_argument("extra", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    doctor.add_argument("--fix", action="store_true",
+                        help="walk through missing macOS permissions (iPhone)")
+    doctor.add_argument("--json", action="store_true", help="print the result as JSON")
+    doctor.add_argument("--yes", "--non-interactive", dest="noninteractive",
+                        action="store_true",
+                        help="never open System Settings and never wait")
 
     skill = sub.add_parser(
         "skill",
@@ -382,6 +401,18 @@ def _dispatch_owned(name, rest):
     else:
         from .config import cli
     sys.exit(cli(rest))
+
+
+def _doctor_alias(args):
+    """`--doctor [PLATFORM]` is the older spelling of `doctor [PLATFORM]`.
+    Rewritten here so the doctor flags work after either one."""
+    first = args[0]
+    if first == "--doctor":
+        return ["doctor"] + args[1:]
+    if first.startswith("--doctor="):
+        value = first.split("=", 1)[1]
+        return ["doctor"] + ([value] if value else []) + args[1:]
+    return args
 
 
 def _host_reaching(value):
@@ -448,18 +479,17 @@ def _run(args):
     if args[0] in _OWNED:
         _dispatch_owned(args[0], args[1:])
         return
+    args = _doctor_alias(args)
     parser, subs = _build_parser()
     ns = parser.parse_args(args)
     if ns.session:
         os.environ["PHONE_HARNESS_SESSION"] = ns.session
     if ns.command == "doctor" or (ns.command is None and ns.doctor is not None):
-        if ns.command == "doctor":
-            _reject_dashed(subs["doctor"], ns.extra)
-            platform = ns.platform
-        else:
-            platform = ns.doctor or None
         from .admin import run_doctor
-        sys.exit(run_doctor(platform))
+        if ns.command == "doctor":
+            sys.exit(run_doctor(ns.platform, fix=ns.fix, as_json=ns.json,
+                                noninteractive=ns.noninteractive))
+        sys.exit(run_doctor(ns.doctor or None))
     if ns.command == "skill":
         _reject_dashed(subs["skill"], ns.words)
         _write_utf8(_skill_text())

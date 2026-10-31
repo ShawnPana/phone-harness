@@ -38,9 +38,12 @@ phone-harness chooses the phone (an attached cloud phone, otherwise its
 default). To force the phone on this machine, export `PHONE_HARNESS_PLATFORM`
 as `ios` or `android` in the environment Hermes runs in. iPhone control needs
 Accessibility and Screen Recording for the app that runs Hermes (the Hermes
-desktop app, or your terminal for `hermes` in a shell). Android needs adb; a
-cloud phone needs `phone-harness cloud login`. [install.md](../../install.md)
-covers each.
+desktop app, or your terminal for `hermes` in a shell). Run through Hermes,
+`phone-harness doctor ios` names that app and says when a grant is stale
+after an update, and `phone-harness doctor ios --fix` opens the missing
+System Settings pane. Android needs adb; a cloud phone needs
+`phone-harness cloud login`.
+[install.md](../../install.md) covers each.
 
 ## Settings
 

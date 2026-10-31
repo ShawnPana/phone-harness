@@ -59,7 +59,7 @@ class CloudError(RuntimeError):
         super().__init__(self.body.get("error") or f"HTTP {status}")
 
 
-# Where the cloud is. Like gh, vercel and gcloud, the CLI names itself to the
+# Where the cloud is. Like gh and gcloud, the CLI names itself to the
 # sign-in system with a public OAuth client id: it identifies the app and
 # proves nothing, so it is safe here. PHONE_HARNESS_CLOUD_API and friends
 # override these for tests and for a Phone Harness instance of your own.

@@ -211,6 +211,8 @@ def lookup(key, default=None):
             return _coerce(os.environ[name], built_in), f"env:{name}"
     v = _dig(load(), key)
     if v is not None:
+        if isinstance(built_in, bool) and isinstance(v, str):
+            v = _coerce(v, built_in)
         return v, "file"
     if built_in is not None:
         return built_in, "default"
@@ -224,13 +226,17 @@ def get(key, default=None):
 def set(key, value):
     """Set a dotted key in config.json. Strings that look like JSON scalars
     ('true', '25') become that value, so the CLI can pass text through."""
+    built_in = _dig(DEFAULTS, key)
     if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-            if isinstance(parsed, (bool, int, float)) or parsed is None:
-                value = parsed
-        except ValueError:
-            pass
+        if isinstance(built_in, bool):
+            value = _coerce(value, built_in)
+        else:
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (bool, int, float)) or parsed is None:
+                    value = parsed
+            except ValueError:
+                pass
     data = load()
     d = data
     parts = key.split(".")

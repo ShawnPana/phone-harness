@@ -28,12 +28,37 @@ Works through the macOS iPhone Mirroring app. Two things only the user can do:
 
 - Pair iPhone Mirroring with the phone once (open the app; the pairing prompts
   need the physical phone).
-- Grant **Accessibility** and **Screen Recording** in System Settings →
-  Privacy & Security to the app that runs your commands (a terminal, or your
-  own agent app). `phone-harness doctor ios` names that app. Screen Recording
-  takes effect after that app restarts.
+- Grant **Accessibility** and **Screen Recording** to the app that launches
+  your commands (Terminal, iTerm, Cursor, Hermes, or your own agent app).
+  macOS does not grant these to the shell. If System Settings lists the
+  Python binary separately, that binary needs the same grants.
 
-Check first — `phone-harness doctor ios` — and only ask for what is missing.
+Check first, and only ask for what is missing:
+
+```bash
+phone-harness permissions
+```
+
+`phone-harness permissions --json` is the same report for a script.
+`phone-harness doctor ios` includes it and stays non-interactive.
+
+When a permission is missing, open the exact pane and wait:
+
+```bash
+phone-harness permissions --guide
+```
+
+That opens System Settings at Accessibility (named Device Control and Data
+Access on macOS 27 and later) or Screen Recording, names the app or binary
+to grant, and in a terminal returns when the grant lands. On a pipe it opens
+the pane once and returns. `--yes` and `--non-interactive` do not open
+Settings and do not wait.
+
+If the toggle is already on and the report says `stale`, or a fresh check
+is still denied, the app or the Python binary was updated or re-signed.
+Remove the old entry and grant the one the report names. A new
+phone-harness process sees a new grant; do not restart the terminal.
+
 Whenever you capture or verify the screen, bring the Mirroring window forward
 so the user can see what you're doing.
 

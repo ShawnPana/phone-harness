@@ -43,7 +43,8 @@ no hardware and is always the fallback.
 - `tap_text(query, index=0, exact=False)` - Tap the center of visible text matching `query`.
 - `tap(x, y)` - Tap one point.
 - `long_press(x, y, duration=0.8)` - Press and hold a point.
-- `type_text(text, delay=0.03, keystrokes=False)` - Type into the focused field.
+- `type_text(text, delay=0.03, keystrokes=False, clear=False)` - Type into the focused field. `clear=True` (or `replace=True`) clears existing text first.
+- `clear_text()` - Clear existing text in the focused field (select-all + delete).
 - `press(combo)` - Press a key, such as `press("enter")`.
 - `open_app(name)` - Launch an app and return the app id that launched.
 - `open_url(url)` - Open an https link in the phone's browser, whole. Cloud phones only for now.

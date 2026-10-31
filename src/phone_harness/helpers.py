@@ -280,14 +280,23 @@ def press(combo):
     return send("input.keys", combo=combo)
 
 
-def type_text(text, delay=0.03, keystrokes=False):
+def type_text(text, delay=0.03, keystrokes=False, clear=False, replace=False):
     """Type into the focused field. Tap the field and let the keyboard appear
     first — text sent before it has focus goes nowhere, silently, so check a
     capture afterwards.
 
     Pastes by default so the text arrives exactly as written; keystrokes=True
-    sends real key events for fields that need them."""
-    return send("input.text", s=text, delay=delay, keystrokes=keystrokes)
+    sends real key events for fields that need them.
+
+    clear=True (or replace=True) selects all and deletes existing content before
+    typing, replacing pre-filled fields rather than appending."""
+    return send("input.text", s=text, delay=delay, keystrokes=keystrokes,
+                clear=bool(clear or replace))
+
+
+def clear_text():
+    """Clear existing text in the focused field (select-all + delete)."""
+    return type_text("", clear=True)
 
 
 # --- gestures relative to the screen ----------------------------------------

@@ -257,5 +257,27 @@ class ResolvePrimary(unittest.TestCase):
         self.assertNotIn("no-adb", str(cm.exception))
 
 
+class InputText(unittest.TestCase):
+    def test_type_text_without_clear_only_types(self):
+        phone = Recorded()
+        phone._input_text("hello world")
+        self.assertEqual(phone.sent, ["input text hello%sworld"])
+
+    def test_type_text_with_clear_selects_all_and_deletes_first(self):
+        phone = Recorded()
+        phone._input_text("hello", clear=True)
+        self.assertEqual(
+            phone.sent,
+            ["input keyevent 29 --meta 113 && input keyevent KEYCODE_DEL",
+             "input text hello"])
+
+    def test_type_text_empty_with_clear_only_clears(self):
+        phone = Recorded()
+        phone._input_text("", clear=True)
+        self.assertEqual(
+            phone.sent,
+            ["input keyevent 29 --meta 113 && input keyevent KEYCODE_DEL"])
+
+
 if __name__ == "__main__":
     unittest.main()

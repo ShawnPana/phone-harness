@@ -1,0 +1,25 @@
+{
+  "id": "phone-harness",
+  "name": "Phone Harness",
+  "description": "Let your agent drive a real phone: an iPhone through iPhone Mirroring, an Android over adb, or a Phone Harness Cloud phone. Every script asks you first.",
+  "version": "0.1.0",
+  "categories": ["computer-use"],
+  "skills": ["./skills"],
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["phone_exec"]
+  },
+  "toolMetadata": {
+    "phone_exec": {
+      "optional": true,
+      "sideEffecting": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

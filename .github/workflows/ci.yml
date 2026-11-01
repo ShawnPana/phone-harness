@@ -47,3 +47,20 @@ jobs:
               assert 'needs macOS' in str(e), e
               print('ok:', e)
           "
+
+  openclaw-plugin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/openclaw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci --ignore-scripts
+      - name: build (the skill comes from the pinned phone-harness)
+        run: npm run build
+      - run: npm test
+      - name: ClawHub accepts the package
+        run: npx -y clawhub@0.25.0 package validate . --out "$RUNNER_TEMP/plugin-inspector"

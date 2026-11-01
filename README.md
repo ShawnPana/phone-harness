@@ -73,6 +73,8 @@ The agent installs the CLI, asks which phone to use, and walks you through the s
 
 **Hermes Agent:** `hermes plugins install ShawnPana/phone-harness/integrations/hermes`. See [integrations/hermes](integrations/hermes/README.md).
 
+**OpenClaw:** a native plugin with one `phone_exec` tool that asks before every script. See [integrations/openclaw](integrations/openclaw/README.md).
+
 ## Usage
 
 ```bash

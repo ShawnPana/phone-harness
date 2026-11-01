@@ -1,0 +1,4 @@
+node_modules/
+# Built from the repo's SKILL.md by scripts/build-skill.mjs.
+skills/
+*.tgz

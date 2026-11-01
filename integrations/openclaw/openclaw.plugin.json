@@ -1,0 +1,40 @@
+{
+  "id": "phone-harness",
+  "name": "Phone Harness",
+  "description": "Drive a real phone with one phone_exec tool: an iPhone through iPhone Mirroring, an Android over adb, or a Phone Harness Cloud phone.",
+  "categories": ["computer-use"],
+  "skills": ["skills/phone-harness"],
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["phone_exec"]
+  },
+  "toolMetadata": {
+    "phone_exec": {
+      "profiles": ["coding"],
+      "sideEffecting": true
+    }
+  },
+  "configContracts": {
+    "dangerousFlags": [{ "path": "classifierAutoRun", "equals": true }]
+  },
+  "uiHints": {
+    "classifierAutoRun": {
+      "label": "Classifier auto-run",
+      "help": "Skip the approval prompt for scripts a classifier judges to be phone-only. The classifier is a heuristic and can be bypassed, so a script may still reach this computer. Leave this off unless you accept that.",
+      "advanced": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "classifierAutoRun": {
+        "type": "boolean",
+        "default": false,
+        "description": "Skip the approval prompt for scripts a classifier judges to be phone-only. A heuristic that can be bypassed. Off by default."
+      }
+    }
+  }
+}

@@ -10,6 +10,21 @@ env:
   PHONE_HARNESS_TELEMETRY: "0"
 
 jobs:
+  openclaw-plugin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/openclaw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - run: npm ci --ignore-scripts
+      - name: typecheck and build the plugin and its skill
+        run: npm run build
+      - name: unit tests (no OpenClaw, no phone)
+        run: npm test
+
   install:
     strategy:
       fail-fast: false

@@ -384,12 +384,16 @@ def _dispatch_owned(name, rest):
     sys.exit(cli(rest))
 
 
+# Agent integrations that run model-written scripts behind an approval prompt.
+_SCRIPT_CLIENTS = ("hermes", "openclaw")
+
+
 def _host_reaching(value):
-    """Module and class objects a Hermes script must not receive already imported.
+    """Module and class objects an integration's script must not receive already imported.
 
     helpers.py imports importlib, Path, the transport module and other host
-    objects, and the script globals are a copy of that module. Under
-    PH_CLIENT=hermes those are left out, so ``importlib.import_module("os")``
+    objects, and the script globals are a copy of that module. Under a
+    _SCRIPT_CLIENTS PH_CLIENT those are left out, so ``importlib.import_module("os")``
     and ``Path.home()`` are not sitting in the script. Path instances are left
     out too: ``Path.home`` works on them, and ``read_text`` reads this computer.
     Unsupported stays. It is the phone error scripts catch, not a way off the phone.
@@ -404,12 +408,12 @@ def _host_reaching(value):
 
 
 def _bind_globals(namespace):
-    hermes = os.environ.get("PH_CLIENT") == "hermes"
+    restricted = os.environ.get("PH_CLIENT") in _SCRIPT_CLIENTS
     g = {}
     for k, v in namespace.items():
         if k.startswith("_"):
             continue
-        if hermes and _host_reaching(v):
+        if restricted and _host_reaching(v):
             continue
         if callable(v) and not isinstance(v, type) and not getattr(v, "__ph_traced__", False):
             v = _traced(k, v)

@@ -1,0 +1,5 @@
+node_modules/
+# npm run build writes these from the pinned phone-harness release
+skills/
+*.tgz
+reports/

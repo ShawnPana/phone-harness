@@ -907,7 +907,7 @@ class CloudCli(unittest.TestCase):
         self.assertIn("Try again in 12s", busy.stderr)
         FakeCloud.fail = (403, {"error": "blocked", "code": "account_blocked"}, None)
         blocked = self.run_cli("cloud", "start", "--no-watch")
-        self.assertIn("Rentals are blocked", blocked.stderr)
+        self.assertIn("blocked from starting phones", blocked.stderr)
         self.assertNotIn("isn't enabled", blocked.stderr)
         FakeCloud.fail = (403, {"error": "not enough credit", "balance_cents": 0}, None)
         broke = self.run_cli("cloud", "start", "--no-watch")
@@ -1194,6 +1194,23 @@ class CloudCli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(FakeCloud.posts[-1]["timeout_seconds"], 360)
         self.assertIn("expires  in 6 min", r.stdout)
+
+    def test_credit_shows_minutes_only_for_a_metered_account(self):
+        # The balance converts to Android minutes only when the account bills by
+        # the minute. A non-metered account (an iPhone subscription) shows the
+        # money alone, the way the MCP does. `price_cents_per_minute` can still
+        # be present when billing is disabled, so the rate alone is not enough.
+        from phone_harness.cloud import _credit
+        metered = {"balance_cents": 425, "price_cents_per_minute": 5, "billing_mode": "metered"}
+        self.assertEqual(_credit(metered), "$4.25 (about 85 min)")
+        disabled = dict(metered, billing_mode="disabled")
+        self.assertEqual(_credit(disabled), "$4.25")
+        # A missing billing_mode is treated as metered (older service responses).
+        no_mode = {"balance_cents": 425, "price_cents_per_minute": 5}
+        self.assertEqual(_credit(no_mode), "$4.25 (about 85 min)")
+        # No per-minute price: the money alone, whatever the billing flag says.
+        no_rate = {"balance_cents": 425, "billing_mode": "metered"}
+        self.assertEqual(_credit(no_rate), "$4.25")
 
     def test_a_control_error_prints_its_type_once(self):
         from phone_harness.remote import _plain_error

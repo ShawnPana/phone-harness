@@ -1,4 +1,4 @@
-"""Phone Harness Cloud: rent a phone, then drive it like any other.
+"""Phone Harness Cloud: start a phone, then drive it like any other.
 
 This module decides which phone exists and who pays for it. It never drives
 one. `cloud start` picks an entry from the account catalog (`GET /me` →
@@ -248,7 +248,7 @@ def _explain(e):
     if e.status == 401:
         return "This machine is signed out. Run: phone-harness cloud login"
     if e.status == 403 and e.code == "account_blocked":
-        return f"Rentals are blocked on this account ({e})."
+        return f"This account is blocked from starting phones ({e})."
     if e.status in (402, 403) and (
             e.code in ("insufficient_balance", "balance") or "balance_cents" in e.body
             or "credit" in str(e).lower() or "balance" in str(e).lower()):
@@ -399,7 +399,7 @@ def ended_message(rec):
 
     Expiry is named `expired`. Anything else (the service lost the session,
     the state file says it is gone) is named `failed` and `unreachable`.
-    The CLI does not rent a replacement itself.
+    The CLI does not start a replacement itself.
     """
     rec = rec or {}
     cause = "expired" if rec.get("cause") == "expired" or _expired(rec) else "unreachable"
@@ -413,7 +413,7 @@ def ended_message(rec):
             f"Start the same phone again for longer and continue the task: `{cmd}`. "
             "Replace <longer> with a duration longer than the session that just ended "
             "(`90s`, `15m`, or a number of minutes). "
-            "The CLI does not rent a phone by itself.")
+            "The CLI does not start a phone by itself.")
 
 
 # Sids whose ended-session message this process has already shown. The copy
@@ -971,7 +971,11 @@ def _logout(args):
 
 def _credit(me):
     rate = me.get("price_cents_per_minute") or 0
-    minutes = f" (about {me.get('balance_cents', 0) // rate} min)" if rate else ""
+    # A non-metered account (an iPhone subscription) does not spend credit by
+    # the minute, so the balance does not convert to minutes; the MCP skips the
+    # note the same way.
+    metered = me.get("billing_mode") != "disabled"
+    minutes = f" (about {me.get('balance_cents', 0) // rate} min)" if rate and metered else ""
     return f"{_money(me.get('balance_cents'))}{minutes}"
 
 
@@ -979,7 +983,7 @@ def _print_account(me):
     print(f"  credit   {_credit(me)}")
     print(f"  phone    {_describe_profile(me.get('profile') or {})}")
     if not me.get("can_rent", True):
-        print(f"  access   not enabled yet: {me.get('rent_blocked_reason') or 'rentals are closed'}")
+        print(f"  access   not enabled yet: {me.get('rent_blocked_reason') or 'phones are not available on this account'}")
 
 
 def _describe_profile(profile):

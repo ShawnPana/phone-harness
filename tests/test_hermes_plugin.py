@@ -743,7 +743,7 @@ class PluginManifest(unittest.TestCase):
     def test_the_package_pin_is_exact_and_the_plugin_version_stays(self):
         text = (PLUGIN_INIT.parent / "plugin.yaml").read_text(encoding="utf-8")
         self.assertIn("\nversion: 0.1.0\n", text)
-        self.assertIn("phone-harness==0.3.2", text)
+        self.assertIn("phone-harness==0.3.3", text)
         self.assertNotIn(">=", text)
         self.assertIn("classifier_auto_run:", text)
         self.assertIn("heuristic", text)

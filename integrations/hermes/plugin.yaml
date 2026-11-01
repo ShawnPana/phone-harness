@@ -11,7 +11,7 @@ provides_tools:
 provides_hooks:
   - pre_tool_call
 python_dependencies:
-  - "phone-harness==0.3.2"
+  - "phone-harness==0.3.3"
 config_schema:
   classifier_auto_run:
     type: bool

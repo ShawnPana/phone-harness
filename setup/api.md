@@ -34,6 +34,19 @@ curl -s -H "$C" -H 'Content-Type: application/json' \
   -d '{"op":"nav.home","kw":{}}' $CONTROL_URL/op      # Home Screen
 ```
 
-`GET /me` lists each phone's `id` under `available`. Each `/op` answers `{"result": ...}`. A cloud Android is reached over adb
-instead (`POST /sessions/SID/adb` returns host, port and unlock code), so it
-needs adb and the CLI is the easier path.
+`GET /me` lists each phone's `id` under `available`. Each `/op` answers `{"result": ...}`.
+
+A cloud Android is reached over adb instead, so it needs adb and the CLI is the
+easier path. Its `adb` block (host, port and unlock code) can land about a
+second after `state` turns `ready`, so keep polling for it, for 15 seconds at
+most:
+
+```bash
+for i in $(seq 30); do
+  ADB=$(curl -s -H "$AUTH" $API/sessions/SID | jq -c '.adb // empty')
+  [ -n "$ADB" ] && break
+  sleep 0.5
+done
+# Still none: ADB was turned off for this session. This turns it on and returns the block.
+[ -n "$ADB" ] || ADB=$(curl -s -H "$AUTH" -X POST $API/sessions/SID/adb)
+```

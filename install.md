@@ -83,8 +83,10 @@ That reaches the default phone. If it fails, use the sections below.
   `ios` / `android` when that names one phone. An Android needs adb, below.
   An iPhone needs no adb and no Mac; driving it is **Cloud iPhone** in
   the skill. A start lasts 15 minutes unless you pass `--for` (`90s`, `15m`,
-  or a number of minutes). New accounts get $5 of credit (100 Android minutes). Only a cloud Android
-  bills by the minute; a cloud iPhone does not.
+  or a number of minutes). New accounts get $5 of credit (100 Android minutes).
+  A cloud Android emulator bills 5¢ a minute from that credit. A cloud iPhone is
+  a real phone on a flat subscription, from $80 a month: it does not bill by the
+  minute.
 
 No uv? `pip install phone-harness` works too. Upgrade that install with
 `pip install -U phone-harness` (what `phone-harness update` prints for it).

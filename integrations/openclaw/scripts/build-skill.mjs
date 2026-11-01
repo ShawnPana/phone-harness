@@ -62,9 +62,9 @@ from phone_harness.cloud import cli
 cli(["start", "Temporary phone", "--for", "10m", "--no-watch"])
 \`\`\`
 
-A rented phone costs the user money, so ask before \`start\` and run \`cli(["stop"])\` when the task
-is done. If the phone reports \`Not signed in\`, ask the user to run this once in a terminal on the
-Gateway machine:
+A cloud Android bills the user by the minute, so ask before \`start\` and run \`cli(["stop"])\` when
+the task is done. If the phone reports \`Not signed in\`, ask the user to run this once in a terminal
+on the Gateway machine:
 
 \`\`\`bash
 uvx --from phone-harness==${pin} phone-harness cloud login

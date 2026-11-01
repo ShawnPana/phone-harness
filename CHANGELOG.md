@@ -4,10 +4,13 @@ Short summaries of user-visible changes at each release. Tags live in the
 [release list](https://github.com/ShawnPana/phone-harness/releases).
 
 ## [Unreleased]
-
 - **Setup** – The Fast Path install guide now detects the environment first
   and falls back to a cloud phone when no local phone is available
   ([#138](https://github.com/ShawnPana/phone-harness/pull/138)).
+- **Install** – The Fast Path no longer pins a specific version; the CLI shows
+  its version and a link to the release notes on first macOS permission prompt
+  so users can verify the build before granting Accessibility or Screen Recording
+  ([#144](https://github.com/ShawnPana/phone-harness/pull/144)).
 - **Billing** – The docs and skill now state clearly that only a cloud
   Android bills by the minute; a cloud iPhone does not
   ([#137](https://github.com/ShawnPana/phone-harness/pull/137)).

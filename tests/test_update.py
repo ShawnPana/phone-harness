@@ -201,12 +201,6 @@ class Docs(unittest.TestCase):
         self.assertIn(version, changelog.read_text(encoding="utf-8"),
                        "CHANGELOG.md must mention the current version")
 
-    def test_install_md_pins_the_published_version(self):
-        version = self._version()
-        install_md = self._repo_root() / "install.md"
-        text = install_md.read_text(encoding="utf-8")
-        self.assertIn(f"phone-harness=={version}", text,
-                       "install.md must pin the published version for pip")
 
 
 if __name__ == "__main__":

@@ -76,6 +76,7 @@ def _doctor_ios():
                f"pyobjc-framework-Cocoa ({e})")
         return
 
+
     from ApplicationServices import AXIsProcessTrusted
     host = _host_app()
     _check("Accessibility permission (taps & keystrokes)", AXIsProcessTrusted(),
@@ -126,6 +127,29 @@ def _doctor_ios():
     _check(f"session state: {state}", state == "ready",
            "an interstitial is up (iPhone in Use / Connect / Mac Locked) — "
            "clear it on the Mac; lock the iPhone if it says in use", fatal=False)
+
+
+def _show_version_on_first_permission_check(version, permission_type="accessibility"):
+    """Show version and release notes link the first time we check Mac permissions.
+    
+    Args:
+        version: The version string to display.
+        permission_type: Either "accessibility" or "screen_recording" to track
+            separately for each macOS permission prompt.
+    """
+    from . import config
+    state_path = config.state_dir() / f".permission_check_shown_{permission_type}"
+    if state_path.exists():
+        return
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text("1", encoding="utf-8")
+    except Exception:
+        return
+    if version:
+        print(f"phone-harness {version}")
+        print("Release notes: https://github.com/ShawnPana/phone-harness/releases")
+        print()
 
 
 # --- Android: adb -> a phone -> authorised -> awake -> tree ------------------

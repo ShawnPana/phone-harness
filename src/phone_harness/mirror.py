@@ -545,6 +545,14 @@ def capture(path=None, retries=2):
     capture of the window rect, which succeeds regardless of window backing
     (the app is frontmost by then, so nothing occludes the rect).
     """
+    # Show version and release notes on first Screen Recording permission prompt
+    try:
+        from .update import installed_version
+        from .admin import _show_version_on_first_permission_check
+        _show_version_on_first_permission_check(installed_version(), "screen_recording")
+    except Exception:
+        pass
+
     path = str(path or TMP / "window.png")
     last = None
     for attempt in range(retries + 1):

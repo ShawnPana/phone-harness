@@ -23,6 +23,7 @@ getting a plausible wrong answer.
 """
 import importlib
 import os
+import sys
 
 from . import ocr as _vision
 from .transport import Backend
@@ -629,6 +630,11 @@ def _ax_watch_open(mirror, on_notify):
     except Exception as exc:
         raise _ObserverUnavailable(
             "accessibility observer support is unavailable") from exc
+
+    # Show version and release notes on first Accessibility permission prompt
+    from .update import installed_version
+    from .admin import _show_version_on_first_permission_check
+    _show_version_on_first_permission_check(installed_version(), "accessibility")
 
     holder = {"fn": on_notify}
 

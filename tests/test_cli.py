@@ -542,3 +542,202 @@ class DoctorNamesTheHostApp(unittest.TestCase):
                 mock.patch.object(admin.subprocess, "run",
                                   lambda cmd, **kw: mock.Mock(stdout="1 /bin/zsh")):
             self.assertIn("terminal or agent app", admin._host_app())
+class VersionOnFirstPermissionCheck(unittest.TestCase):
+    def _mock_macos_modules(self):
+        """Mock macOS-only modules so ios.py can be imported on Linux."""
+        import sys
+        from unittest import mock
+        # Create mock modules for pyobjc
+        mock_quartz = mock.MagicMock()
+        mock_vision = mock.MagicMock()
+        mock_cocoa = mock.MagicMock()
+        mock_appservices = mock.MagicMock()
+        mock_objc = mock.MagicMock()
+        mock_foundation = mock.MagicMock()
+        mock_appkit = mock.MagicMock()
+        mock_corefoundation = mock.MagicMock()
+        
+        modules = {
+            "Quartz": mock_quartz,
+            "Vision": mock_vision,
+            "Cocoa": mock_cocoa,
+            "ApplicationServices": mock_appservices,
+            "objc": mock_objc,
+            "Foundation": mock_foundation,
+            "AppKit": mock_appkit,
+            "CoreFoundation": mock_corefoundation,
+            "PyObjCTools": mock.MagicMock(),
+            "PyObjCTools.AppHelper": mock.MagicMock(),
+        }
+        return mock.patch.dict(sys.modules, modules)
+
+class VersionOnFirstPermissionCheck(unittest.TestCase):
+    def _mock_macos_modules(self):
+        """Mock macOS-only modules so ios.py can be imported on Linux."""
+        import sys
+        from unittest import mock
+        # Create mock modules for pyobjc
+        mock_quartz = mock.MagicMock()
+        mock_vision = mock.MagicMock()
+        mock_cocoa = mock.MagicMock()
+        mock_appservices = mock.MagicMock()
+        mock_objc = mock.MagicMock()
+        mock_foundation = mock.MagicMock()
+        mock_appkit = mock.MagicMock()
+        mock_corefoundation = mock.MagicMock()
+
+        # Configure mocks for the Accessibility observer path
+        # running_app() returns an app with processIdentifier()
+        mock_app = mock.MagicMock()
+        mock_app.processIdentifier.return_value = 12345
+        mock_appkit.NSRunningApplication.runningApplicationsWithBundleIdentifier_.return_value = [mock_app]
+
+        # find_window() returns a window dict
+        mock_quartz.CGWindowListCopyWindowInfo.return_value = [{
+            "kCGWindowOwnerPID": 12345,
+            "kCGWindowBounds": {"X": 0, "Y": 0, "Width": 800, "Height": 600},
+            "kCGWindowNumber": 42,
+        }]
+
+        # AXObserverCreate returns (0, observer)
+        mock_observer = mock.MagicMock()
+        mock_appservices.AXObserverCreate.return_value = (0, mock_observer)
+        mock_appservices.AXObserverGetRunLoopSource.return_value = mock.MagicMock()
+        mock_corefoundation.CFRunLoopGetCurrent.return_value = mock.MagicMock()
+        mock_corefoundation.CFRunLoopAddSource.return_value = None
+        mock_corefoundation.kCFRunLoopDefaultMode = "default"
+
+        # AXUIElementCreateApplication returns an element
+        mock_appservices.AXUIElementCreateApplication.return_value = mock.MagicMock()
+        # AXUIElementCopyAttributeValue for AXWindows returns window elements
+        mock_ax_window = mock.MagicMock()
+        mock_appservices.AXUIElementCopyAttributeValue.side_effect = [
+            (0, [mock_ax_window]),  # AXWindows
+            (0, mock.MagicMock()),  # AXPosition
+            (0, mock.MagicMock()),  # AXSize
+        ]
+
+        modules = {
+            "Quartz": mock_quartz,
+            "Vision": mock_vision,
+            "Cocoa": mock_cocoa,
+            "ApplicationServices": mock_appservices,
+            "objc": mock_objc,
+            "Foundation": mock_foundation,
+            "AppKit": mock_appkit,
+            "CoreFoundation": mock_corefoundation,
+            "PyObjCTools": mock.MagicMock(),
+            "PyObjCTools.AppHelper": mock.MagicMock(),
+        }
+        return mock.patch.dict(sys.modules, modules)
+
+    def test_version_shown_on_first_accessibility_permission_prompt(self):
+        """Version and release notes shown on first Accessibility permission prompt."""
+        import contextlib
+        import io
+        import sys
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from phone_harness import config, update
+
+        with self._mock_macos_modules(), mock.patch.object(sys, "platform", "darwin"), \
+             mock.patch.object(update, "installed_version", return_value="0.3.2-test"):
+            from phone_harness import ios
+
+            # Use a temporary directory for state
+            with tempfile.TemporaryDirectory() as tmp:
+                state_dir = Path(tmp) / "phone-harness"
+                with mock.patch.object(config, "state_dir", return_value=state_dir):
+                    # First creation should NOT show version (no permission prompt yet)
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out):
+                        iphone = ios.IPhone()
+                    self.assertEqual(out.getvalue(), "")
+
+                    # Trigger Accessibility permission by arming session watch
+                    out2 = io.StringIO()
+                    with contextlib.redirect_stdout(out2):
+                        iphone._arm_session_watch()
+                    output = out2.getvalue()
+                    self.assertIn("phone-harness 0.3.2-test", output)
+                    self.assertIn("Release notes: https://github.com/ShawnPana/phone-harness/releases", output)
+
+                    # Second call should not show version (state file exists)
+                    out3 = io.StringIO()
+                    with contextlib.redirect_stdout(out3):
+                        iphone._arm_session_watch()
+                    self.assertEqual(out3.getvalue(), "")
+
+    def test_version_not_shown_on_non_darwin(self):
+        """IPhone.__init__ does not show version on non-macOS platforms."""
+        import contextlib
+        import io
+        import sys
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from phone_harness import config
+
+        with self._mock_macos_modules():
+            from phone_harness import ios
+
+            with tempfile.TemporaryDirectory() as tmp:
+                state_dir = Path(tmp) / "phone-harness"
+                with mock.patch.object(config, "state_dir", return_value=state_dir), \
+                     mock.patch.object(sys, "platform", "linux"):
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out):
+                        ios.IPhone()
+                    self.assertEqual(out.getvalue(), "")
+    def test_version_shown_on_first_screen_recording_permission_prompt(self):
+        """Version and release notes shown on first Screen Recording permission prompt,
+        even after Accessibility permission was already prompted."""
+        import contextlib
+        import io
+        import sys
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from phone_harness import config, update
+
+        with self._mock_macos_modules(), mock.patch.object(sys, "platform", "darwin"), \
+             mock.patch.object(update, "installed_version", return_value="0.3.2-test"):
+            from phone_harness import ios, mirror
+
+            # Use a temporary directory for state
+            with tempfile.TemporaryDirectory() as tmp:
+                state_dir = Path(tmp) / "phone-harness"
+                with mock.patch.object(config, "state_dir", return_value=state_dir):
+                    # First, trigger Accessibility permission by arming session watch
+                    out1 = io.StringIO()
+                    with contextlib.redirect_stdout(out1):
+                        iphone = ios.IPhone()
+                        iphone._arm_session_watch()
+                    output1 = out1.getvalue()
+                    self.assertIn("phone-harness 0.3.2-test", output1)
+                    self.assertIn("Release notes: https://github.com/ShawnPana/phone-harness/releases", output1)
+
+                    # Now trigger Screen Recording permission via capture
+                    # Need to mock the capture path
+                    with mock.patch.object(mirror, "find_window", return_value={"x": 0, "y": 0, "w": 400, "h": 800, "id": 1}), \
+                         mock.patch.object(mirror, "_run_capture", return_value=(True, "ok")), \
+                         mock.patch.object(mirror, "ensure_window", return_value={"x": 0, "y": 0, "w": 400, "h": 800, "id": 1}):
+                        out2 = io.StringIO()
+                        with contextlib.redirect_stdout(out2):
+                            mirror.capture()
+                        output2 = out2.getvalue()
+                        self.assertIn("phone-harness 0.3.2-test", output2)
+                        self.assertIn("Release notes: https://github.com/ShawnPana/phone-harness/releases", output2)
+
+                    # Second Screen Recording call should not show version
+                    with mock.patch.object(mirror, "find_window", return_value={"x": 0, "y": 0, "w": 400, "h": 800, "id": 1}), \
+                         mock.patch.object(mirror, "_run_capture", return_value=(True, "ok")), \
+                         mock.patch.object(mirror, "ensure_window", return_value={"x": 0, "y": 0, "w": 400, "h": 800, "id": 1}):
+                        out3 = io.StringIO()
+                        with contextlib.redirect_stdout(out3):
+                            mirror.capture()
+                        self.assertEqual(out3.getvalue(), "")

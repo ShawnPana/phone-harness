@@ -1,6 +1,7 @@
 """CLI help, bad flags, column layout, and optional color. No phone, no network."""
 import contextlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -497,6 +498,45 @@ class SessionAndStdinGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DoctorReportsAPhoneItCannotReach(unittest.TestCase):
+    """session.state raises these on purpose. The doctor reports them."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name)
+        (self.home / "state").mkdir()
+        adb = self.home / "adb"                  # up, with nothing attached
+        adb.write_text('#!/bin/sh\n[ "$1" = devices ] && echo "List of devices attached"\nexit 0\n')
+        adb.chmod(0o755)
+        self.env = {"PHONE_HARNESS_HOME": str(self.home), "PHONE_HARNESS_ADB": str(adb)}
+
+    def fail_line(self, got):
+        self.assertEqual(got.returncode, 1, got.stdout + got.stderr)
+        self.assertNotIn("Traceback", got.stderr)
+        self.assertIn("fix the FAILs above", got.stdout)
+        lines = [l for l in got.stdout.splitlines() if "[FAIL] a phone is reachable" in l]
+        self.assertEqual(len(lines), 1, got.stdout)
+        return lines[0]
+
+    def test_a_paired_phone_that_is_absent_is_a_fail_line_with_a_hint(self):
+        (self.home / "state" / "devices.json").write_text(json.dumps({"android": {
+            "primary": "pixel-8", "phones": {"pixel-8": {"serial": "PIXEL8", "model": "Pixel 8"}}}}))
+        for argv in (["--doctor", "android"], ["doctor", "android"]):
+            line = self.fail_line(_run(*argv, env=self.env))
+            self.assertIn("'pixel-8' is unreachable", line)
+            self.assertIn("did not connect to another phone", line)
+            self.assertIn("Wireless debugging", line)
+            self.assertIn("phone-harness android use NAME", line)
+            self.assertIn("phone-harness android forget pixel-8", line)
+
+    def test_an_unreadable_cloud_state_file_is_a_fail_line_too(self):
+        (self.home / "state" / "cloud.json").write_text("{not json")
+        line = self.fail_line(_run("--doctor", "android", env=self.env))
+        self.assertIn("cloud.json is unreadable", line)
+        self.assertIn("did not fall back to another phone", line)
 
 
 class DoctorSuggestsCloud(unittest.TestCase):

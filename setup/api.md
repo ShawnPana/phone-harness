@@ -38,8 +38,8 @@ curl -s -H "$C" -H 'Content-Type: application/json' \
 
 A cloud Android is reached over adb instead, so it needs adb and the CLI is the
 easier path. Its `adb` block (host, port and unlock code) can land about a
-second after `state` turns `ready`, so keep polling for it, for 15 seconds at
-most:
+second after `state` turns `ready`, so keep polling for it, for about 15
+seconds:
 
 ```bash
 for i in $(seq 30); do

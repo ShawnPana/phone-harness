@@ -19,6 +19,7 @@ import types
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 PLUGIN_INIT = Path(__file__).resolve().parents[1] / "integrations" / "hermes" / "__init__.py"
 REPO_SKILL = Path(__file__).resolve().parents[1] / "SKILL.md"
@@ -256,6 +257,7 @@ class Environment(Base):
         os.environ["PYTHONPATH"] = "/hermes"
         os.environ["PHONE_HARNESS_PLATFORM"] = "ios"
         os.environ["PHONE_HARNESS_TELEMETRY"] = "1"
+        self.plugin._package_dir = lambda: None
         env = self.plugin._env(self.data / "ws")
         self.assertEqual(env["PH_AGENT_WORKSPACE"], str(self.data / "ws"))
         self.assertEqual(env["PH_CLIENT"], "hermes")
@@ -263,6 +265,30 @@ class Environment(Base):
         self.assertEqual(env["PYTHONPATH"], "/hermes")
         self.assertEqual(env["PHONE_HARNESS_PLATFORM"], "ios")
         self.assertEqual(env["PHONE_HARNESS_TELEMETRY"], "1")
+
+    def test_the_script_finds_the_package_hermes_keeps_out_of_child_environments(self):
+        # A standard Hermes runs on a bare Python, attaches its packages at boot and strips
+        # them from PYTHONPATH, so a child of that Python sees none of them by itself.
+        site = self.data / "site-packages"
+        package = site / "phone_harness"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("")
+        (package / "run.py").write_text("print('ran from', __file__)\n")
+        self.plugin._package_dir = lambda: package
+        stripped = {**os.environ, "PYTHONPATH": "/your/libs"}
+        sys.modules["tools.environments.local"].hermes_subprocess_env = lambda: dict(stripped)
+        env = self.plugin._env(self.data / "ws")
+        self.assertEqual(env["PYTHONPATH"], os.pathsep.join((str(site), "/your/libs")))
+        ran = subprocess.run([sys.executable, "-m", "phone_harness.run"], env=env, cwd=self.data,
+                             capture_output=True, text=True)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn(str(package / "run.py"), ran.stdout)
+
+    def test_without_the_package_no_folder_is_added(self):
+        without = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        sys.modules["tools.environments.local"].hermes_subprocess_env = lambda: dict(without)
+        self.plugin._package_dir = lambda: None
+        self.assertNotIn("PYTHONPATH", self.plugin._env(self.data / "ws"))
 
     def test_the_plugin_does_not_invent_a_platform(self):
         saved = dict(os.environ)
@@ -367,6 +393,18 @@ class Command(unittest.TestCase):
         plugin = load_plugin()
         plugin._package_dir = lambda: Path("/opt/hermes/phone_harness")
         self.assertEqual(plugin._command(), [sys.executable, "-m", "phone_harness.run"])
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_linked_package_stays_beside_its_dependencies(self):
+        plugin = load_plugin()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "store" / "phone_harness").mkdir(parents=True)
+            (root / "site-packages").mkdir()
+            (root / "site-packages" / "phone_harness").symlink_to(root / "store" / "phone_harness")
+            origin = root / "site-packages" / "phone_harness" / "__init__.py"
+            with mock.patch("importlib.util.find_spec", return_value=types.SimpleNamespace(origin=str(origin))):
+                self.assertEqual(plugin._package_dir(), origin.parent)
 
     def test_a_missing_package_is_unavailable(self):
         plugin = load_plugin()

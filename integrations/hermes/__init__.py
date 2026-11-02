@@ -336,7 +336,7 @@ def _package_dir() -> Path | None:
     spec = importlib.util.find_spec("phone_harness")
     if spec is None or not spec.origin:
         return None
-    return Path(spec.origin).resolve().parent
+    return Path(spec.origin).parent
 
 
 def _command() -> list[str] | None:
@@ -467,6 +467,12 @@ def _env(workspace: Path) -> dict:
     for key, value in os.environ.items():
         if key.startswith("PHONE_HARNESS_"):
             env[key] = value
+    # A standard Hermes runs on a bare Python, attaches its packages at boot and strips them
+    # from every child's PYTHONPATH. This child is that same Python, so it gets back the one
+    # folder it needs to import the phone_harness Hermes installed.
+    package = _package_dir()
+    if package is not None:
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(package.parent), env.get("PYTHONPATH"))))
     env["PH_AGENT_WORKSPACE"] = str(workspace)
     env["PH_CLIENT"] = "hermes"
     if not _telemetry_opted_in():

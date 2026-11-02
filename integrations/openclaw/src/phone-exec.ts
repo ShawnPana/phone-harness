@@ -10,10 +10,13 @@
  * - The child environment drops credentials. Telemetry is Phone Harness's own, on by default
  *   like the CLI's, and DO_NOT_TRACK or `config set telemetry false` reach it unchanged.
  * - One script drives the phone at a time, across subagents in this process.
- * - A script past its timeout, or a cancelled call, is killed with everything it started.
+ * - A script past its timeout, or a cancelled call, is stopped with every process it started,
+ *   including ones in their own session or process group. See stopRun.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
@@ -123,18 +126,173 @@ export class PhoneLock {
 const phoneLock = new PhoneLock();
 
 // ---------------------------------------------------------------------------------------------
-// The child process.
+// Finding and stopping every process a script started.
+//
+// The runner leads its own process group, but a script can start processes that leave it: a new
+// session or group, or a child whose parent exits so that it is re-parented away from the runner.
+// Each run therefore tags its processes with RUN_MARKER, which every child inherits, and keeps a
+// record of the processes it has seen under the runner. Stopping a run kills, in repeated rounds
+// until none is left: the runner's process tree, every process carrying the marker, every process
+// in the record that is still the same process, everything under those, and their process groups.
 
-/** Kill the runner and everything it spawned (it leads its own process group). */
-function killGroup(pid: number): void {
+/** The environment variable that tags a run's processes. Its value is new for every run. */
+export const RUN_MARKER = "PH_OPENCLAW_RUN";
+const SAMPLE_MS = 500;
+const KILL_ROUND_MS = 50;
+const KILL_ROUNDS = 40;
+
+type Proc = { pid: number; ppid: number; pgid: number; zombie: boolean; started: string };
+type ProcessTable = Map<number, Proc>;
+
+function run(file: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(file, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }, (error, stdout) =>
+      resolve(error ? "" : stdout),
+    );
+  });
+}
+
+/** Every process on this machine. Linux reads /proc, so it works without ps; elsewhere, ps. */
+export async function processTable(): Promise<ProcessTable> {
+  const table: ProcessTable = new Map();
+  if (process.platform === "linux") {
+    for (const name of await readdir("/proc").catch(() => [] as string[])) {
+      if (!/^\d+$/.test(name)) continue;
+      const stat = await readFile(`/proc/${name}/stat`, "utf8").catch(() => "");
+      // pid (comm) state ppid pgrp session ... starttime is field 22. comm may hold spaces or parens.
+      const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      if (fields.length < 20) continue;
+      table.set(Number(name), {
+        pid: Number(name),
+        ppid: Number(fields[1]),
+        pgid: Number(fields[2]),
+        zombie: fields[0] === "Z",
+        started: fields[19] ?? "",
+      });
+    }
+    return table;
+  }
+  const out = await run("ps", ["-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid=", "-o", "stat=", "-o", "lstart="]);
+  for (const line of out.split("\n")) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*\S)\s*$/.exec(line);
+    if (!match) continue;
+    const [, pid, ppid, pgid, stat, started] = match as unknown as [string, string, string, string, string, string];
+    table.set(Number(pid), {
+      pid: Number(pid),
+      ppid: Number(ppid),
+      pgid: Number(pgid),
+      zombie: stat.startsWith("Z"),
+      started,
+    });
+  }
+  return table;
+}
+
+/**
+ * Processes whose environment carries this run's marker. Linux shows the environment of every
+ * process the user owns. macOS shows it through `ps -E`, except for its own system binaries; the
+ * record of processes seen under the runner covers those.
+ */
+export async function markedPids(marker: string): Promise<number[]> {
+  const needle = `${RUN_MARKER}=${marker}`;
+  const found: number[] = [];
+  if (process.platform === "linux") {
+    for (const name of await readdir("/proc").catch(() => [] as string[])) {
+      if (!/^\d+$/.test(name)) continue;
+      const environ = await readFile(`/proc/${name}/environ`, "latin1").catch(() => "");
+      if (environ.split("\0").includes(needle)) found.push(Number(name));
+    }
+    return found;
+  }
+  const out = await run("ps", ["-A", "-E", "-ww", "-o", "pid=", "-o", "command="]);
+  for (const line of out.split("\n")) {
+    const match = /^\s*(\d+)\s(.*)$/.exec(line);
+    if (match && ` ${match[2]} `.includes(` ${needle} `)) found.push(Number(match[1]));
+  }
+  return found;
+}
+
+function descendants(roots: Iterable<number>, table: ProcessTable): Set<number> {
+  const children = new Map<number, number[]>();
+  for (const proc of table.values()) {
+    const siblings = children.get(proc.ppid) ?? [];
+    siblings.push(proc.pid);
+    children.set(proc.ppid, siblings);
+  }
+  const found = new Set<number>();
+  const stack = [...roots];
+  while (stack.length > 0) {
+    for (const child of children.get(stack.pop() as number) ?? []) {
+      if (found.has(child)) continue;
+      found.add(child);
+      stack.push(child);
+    }
+  }
+  return found;
+}
+
+/** Remembers each process seen under the runner, with its start time, so a reused pid is never taken for it. */
+export class RunRecord {
+  readonly seen = new Map<number, string>();
+  readonly rootPid: number;
+  readonly marker: string;
+
+  constructor(rootPid: number, marker: string) {
+    this.rootPid = rootPid;
+    this.marker = marker;
+  }
+
+  note(table: ProcessTable): void {
+    for (const pid of descendants([this.rootPid], table)) {
+      const proc = table.get(pid);
+      if (proc && !this.seen.has(pid)) this.seen.set(pid, proc.started);
+    }
+  }
+
+  /** The run's live processes, found before anything is killed so no child is orphaned first. */
+  async live(table: ProcessTable): Promise<Set<number>> {
+    const roots = new Set<number>([this.rootPid, ...(await markedPids(this.marker))]);
+    for (const [pid, started] of this.seen) {
+      if (table.get(pid)?.started === started) roots.add(pid);
+    }
+    const all = new Set<number>([...roots, ...descendants(roots, table)]);
+    all.delete(process.pid);
+    return new Set([...all].filter((pid) => table.has(pid) && !table.get(pid)?.zombie));
+  }
+}
+
+/** Stop every process the run started. Resolves once none is left, or when the rounds run out. */
+export async function stopRun(record: RunRecord): Promise<void> {
   if (process.platform === "win32") {
-    spawn("taskkill", ["/T", "/F", "/PID", String(pid)], { stdio: "ignore" }).on("error", () => {});
+    // Windows has no process groups or sessions to leave; taskkill /T takes the whole tree.
+    spawn("taskkill", ["/T", "/F", "/PID", String(record.rootPid)], { stdio: "ignore" }).on("error", () => {});
     return;
   }
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    // Already gone.
+  const deadline = Date.now() + KILL_WAIT_MS / 2;
+  for (let round = 0; round < KILL_ROUNDS && Date.now() < deadline; round++) {
+    const table = await processTable();
+    record.note(table);
+    const targets = await record.live(table);
+    const ownGroup = table.get(process.pid)?.pgid;
+    const groups = new Set<number>([record.rootPid]);
+    for (const pid of targets) groups.add(table.get(pid)?.pgid ?? record.rootPid);
+    for (const group of groups) {
+      if (group <= 1 || group === ownGroup) continue;
+      try {
+        process.kill(-group, "SIGKILL");
+      } catch {
+        // No such group any more.
+      }
+    }
+    for (const pid of targets) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+    if (targets.size === 0 && round > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, KILL_ROUND_MS));
   }
 }
 
@@ -168,29 +326,47 @@ function runChild(command: Command, code: string, options: {
   return new Promise((resolve) => {
     const out = tailCollector(OUTPUT_CAP);
     const err = tailCollector(STDERR_CAP);
+    const marker = randomUUID();
     const child = spawn(command.file, command.args, {
       cwd: options.cwd,
-      env: options.env as NodeJS.ProcessEnv,
+      env: { ...options.env, [RUN_MARKER]: marker } as NodeJS.ProcessEnv,
       stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
+    const record = child.pid === undefined ? undefined : new RunRecord(child.pid, marker);
     let timedOut = false;
     let aborted = false;
     let settled = false;
+    let stopping = false;
     let killWait: NodeJS.Timeout | undefined;
+    // Note who is under the runner while it runs, so a process orphaned later can still be found.
+    const sampler =
+      record && process.platform !== "win32"
+        ? setInterval(() => {
+            void processTable().then((table) => record.note(table));
+          }, SAMPLE_MS)
+        : undefined;
+
+    let stopped: Promise<void> = Promise.resolve();
 
     const settle = (exitCode: number | null, spawnError?: NodeJS.ErrnoException) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(killWait);
+      clearInterval(sampler);
       options.signal?.removeEventListener("abort", onAbort);
-      resolve({ exitCode, stdout: out.read(), stderr: err.read(), timedOut, aborted, spawnError });
+      const result = { exitCode, stdout: out.read(), stderr: err.read(), timedOut, aborted, spawnError };
+      // A stopped run frees the phone only once its last process is gone.
+      void stopped.then(() => resolve(result));
     };
     const stop = () => {
-      if (child.pid !== undefined) killGroup(child.pid);
-      // Close follows the kill. Do not hang on a process that left the group and kept a pipe.
+      if (stopping) return;
+      stopping = true;
+      clearInterval(sampler);
+      // Close follows the kill. Do not hang if a pipe stays open anyway.
       killWait = setTimeout(() => settle(null), KILL_WAIT_MS);
+      if (record) stopped = stopRun(record).catch(() => {});
     };
     const onAbort = () => {
       aborted = true;

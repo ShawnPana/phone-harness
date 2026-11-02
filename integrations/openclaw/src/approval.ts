@@ -3,6 +3,8 @@
  *
  * - Every call asks the user first, through OpenClaw's plugin approvals. Nobody to answer means
  *   the script does not run.
+ * - The prompt shows the whole script. One too long for the prompt is refused, never cut, so no
+ *   one approves code they could not read.
  * - A sender OpenClaw knows is not the owner is refused. Chats can answer their own approvals,
  *   so the prompt alone would let them drive the owner's phone.
  * - "Allow always" covers later calls in the same session. OpenClaw leaves that memory to the
@@ -17,7 +19,11 @@ export const CLASSIFIER_AUTO_RUN_ENV = "PHONE_HARNESS_CLASSIFIER_AUTO_RUN";
 export const OWNER_ONLY = "Only the owner of this OpenClaw can drive the phone.";
 
 const APPROVAL_TIMEOUT_MS = 300_000;
-const DESCRIPTION_LIMIT = 512;
+/** OpenClaw's cap on a plugin approval's description (PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH). */
+export const DESCRIPTION_LIMIT = 512;
+const PREFIX = "phone_exec: ";
+/** The longest script, as the prompt shows it, that fits a prompt whole. */
+export const MAX_SHOWN_CHARS = DESCRIPTION_LIMIT - PREFIX.length;
 const CLASSIFIER_TIMEOUT_MS = 20_000;
 /** Above CLASSIFIER_TIMEOUT_MS, so a slow classifier ends in a prompt and not a blocked call. */
 export const HOOK_TIMEOUT_MS = 30_000;
@@ -57,17 +63,29 @@ export function classifierAutoRun(env: Env, setting: unknown): boolean {
 }
 
 /**
- * The script as the approver reads it, cut to fit the Gateway's description limit. A long script
- * keeps both ends, so padding cannot push what it really does out of the approver's sight.
+ * The whole script as the approver reads it. Runs of spaces, tabs and newlines show as one space,
+ * and control and invisible formatting characters are spelled out, so nothing that runs is hidden.
  */
-export function scriptSummary(code: string, prefix = "phone_exec: "): string {
-  const body = code.split(/\s+/).filter(Boolean).join(" ") || "(empty)";
-  const room = DESCRIPTION_LIMIT - prefix.length;
-  if (body.length <= room) return prefix + body;
-  const gap = (hidden: number) => ` ...[${hidden} characters hidden]... `;
-  const keep = room - gap(body.length).length;
-  const tail = Math.floor(keep / 2);
-  return prefix + body.slice(0, keep - tail) + gap(body.length - keep) + body.slice(-tail);
+export function shownScript(code: string): string {
+  const body = code.split(/[ \t\n\r\f\v]+/).filter(Boolean).join(" ");
+  const spelled = body.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (char) => `\\u{${(char.codePointAt(0) ?? 0).toString(16)}}`);
+  return spelled || "(empty)";
+}
+
+/** The prompt with the whole script, or null when it does not fit. A script is never cut. */
+export function approvalDescription(code: string, prefix = PREFIX): string | null {
+  const description = prefix + shownScript(code);
+  return description.length <= DESCRIPTION_LIMIT ? description : null;
+}
+
+/** What the model hears when a script is too long for anyone to read it in the prompt. */
+export function tooLongToShow(code: string, prefix = PREFIX): string {
+  return (
+    `This script is ${shownScript(code).length} characters as the approval prompt shows it, and the ` +
+    `prompt holds ${DESCRIPTION_LIMIT - prefix.length}. phone_exec only runs a script the user could ` +
+    "read in full, so it did not run. Split the work into shorter phone_exec calls; the phone keeps " +
+    "its state between them."
+  );
 }
 
 export function createApprovalGate(options: { autoRun: () => boolean; classify: Classify }) {
@@ -81,7 +99,7 @@ export function createApprovalGate(options: { autoRun: () => boolean; classify: 
     if (session !== undefined && trustedSessions.has(session)) return undefined;
 
     const code = typeof event.params.code === "string" ? event.params.code : "";
-    let description = scriptSummary(code);
+    let prefix = PREFIX;
     if (options.autoRun()) {
       let reason: string | null;
       try {
@@ -90,12 +108,12 @@ export function createApprovalGate(options: { autoRun: () => boolean; classify: 
         reason = "the classifier could not check";
       }
       if (reason === null) return undefined;
-      description = scriptSummary(
-        code,
+      prefix =
         `This script ${reason}, which reaches past the phone onto this computer. Classifier auto-run ` +
-          "is a heuristic and can be bypassed. phone_exec: ",
-      );
+        `is a heuristic and can be bypassed. ${PREFIX}`;
     }
+    const description = approvalDescription(code, prefix);
+    if (description === null) return { block: true, blockReason: tooLongToShow(code, prefix) };
     return {
       requireApproval: {
         title: "Run a script on the phone",

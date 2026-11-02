@@ -7,8 +7,11 @@ import {
   CLASSIFIER_AUTO_RUN_ENV,
   classifierAutoRun,
   classifyWithPython,
+  approvalDescription,
   createApprovalGate,
-  scriptSummary,
+  DESCRIPTION_LIMIT,
+  MAX_SHOWN_CHARS,
+  shownScript,
 } from "./approval.ts";
 
 const OWNER = { sessionId: "s1", sessionKey: "agent:main:main", requester: { senderIsOwner: true } };
@@ -52,17 +55,42 @@ describe("the prompt", () => {
     assert.ok(prompt.timeoutMs <= 600_000);
   });
 
-  it("keeps both ends of a long script, so padding cannot hide how it ends", async () => {
-    const code = `ensure_device() # ${"x".repeat(5000)}\nopen('/etc/passwd')`;
+  it("shows the whole of the longest script that fits", async () => {
+    const code = `print(${"1".repeat(MAX_SHOWN_CHARS - 7)})`;
+    assert.equal(code.length, MAX_SHOWN_CHARS);
     const prompt = approval(await gate()({ ...CALL, params: { code } }, OWNER));
-    assert.ok(prompt.description.length <= 512);
-    assert.ok(prompt.description.startsWith("phone_exec: ensure_device()"));
-    assert.ok(prompt.description.endsWith("open('/etc/passwd')"));
-    assert.match(prompt.description, /\d+ characters hidden/);
+    assert.equal(prompt.description, `phone_exec: ${code}`);
+    assert.equal(prompt.description.length, DESCRIPTION_LIMIT);
+  });
+
+  it("refuses a script too long to show whole, and never shows part of one", async () => {
+    // Padding in the middle used to drop out of a cut-down prompt. Now nothing is cut.
+    const code = `ensure_device()\n# ${"x".repeat(5000)}\nopen('/etc/passwd')`;
+    const result = await gate()({ ...CALL, params: { code } }, OWNER);
+    assert.ok(result && "block" in result, "expected a refusal, not a prompt");
+    assert.match(result.blockReason, new RegExp(`is ${shownScript(code).length} characters`));
+    assert.match(result.blockReason, new RegExp(`holds ${MAX_SHOWN_CHARS}\\b`));
+    assert.match(result.blockReason, /Split the work into shorter phone_exec calls/);
+    assert.equal(approvalDescription(code), null);
+  });
+
+  it("counts a run of whitespace as one character", async () => {
+    const code = `print(1)${" \n\t".repeat(10_000)}print(2)`;
+    const prompt = approval(await gate()({ ...CALL, params: { code } }, OWNER));
+    assert.equal(prompt.description, "phone_exec: print(1) print(2)");
+  });
+
+  it("spells out control and invisible characters instead of hiding them", async () => {
+    // A right-to-left override, a zero-width space, an escape and a line separator.
+    const code = "print('ok') #\u202e evil\u200b\u001b\u2028x";
+    const prompt = approval(await gate()({ ...CALL, params: { code } }, OWNER));
+    assert.equal(prompt.description, "phone_exec: print('ok') #\\u{202e} evil\\u{200b}\\u{1b}\\u{2028}x");
+    assert.doesNotMatch(prompt.description, /[\u202e\u200b\u001b\u2028]/);
   });
 
   it("has something to show for an empty or malformed call", () => {
-    assert.equal(scriptSummary(""), "phone_exec: (empty)");
+    assert.equal(shownScript(""), "(empty)");
+    assert.equal(approvalDescription(""), "phone_exec: (empty)");
   });
 });
 
@@ -141,6 +169,15 @@ describe("classifier auto-run", () => {
     assert.match(prompt.description, /imports os/);
     assert.match(prompt.description, /can be bypassed/);
     assert.ok(prompt.description.length <= 512);
+  });
+
+  it("refuses a flagged script too long to show beside the reason", async () => {
+    const code = `import os\n${"print(1)\n".repeat(48)}`;
+    assert.ok(shownScript(code).length < MAX_SHOWN_CHARS, "short enough for a plain prompt");
+    const before = gate({ autoRun: () => true, classify: async () => "imports os" });
+    const result = await before({ ...CALL, params: { code } }, OWNER);
+    assert.ok(result && "block" in result);
+    assert.match(result.blockReason, /Split the work/);
   });
 
   it("asks when the classifier fails", async () => {

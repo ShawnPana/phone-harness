@@ -1,6 +1,7 @@
 // The plumbing around a script, tested without OpenClaw or a phone. `node -` stands in for
 // phone-harness: like it, node runs whatever script arrives on stdin.
 import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,10 +45,78 @@ function payload(result: ToolResult): Record<string, unknown> {
 function alive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  // A killed process can sit as a zombie until its new parent reaps it. It is not running.
+  try {
+    return !execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim().startsWith("Z");
+  } catch {
+    return false;
+  }
+}
+
+async function waitFor(check: () => boolean, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return check();
+}
+
+function parentOf(pid: number): number {
+  return Number(execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }).trim());
+}
+
+/**
+ * A script that starts a process of every kind that can outlive a process-group kill: one in the
+ * script's own group, one in its own session, and one orphaned at once by a launcher that exits.
+ * With `seenFirst`, the orphan is a system binary whose launcher waits before exiting, so the
+ * plugin sees it under the script before it is orphaned. Every pid goes to a file.
+ */
+function escapingScript(seenFirst = false) {
+  const pids = join(dir, "pids");
+  const forever = join(dir, "forever.js");
+  const launcher = join(dir, "launcher.js");
+  writeFileSync(forever, "setInterval(() => {}, 1000);\n");
+  const orphan = seenFirst
+    ? `spawn("/bin/sleep", ["60"], { stdio: "ignore", detached: true })`
+    : `spawn(process.execPath, [${JSON.stringify(forever)}], { stdio: "ignore", detached: true })`;
+  writeFileSync(
+    launcher,
+    `const { spawn } = require("node:child_process");
+    const fs = require("node:fs");
+    const child = ${orphan};
+    fs.appendFileSync(${JSON.stringify(pids)}, "orphan " + child.pid + "\\nlauncher " + process.pid + "\\n");
+    setTimeout(() => process.exit(0), ${seenFirst ? 1500 : 0});\n`,
+  );
+  const script = `
+    const { spawn } = require("node:child_process");
+    const fs = require("node:fs");
+    const note = (name, pid) => fs.appendFileSync(${JSON.stringify(pids)}, name + " " + pid + "\\n");
+    note("same-group", spawn(process.execPath, [${JSON.stringify(forever)}], { stdio: "ignore" }).pid);
+    note("own-session", spawn(process.execPath, [${JSON.stringify(forever)}], { stdio: "ignore", detached: true }).pid);
+    spawn(process.execPath, [${JSON.stringify(launcher)}], { stdio: "ignore", detached: true });
+    setInterval(() => {}, 1000);
+  `;
+  const read = (): Record<string, number> => {
+    const text = existsSync(pids) ? readFileSync(pids, "utf8") : "";
+    return Object.fromEntries(text.trim().split("\n").filter(Boolean).map((line) => {
+      const [name, pid] = line.split(" ");
+      return [name, Number(pid)];
+    }));
+  };
+  return { script, read, forever };
+}
+
+/** Wait until the script's processes exist and the orphan has lost its launcher. */
+async function untilOrphaned(read: () => Record<string, number>): Promise<Record<string, number>> {
+  assert.ok(await waitFor(() => Object.keys(read()).length === 4, 10_000), "the script started its processes");
+  const pids = read();
+  assert.ok(await waitFor(() => !alive(pids.launcher as number), 10_000), "the launcher exited");
+  assert.notEqual(parentOf(pids.orphan as number), pids.launcher, "the orphan lost its parent");
+  return pids;
 }
 
 describe("the pinned command", () => {
@@ -110,21 +179,19 @@ describe("a script", () => {
   });
 });
 
+const POSIX = process.platform !== "win32";
+const NOT_POSIX = !POSIX && "sessions and process groups are POSIX";
+
 describe("a script past its timeout", () => {
-  it("is killed with everything it started", { timeout: 30_000 }, async () => {
-    const pidFile = join(dir, "pid");
-    const script = `
-      const { spawn } = require("node:child_process");
-      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-      require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
-      setInterval(() => {}, 1000);
-    `;
+  it("is stopped with every process it started, wherever it went", { skip: NOT_POSIX, timeout: 60_000 }, async () => {
+    const { script, read } = escapingScript();
     const result = await run(script, { timeout_s: 1 }); // clamped up to the 5 s minimum
     assert.equal(result.details.ok, false);
     assert.equal(result.details.timedOut, true);
     assert.equal(result.details.timeoutMs, 5000);
-    const grandchild = Number(readFileSync(pidFile, "utf8"));
-    assert.equal(alive(grandchild), false);
+    const pids = read();
+    assert.deepEqual(Object.keys(pids).sort(), ["launcher", "orphan", "own-session", "same-group"]);
+    for (const [name, pid] of Object.entries(pids)) assert.equal(alive(pid), false, `${name} survived`);
   });
 
   it("gets a tool budget longer than the script's own timeout", () => {
@@ -141,6 +208,50 @@ describe("a script past its timeout", () => {
     assert.equal(result.details.ok, false);
     assert.match(String(result.details.error), /cancelled/);
     assert.ok(Date.now() - started < 5000);
+  });
+});
+
+describe("a cancelled call", () => {
+  it("stops a child in its own session, and one orphaned at once", { skip: NOT_POSIX, timeout: 60_000 }, async () => {
+    const { script, read } = escapingScript();
+    const controller = new AbortController();
+    const running = run(script, { signal: controller.signal });
+    const pids = await untilOrphaned(read);
+    for (const [name, pid] of Object.entries(pids)) {
+      if (name !== "launcher") assert.equal(alive(pid), true, `${name} was running`);
+    }
+    controller.abort();
+    const result = await running;
+    assert.match(String(result.details.error), /cancelled/);
+    for (const [name, pid] of Object.entries(pids)) assert.equal(alive(pid), false, `${name} survived`);
+  });
+
+  it("stops a system binary orphaned after the plugin saw it", { skip: NOT_POSIX, timeout: 60_000 }, async () => {
+    // macOS hides the environment of its own binaries, such as /bin/sleep, from other processes,
+    // so here the record of processes seen under the script is what finds the orphan.
+    const { script, read } = escapingScript(true);
+    const controller = new AbortController();
+    const running = run(script, { signal: controller.signal });
+    const pids = await untilOrphaned(read);
+    assert.equal(alive(pids.orphan as number), true);
+    controller.abort();
+    await running;
+    for (const [name, pid] of Object.entries(pids)) assert.equal(alive(pid), false, `${name} survived`);
+  });
+
+  it("leaves processes the script did not start alone", { skip: NOT_POSIX, timeout: 60_000 }, async () => {
+    const { script, read, forever } = escapingScript();
+    const bystander = spawn(process.execPath, [forever], { stdio: "ignore", detached: true });
+    try {
+      const controller = new AbortController();
+      const running = run(script, { signal: controller.signal });
+      await untilOrphaned(read);
+      controller.abort();
+      await running;
+      assert.equal(alive(bystander.pid as number), true, "a process outside the run was killed");
+    } finally {
+      bystander.kill("SIGKILL");
+    }
   });
 });
 

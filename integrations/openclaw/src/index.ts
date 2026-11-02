@@ -15,6 +15,7 @@ import {
   classifyWithPython,
   createApprovalGate,
   HOOK_TIMEOUT_MS,
+  MAX_SHOWN_CHARS,
   OWNER_ONLY,
   TOOL_NAME,
 } from "./approval.ts";
@@ -36,7 +37,9 @@ const DESCRIPTION =
   "Mirroring, Android, and a cloud phone. Read what is on screen with screen(). screenshot() prints " +
   "the image path it saved, and that image is attached to this result. Ask the user before anything " +
   "outward-facing or hard to undo (sending, posting, buying, deleting, changing settings). Never " +
-  "type passwords, PINs or 2FA codes. Read the phone-harness skill for the helpers.";
+  "type passwords, PINs or 2FA codes. The user reads the whole script before approving it, so keep " +
+  `each one under ${MAX_SHOWN_CHARS} characters (runs of whitespace count as one) and split longer ` +
+  "work into several calls. Read the phone-harness skill for the helpers.";
 
 const PARAMETERS = Type.Object(
   {

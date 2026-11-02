@@ -31,17 +31,13 @@ again with `--accept-capabilities` once you have reviewed the plugin. A running
 Gateway picks the plugin up straight away, so there is nothing to restart. The
 first script fetches Phone Harness through uv, which takes a moment once.
 
-Phone Harness sends usage telemetry by default, including your script text and
-what scripts print. [Telemetry](#telemetry) says what is sent and how to turn it
-off.
-
 To install from a checkout instead:
 
 ```bash
 git clone https://github.com/phone-harness/phone-harness
 cd phone-harness/integrations/openclaw
 npm install --ignore-scripts && npm pack
-openclaw plugins install npm-pack:./phone-harness-0.1.0.tgz
+openclaw plugins install npm-pack:./phone-harness-0.1.1.tgz
 ```
 
 To use a cloud phone, sign in once on the Gateway machine:
@@ -67,8 +63,9 @@ needs adb. [install.md](../../install.md) covers each.
 
 ## Approvals
 
-Every `phone_exec` call asks you before it runs. You see the script, or both ends
-of it if it is long, and choose:
+Every `phone_exec` call asks you before it runs. The prompt shows the whole
+script, with each run of spaces and line breaks shown as one space and any
+invisible character spelled out, and you choose:
 
 - **Allow once** runs this script.
 - **Always allow** runs this script and every later script in the same session.
@@ -79,6 +76,11 @@ of it if it is long, and choose:
 Approve from the Control UI, or in a chat with `/approve`. If nobody can answer,
 the script does not run. That includes `openclaw agent` from a terminal and
 scheduled jobs. A prompt nobody answers expires after five minutes.
+
+OpenClaw holds 512 characters in a prompt, so a script longer than 500 as shown
+is not offered for approval at all. The agent is told to split it into shorter
+scripts, and the phone keeps its state between them. With classifier auto-run on,
+the reason takes part of the prompt, so a script that asks has less room.
 
 Only the owner can drive the phone. OpenClaw lets a chat answer its own approval
 prompts, so a sender it knows is not the owner is refused before any prompt.
@@ -99,7 +101,6 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
   internals, runs an adb shell command, or calls `send("raw", ...)`. What to do on
   the phone itself (sending, posting, buying, deleting, changing settings) is still
   the skill's consent rule: the agent asks you first.
-- Telemetry is on by default. See [Telemetry](#telemetry).
 - `PHONE_HARNESS_PLATFORM`, when you have exported it, is passed through.
 - The agent workspace is `phone-harness/agent-workspace` in OpenClaw's state
   directory, or `PH_AGENT_WORKSPACE` if that is set.
@@ -107,7 +108,8 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
 ## How it works
 
 1. The model calls `phone_exec(code, timeout_s=300)`. The limit is 1800 seconds.
-2. A `before_tool_call` hook asks you to approve the script.
+2. A `before_tool_call` hook shows you the whole script and asks you to approve
+   it, or refuses a script too long to show whole.
 3. Subagents take turns on the phone. After 120 s the tool reports it as busy.
 4. The plugin pipes the script to the pinned Phone Harness through `uvx`, with
    `PH_AGENT_WORKSPACE` and `PH_CLIENT=openclaw`. The script's environment leaves
@@ -115,9 +117,17 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
    secrets, passwords), but keeps any `PHONE_HARNESS_*` you exported.
 5. The result is what the script printed, plus the exit code and the tail of
    stderr. A screenshot saved during the call is attached for the model to see.
-   If the file is not a real image, the result says so and nothing is attached. A
-   script past its timeout, or a cancelled call, is killed with everything it
-   started.
+   If the file is not a real image, the result says so and nothing is attached.
+6. A script past its timeout, or a cancelled call, is stopped with every process
+   it started. Each run tags its processes with an environment variable, and the
+   plugin notes which processes it sees under the script. Stopping kills the
+   script's process tree, including processes in their own session or process
+   group, every process that carries the tag or was noted, even after its parent
+   exits, and their process groups, and repeats until none is left, for up to five
+   seconds. The phone is free again only then. On Windows, the process tree is
+   killed. A process that detaches before the plugin notes it can outlive the call
+   if it drops the tag, or on macOS if it is one of Apple's own programs, whose
+   environment macOS hides.
 
 ## What it touches
 
@@ -126,42 +136,6 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
 - Screenshots are PNG files in the system temp folder.
 - A cloud phone streams its screen to Phone Harness Cloud and uses Phone Harness's
   own cloud sign-in. A rented cloud Android bills by the minute.
-
-## Telemetry
-
-Telemetry is on by default. Phone Harness sends usage telemetry to PostHog
-(`us.i.posthog.com`). One event goes out after each `phone_exec` call and each
-`phone-harness` command. It holds:
-
-- The script text, up to 20,000 characters, including its `# task:` and `# step:` comments.
-- What the script printed, up to the last 20,000 characters. If a script prints
-  text from the phone's screen, that text is sent.
-- Each helper call and its arguments, up to 500 calls. Text a script types on the
-  phone is one of those arguments.
-- The command line, errors, exit code and run time.
-- A random install id, the Phone Harness, Python and OS versions, the kind of phone,
-  and the client (`openclaw`).
-- Once you sign in to Phone Harness Cloud: your account id and the cloud session id.
-  Calls to Phone Harness Cloud also carry the Phone Harness version and the client.
-
-Screenshots are not sent.
-
-To turn it off, use either of these on the machine that runs the Gateway:
-
-- `phone-harness config set telemetry false`. If `phone-harness` is not on your
-  PATH, run `uvx phone-harness config set telemetry false`. The setting is per
-  user, so run it as the user the Gateway runs as.
-- `DO_NOT_TRACK=1` in the Gateway's own environment. `PHONE_HARNESS_TELEMETRY=0`
-  does the same. A Gateway running as a service needs it set in the service, not
-  in your shell.
-
-With either one, Phone Harness sends no event and adds nothing to its calls to the
-cloud.
-
-A cloud phone is the one exception. Phone Harness Cloud keeps its own activity log
-of cloud sessions, tied to your account: each action and what it was asked to do,
-such as the text typed, the app or the URL. These settings do not change that log.
-Local phones are not in it.
 
 ## Limits
 
@@ -184,3 +158,7 @@ npm test
 The Phone Harness release is pinned on one line: `PHONE_HARNESS_VERSION` at the
 top of `src/phone-exec.ts`. `classifier.py` is the Hermes plugin's classifier, and
 `tests/test_openclaw_plugin.py` keeps the two identical.
+
+Phone Harness sends usage data, including scripts and what they print, to PostHog.
+To turn it off, set `DO_NOT_TRACK=1` in the Gateway's environment, or run
+`uvx phone-harness config set telemetry false` as the user the Gateway runs as.

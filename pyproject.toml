@@ -27,8 +27,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://phone-harness.com"
-Repository = "https://github.com/ShawnPana/phone-harness"
-Issues = "https://github.com/ShawnPana/phone-harness/issues"
+Repository = "https://github.com/phone-harness/phone-harness"
+Issues = "https://github.com/phone-harness/phone-harness/issues"
 
 [project.scripts]
 phone-harness = "phone_harness.run:main"

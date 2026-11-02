@@ -1,7 +1,7 @@
 # phone-harness install
 
 phone-harness drives a real phone. First-run flow for agents:
-https://github.com/ShawnPana/phone-harness/blob/main/onboarding.md.
+https://github.com/phone-harness/phone-harness/blob/main/onboarding.md.
 Day-to-day usage is `phone-harness skill`. It works with an **iPhone**
 through the macOS iPhone Mirroring app, an **Android** over adb (USB or
 Wi‑Fi), or a phone from Phone Harness Cloud — an Android over adb, or an
@@ -15,11 +15,11 @@ the helper names and signatures are in the skill (`SKILL.md`, printed by
 
 | Mode | Needs | Detail |
 | --- | --- | --- |
-| Personal iPhone | macOS 15+, paired iPhone Mirroring (iOS 18+), Accessibility + Screen Recording for the app that runs Python | [setup/ios.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md) |
-| Android on the desk | macOS, Linux or Windows; adb; USB or Wireless debugging | [setup/android.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/android.md) |
-| Cloud iPhone | HTTPS only; a signed-in account | [setup/cloud.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md) |
-| Cloud Android | HTTPS, adb, and outbound TCP to the phone's adb port | [setup/cloud.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md) |
-| Can't install anything | an HTTP client | [setup/api.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md) |
+| Personal iPhone | macOS 15+, paired iPhone Mirroring (iOS 18+), Accessibility + Screen Recording for the app that runs Python | [setup/ios.md](https://github.com/phone-harness/phone-harness/blob/main/setup/ios.md) |
+| Android on the desk | macOS, Linux or Windows; adb; USB or Wireless debugging | [setup/android.md](https://github.com/phone-harness/phone-harness/blob/main/setup/android.md) |
+| Cloud iPhone | HTTPS only; a signed-in account | [setup/cloud.md](https://github.com/phone-harness/phone-harness/blob/main/setup/cloud.md) |
+| Cloud Android | HTTPS, adb, and outbound TCP to the phone's adb port | [setup/cloud.md](https://github.com/phone-harness/phone-harness/blob/main/setup/cloud.md) |
+| Can't install anything | an HTTP client | [setup/api.md](https://github.com/phone-harness/phone-harness/blob/main/setup/api.md) |
 
 No Mac and no phone is not a dead end: the cloud needs no hardware.
 
@@ -94,7 +94,7 @@ No uv? `pip install phone-harness` works too. Upgrade that install with
 ## Working from a checkout (contributors)
 
 ```bash
-git clone https://github.com/ShawnPana/phone-harness ~/.phone-harness
+git clone https://github.com/phone-harness/phone-harness ~/.phone-harness
 cd ~/.phone-harness
 pip install -e .
 ```
@@ -107,11 +107,11 @@ writing into the checkout.
 
 ## iPhone
 
-See [setup/ios.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md), then `phone-harness doctor ios`.
+See [setup/ios.md](https://github.com/phone-harness/phone-harness/blob/main/setup/ios.md), then `phone-harness doctor ios`.
 
 ## Android
 
-See [setup/android.md](https://github.com/ShawnPana/phone-harness/blob/main/setup/android.md), then `phone-harness doctor android`.
+See [setup/android.md](https://github.com/phone-harness/phone-harness/blob/main/setup/android.md), then `phone-harness doctor android`.
 `phone-harness android` shows known phones; `phone-harness android awake --bg`
 keeps one unlocked for a long task and `phone-harness android rest` ends it.
 

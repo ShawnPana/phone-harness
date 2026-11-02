@@ -32,7 +32,7 @@ first script fetches Phone Harness through uv, which takes a moment once.
 Until the plugin is on ClawHub, install it from a checkout:
 
 ```bash
-git clone https://github.com/ShawnPana/phone-harness
+git clone https://github.com/phone-harness/phone-harness
 cd phone-harness/integrations/openclaw
 npm install --ignore-scripts && npm pack
 openclaw plugins install npm-pack:./phone-harness-0.1.0.tgz

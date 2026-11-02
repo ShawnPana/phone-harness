@@ -25,7 +25,9 @@ machine that runs the Gateway.
 openclaw plugins install clawhub:phone-harness
 ```
 
-OpenClaw shows what the plugin can do and asks you to accept it. A running
+OpenClaw shows what the plugin can do and asks you to accept it. Where it cannot
+ask, such as in a script or with `/plugins install` in a chat, run the command
+again with `--accept-capabilities` once you have reviewed the plugin. A running
 Gateway picks the plugin up straight away, so there is nothing to restart. The
 first script fetches Phone Harness through uv, which takes a moment once.
 
@@ -33,7 +35,7 @@ Phone Harness sends usage telemetry by default, including your script text and
 what scripts print. [Telemetry](#telemetry) says what is sent and how to turn it
 off.
 
-Until the plugin is on ClawHub, install it from a checkout:
+To install from a checkout instead:
 
 ```bash
 git clone https://github.com/phone-harness/phone-harness

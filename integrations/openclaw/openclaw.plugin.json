@@ -16,6 +16,7 @@
       "sideEffecting": true
     }
   },
+  "providerEndpoints": [{ "endpointClass": "telemetry", "hosts": ["us.i.posthog.com"] }],
   "configContracts": {
     "dangerousFlags": [{ "path": "classifierAutoRun", "equals": true }]
   },

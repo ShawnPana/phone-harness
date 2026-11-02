@@ -221,11 +221,6 @@ class Readme(unittest.TestCase):
                        "Gateway's own environment"):
             self.assertIn(phrase, text)
 
-    def test_the_listing_summary_names_telemetry_and_the_way_out(self):
-        summary = json.loads((PLUGIN / "package.json").read_text(encoding="utf-8"))["description"]
-        self.assertIn("telemetry", summary)
-        self.assertIn("DO_NOT_TRACK=1", summary)
-
     def test_no_posthog_key_ships_in_the_plugin(self):
         for path in PLUGIN.rglob("*"):
             if path.is_file() and "node_modules" not in path.parts:

@@ -41,7 +41,7 @@ To install from a checkout instead:
 git clone https://github.com/phone-harness/phone-harness
 cd phone-harness/integrations/openclaw
 npm install --ignore-scripts && npm pack
-openclaw plugins install npm-pack:./phone-harness-0.1.0.tgz
+openclaw plugins install npm-pack:./phone-harness-0.1.1.tgz
 ```
 
 To use a cloud phone, sign in once on the Gateway machine:

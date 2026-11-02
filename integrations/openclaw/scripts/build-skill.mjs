@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const guide = readFileSync(join(here, "..", "..", "..", "SKILL.md"), "utf8");
+// A Windows checkout can turn line endings into CRLF; the built skill is the same everywhere.
+const guide = readFileSync(join(here, "..", "..", "..", "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
 const body = guide.replace(/^---\n[\s\S]*?\n---\n+/, "");
 if (body === guide) throw new Error("SKILL.md has no frontmatter to replace");
 

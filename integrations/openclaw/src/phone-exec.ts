@@ -236,6 +236,8 @@ export class RunRecord {
   readonly seen = new Map<number, string>();
   readonly rootPid: number;
   readonly marker: string;
+  /** Whether the runner itself is still running. Its pid is only safe to target until it exits. */
+  running: () => boolean = () => true;
 
   constructor(rootPid: number, marker: string) {
     this.rootPid = rootPid;
@@ -261,13 +263,12 @@ export class RunRecord {
   }
 }
 
-/** Stop every process the run started. Resolves once none is left, or when the rounds run out. */
-export async function stopRun(record: RunRecord): Promise<void> {
-  if (process.platform === "win32") {
-    // Windows has no process groups or sessions to leave; taskkill /T takes the whole tree.
-    spawn("taskkill", ["/T", "/F", "/PID", String(record.rootPid)], { stdio: "ignore" }).on("error", () => {});
-    return;
-  }
+/** Stops a run. True only once every process it started is confirmed gone. */
+export type Stopper = (record: RunRecord) => Promise<boolean>;
+
+/** Stop every process the run started. True once none is left; false if some remain when time runs out. */
+export async function stopRun(record: RunRecord): Promise<boolean> {
+  if (process.platform === "win32") return stopTreeWindows(record.rootPid, { ...windowsStopDeps, rootRunning: record.running });
   const deadline = Date.now() + KILL_WAIT_MS / 2;
   for (let round = 0; round < KILL_ROUNDS && Date.now() < deadline; round++) {
     const table = await processTable();
@@ -291,8 +292,111 @@ export async function stopRun(record: RunRecord): Promise<void> {
         // Already gone.
       }
     }
-    if (targets.size === 0 && round > 0) return;
+    if (targets.size === 0 && round > 0) return true;
     await new Promise((resolve) => setTimeout(resolve, KILL_ROUND_MS));
+  }
+  return false;
+}
+
+// Windows has no process groups or sessions to leave, and no environment of other processes to read.
+// taskkill /T ends a process and the tree under it, found through parent pids.
+
+type WinProc = { ppid: number; created: number };
+
+/** What stopping on Windows needs from the system, so the logic can be tested anywhere. */
+export type WindowsStopDeps = {
+  /** pid -> parent pid and creation time for every process, or null when Windows cannot list them. */
+  snapshot: () => Promise<Map<number, WinProc> | null>;
+  /** Run taskkill and wait for it to finish. Its exit code, or null when it could not start. */
+  taskkill: (args: string[]) => Promise<number | null>;
+  /** End one process directly, the fallback when taskkill cannot. */
+  terminate: (pid: number) => void;
+  /** Whether the runner is still running. Its pid is never targeted after it exits. */
+  rootRunning: () => boolean;
+  deadlineMs: number;
+  pauseMs: number;
+};
+
+/** taskkill exit codes that mean the process is gone: ended now, or not found. */
+const TASKKILL_DONE = new Set([0, 128]);
+
+async function windowsSnapshot(): Promise<Map<number, WinProc> | null> {
+  const script =
+    "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, " +
+    "$(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }) }";
+  const out = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
+  const table = new Map<number, WinProc>();
+  for (const line of out.split(/\r?\n/)) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(line);
+    if (match) table.set(Number(match[1]), { ppid: Number(match[2]), created: Number(match[3]) });
+  }
+  return table.size > 0 ? table : null;
+}
+
+/** The runner and every process under it, each with its creation time. A child must be no older than its parent, so a reused pid adopts no strangers. */
+export function windowsTree(rootPid: number, table: Map<number, WinProc>): Map<number, number> {
+  const tree = new Map<number, number>([[rootPid, table.get(rootPid)?.created ?? 0]]);
+  const stack = [rootPid];
+  while (stack.length > 0) {
+    const parent = stack.pop() as number;
+    const parentCreated = tree.get(parent) ?? 0;
+    for (const [pid, proc] of table) {
+      if (proc.ppid !== parent || tree.has(pid) || proc.created < parentCreated) continue;
+      tree.set(pid, proc.created);
+      stack.push(pid);
+    }
+  }
+  return tree;
+}
+
+const windowsStopDeps: WindowsStopDeps = {
+  snapshot: windowsSnapshot,
+  taskkill: (args) =>
+    new Promise((resolve) => {
+      const child = spawn("taskkill", args, { stdio: "ignore", windowsHide: true });
+      child.on("error", () => resolve(null));
+      child.on("close", (code) => resolve(code));
+    }),
+  terminate: (pid) => process.kill(pid),
+  rootRunning: () => true,
+  deadlineMs: KILL_WAIT_MS / 2,
+  pauseMs: 200,
+};
+
+/**
+ * Stop a run on Windows. List the tree first, run taskkill /T on the runner and wait for it, then
+ * check that the runner and every process that was under it are gone, retrying what is left. A pid
+ * is only targeted while it still belongs to the same process. True only once all are gone.
+ */
+export async function stopTreeWindows(rootPid: number, deps: WindowsStopDeps): Promise<boolean> {
+  const before = await deps.snapshot();
+  const tree = before ? windowsTree(rootPid, before) : new Map<number, number>();
+  tree.delete(rootPid); // the runner is checked through its own process handle
+  tree.delete(process.pid);
+  const deadline = Date.now() + deps.deadlineMs;
+  let code: number | null = null;
+  let first = true;
+  for (;;) {
+    if (first || deps.rootRunning()) code = await deps.taskkill(["/T", "/F", "/PID", String(rootPid)]);
+    first = false;
+    const now = tree.size > 0 ? await deps.snapshot() : null;
+    const left = now ? [...tree].filter(([pid, created]) => now.get(pid)?.created === created).map(([pid]) => pid) : [];
+    const listed = tree.size === 0 || now !== null;
+    // With no list of the tree, only the runner can be checked, so taskkill must also report it done.
+    const treeGone = listed && left.length === 0 && (before !== null || (code !== null && TASKKILL_DONE.has(code)));
+    if (!deps.rootRunning() && treeGone) return true;
+    if (Date.now() >= deadline) return false;
+    for (const pid of left) {
+      const ended = await deps.taskkill(["/T", "/F", "/PID", String(pid)]);
+      if (ended === null) {
+        try {
+          deps.terminate(pid);
+        } catch {
+          // Gone, or not ours to end; the next check tells.
+        }
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, deps.pauseMs));
   }
 }
 
@@ -303,6 +407,9 @@ type ScriptExit = {
   timedOut: boolean;
   aborted: boolean;
   spawnError?: NodeJS.ErrnoException;
+  /** Set when the run was stopped: whether every process it started is confirmed gone. */
+  stopConfirmed?: boolean;
+  record?: RunRecord;
 };
 
 /** The last `cap` characters of a stream, without holding the rest in memory. */
@@ -322,6 +429,7 @@ function runChild(command: Command, code: string, options: {
   cwd: string;
   env: Env;
   signal?: AbortSignal;
+  stop: Stopper;
 }): Promise<ScriptExit> {
   return new Promise((resolve) => {
     const out = tailCollector(OUTPUT_CAP);
@@ -334,6 +442,7 @@ function runChild(command: Command, code: string, options: {
       detached: process.platform !== "win32",
     });
     const record = child.pid === undefined ? undefined : new RunRecord(child.pid, marker);
+    if (record) record.running = () => child.exitCode === null && child.signalCode === null;
     let timedOut = false;
     let aborted = false;
     let settled = false;
@@ -347,7 +456,7 @@ function runChild(command: Command, code: string, options: {
           }, SAMPLE_MS)
         : undefined;
 
-    let stopped: Promise<void> = Promise.resolve();
+    let stopped: Promise<boolean> = Promise.resolve(true);
 
     const settle = (exitCode: number | null, spawnError?: NodeJS.ErrnoException) => {
       if (settled) return;
@@ -356,9 +465,9 @@ function runChild(command: Command, code: string, options: {
       clearTimeout(killWait);
       clearInterval(sampler);
       options.signal?.removeEventListener("abort", onAbort);
-      const result = { exitCode, stdout: out.read(), stderr: err.read(), timedOut, aborted, spawnError };
-      // A stopped run frees the phone only once its last process is gone.
-      void stopped.then(() => resolve(result));
+      const result = { exitCode, stdout: out.read(), stderr: err.read(), timedOut, aborted, spawnError, record };
+      // A stopped run reports back only once its stop has finished, confirmed or not.
+      void stopped.then((confirmed) => resolve(stopping ? { ...result, stopConfirmed: confirmed } : result));
     };
     const stop = () => {
       if (stopping) return;
@@ -366,7 +475,7 @@ function runChild(command: Command, code: string, options: {
       clearInterval(sampler);
       // Close follows the kill. Do not hang if a pipe stays open anyway.
       killWait = setTimeout(() => settle(null), KILL_WAIT_MS);
-      if (record) stopped = stopRun(record).catch(() => {});
+      if (record) stopped = options.stop(record).catch(() => false);
     };
     const onAbort = () => {
       aborted = true;
@@ -477,7 +586,21 @@ export type PhoneExecOptions = {
   lock?: PhoneLock;
   lockWaitMs?: number;
   signal?: AbortSignal;
+  stop?: Stopper;
+  confirmEveryMs?: number;
 };
+
+const CONFIRM_EVERY_MS = 2_000;
+const UNCONFIRMED =
+  "Not every process the script started could be confirmed stopped, so the phone stays reserved until they are.";
+
+/** Keep stopping a run until every process it started is confirmed gone. */
+async function keepStopping(record: RunRecord, stop: Stopper, everyMs: number): Promise<void> {
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+    if (await stop(record).catch(() => false)) return;
+  }
+}
 
 export async function phoneExec(params: PhoneExecParams, options: PhoneExecOptions): Promise<ToolResult> {
   const code = typeof params.code === "string" ? params.code : "";
@@ -491,6 +614,7 @@ export async function phoneExec(params: PhoneExecParams, options: PhoneExecOptio
     return failure("The phone is busy with another phone_exec script. Try again when it finishes.");
   }
   const startedMs = Date.now();
+  const stop = options.stop ?? stopRun;
   let exit: ScriptExit;
   try {
     // A missing workspace is seeded by Phone Harness on its first run, so it must not be created
@@ -502,10 +626,17 @@ export async function phoneExec(params: PhoneExecParams, options: PhoneExecOptio
       cwd,
       env: childEnv(options.env, workspace),
       signal: options.signal,
+      stop,
     });
   } catch (error) {
+    lock.release();
     return failure(`Failed to launch phone-harness: ${(error as Error).message}`);
-  } finally {
+  }
+  const unconfirmed = exit.stopConfirmed === false;
+  if (unconfirmed && exit.record) {
+    // Fail closed: the phone is free again only once every process the script started is gone.
+    void keepStopping(exit.record, stop, options.confirmEveryMs ?? CONFIRM_EVERY_MS).then(() => lock.release());
+  } else {
     lock.release();
   }
 
@@ -513,12 +644,14 @@ export async function phoneExec(params: PhoneExecParams, options: PhoneExecOptio
     const missing = exit.spawnError.code === "ENOENT";
     return failure(missing ? UV_MISSING : `Failed to launch phone-harness: ${exit.spawnError.message}`);
   }
-  if (exit.aborted) return failure("phone_exec was cancelled. The script was stopped.");
+  if (exit.aborted) {
+    return failure(`phone_exec was cancelled. ${unconfirmed ? UNCONFIRMED : "The script was stopped."}`, compact({ stopConfirmed: !unconfirmed }));
+  }
   if (exit.timedOut) {
     return failure(
       `phone_exec timed out after ${timeoutS}s. Split the work into smaller scripts or raise timeout_s ` +
-        `(max ${MAX_TIMEOUT_S}).`,
-      { timedOut: true, timeoutMs: timeoutS * 1000 },
+        `(max ${MAX_TIMEOUT_S}).${unconfirmed ? ` ${UNCONFIRMED}` : ""}`,
+      { timedOut: true, timeoutMs: timeoutS * 1000, stopConfirmed: !unconfirmed },
     );
   }
 

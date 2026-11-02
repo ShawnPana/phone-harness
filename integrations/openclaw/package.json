@@ -1,6 +1,6 @@
 {
   "name": "phone-harness",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Lets OpenClaw use a real phone: scroll, tap, type, and read the screen, with no jailbreak and nothing installed on the phone.",
   "type": "module",
   "license": "MIT",

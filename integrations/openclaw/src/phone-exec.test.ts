@@ -14,8 +14,13 @@ import {
   PHONE_HARNESS_VERSION,
   PhoneLock,
   pinnedCommand,
+  stopRun,
+  stopTreeWindows,
+  windowsTree,
   type Env,
+  type RunRecord,
   type ToolResult,
+  type WindowsStopDeps,
 } from "./phone-exec.ts";
 
 const NODE = { file: process.execPath, args: ["-"] };
@@ -48,6 +53,7 @@ function alive(pid: number): boolean {
   } catch {
     return false;
   }
+  if (process.platform === "win32") return true;
   // A killed process can sit as a zombie until its new parent reaps it. It is not running.
   try {
     return !execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim().startsWith("Z");
@@ -207,7 +213,8 @@ describe("a script past its timeout", () => {
     const result = await run("setInterval(() => {}, 1000)", { signal: controller.signal });
     assert.equal(result.details.ok, false);
     assert.match(String(result.details.error), /cancelled/);
-    assert.ok(Date.now() - started < 5000);
+    // Windows lists processes through PowerShell before and after taskkill, which takes longer.
+    assert.ok(Date.now() - started < (process.platform === "win32" ? 15_000 : 5000));
   });
 });
 
@@ -252,6 +259,162 @@ describe("a cancelled call", () => {
     } finally {
       bystander.kill("SIGKILL");
     }
+  });
+});
+
+describe("an unconfirmed stop", () => {
+  it("keeps the phone reserved until every process is confirmed gone", { timeout: 60_000 }, async () => {
+    const lock = new PhoneLock();
+    let calls = 0;
+    // The real stop runs, but the first two report that something may be left.
+    const stop = async (record: RunRecord) => {
+      await stopRun(record);
+      calls += 1;
+      return calls > 2;
+    };
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 200);
+    const result = await phoneExec(
+      { code: "setInterval(() => {}, 1000)" },
+      { env: { PATH: process.env.PATH }, workspace, command: NODE, lock, signal: controller.signal, stop, confirmEveryMs: 50 },
+    );
+    assert.match(String(result.details.error), /could be confirmed stopped, so the phone stays reserved/);
+    assert.equal(result.details.stopConfirmed, false);
+    assert.equal(await lock.acquire(0), false, "the phone was freed before the stop was confirmed");
+    let freed = false;
+    for (let i = 0; i < 100 && !freed; i++) {
+      freed = await lock.acquire(0);
+      if (!freed) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(freed, true, "the phone was not freed once the stop was confirmed");
+    assert.ok(calls >= 3);
+  });
+});
+
+describe("stopping on Windows", () => {
+  // The logic, with a stand-in for Windows, so it is tested on every platform.
+  type Fake = { procs: Map<number, { ppid: number; created: number }>; calls: string[]; deps: WindowsStopDeps };
+
+  function fake(options: { dies?: (pid: number) => boolean; taskkillCode?: number | null; list?: boolean } = {}): Fake {
+    const procs = new Map([
+      [100, { ppid: 1, created: 10 }], // the runner
+      [101, { ppid: 100, created: 20 }],
+      [102, { ppid: 101, created: 30 }],
+      [200, { ppid: 1, created: 5 }], // not part of the run
+    ]);
+    const calls: string[] = [];
+    const dies = options.dies ?? (() => true);
+    const deps: WindowsStopDeps = {
+      snapshot: async () => {
+        calls.push("snapshot");
+        return options.list === false ? null : new Map(procs);
+      },
+      taskkill: async (args) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const pid = Number(args.at(-1));
+        calls.push(`taskkill ${args.join(" ")}`);
+        const tree = args.includes("/T") ? [...windowsTree(pid, procs).keys()] : [pid];
+        for (const each of tree) if (dies(each)) procs.delete(each);
+        return options.taskkillCode === undefined ? 0 : options.taskkillCode;
+      },
+      terminate: (pid) => {
+        calls.push(`terminate ${pid}`);
+        if (dies(pid)) procs.delete(pid);
+      },
+      rootRunning: () => procs.has(100),
+      deadlineMs: 300,
+      pauseMs: 10,
+    };
+    return { procs, calls, deps };
+  }
+
+  it("waits for taskkill, then confirms the tree is gone", async () => {
+    const { procs, calls, deps } = fake();
+    assert.equal(await stopTreeWindows(100, deps), true);
+    assert.deepEqual(calls, ["snapshot", "taskkill /T /F /PID 100", "snapshot"]);
+    assert.deepEqual([...procs.keys()], [200], "only the process outside the run is left");
+  });
+
+  it("goes after a process left under the runner, and fails closed if it will not go", async () => {
+    const stubborn = fake({ dies: (pid) => pid !== 102 });
+    assert.equal(await stopTreeWindows(100, stubborn.deps), false);
+    assert.ok(stubborn.calls.includes("taskkill /T /F /PID 102"));
+    let hits = 0;
+    const late = fake({ dies: (pid) => pid !== 102 || ++hits > 1 }); // 102 survives the first taskkill only
+    assert.equal(await stopTreeWindows(100, late.deps), true);
+    assert.ok(late.calls.includes("taskkill /T /F /PID 102"));
+  });
+
+  it("never targets a pid that now belongs to a different process", async () => {
+    const { procs, calls, deps } = fake({ dies: (pid) => pid !== 102 });
+    deps.taskkill = async (args) => {
+      calls.push(`taskkill ${args.join(" ")}`);
+      for (const pid of [100, 101, 102]) procs.delete(pid);
+      procs.set(102, { ppid: 1, created: 99 }); // 102 ended and was reused by a stranger
+      return 0;
+    };
+    assert.equal(await stopTreeWindows(100, deps), true);
+    assert.deepEqual(calls.filter((call) => call.startsWith("taskkill")), ["taskkill /T /F /PID 100"]);
+  });
+
+  it("ends a process directly when taskkill cannot start", async () => {
+    const { procs, calls, deps } = fake({ taskkillCode: null, dies: (pid) => pid === 100 });
+    deps.terminate = (pid) => {
+      calls.push(`terminate ${pid}`);
+      procs.delete(pid);
+    };
+    assert.equal(await stopTreeWindows(100, deps), true);
+    assert.ok(calls.includes("terminate 101") && calls.includes("terminate 102"));
+  });
+
+  it("without a process list, needs taskkill to report the runner done", async () => {
+    assert.equal(await stopTreeWindows(100, fake({ list: false }).deps), true);
+    assert.equal(await stopTreeWindows(100, fake({ list: false, taskkillCode: 1 }).deps), false);
+  });
+
+  it("does not adopt a stranger whose parent pid was reused", () => {
+    const table = new Map([
+      [100, { ppid: 1, created: 10 }],
+      [300, { ppid: 100, created: 3 }], // older than 100, so its parent was an earlier holder of the pid
+      [301, { ppid: 100, created: 11 }],
+    ]);
+    assert.deepEqual([...windowsTree(100, table).keys()].sort(), [100, 301]);
+  });
+
+  it("on Windows, waits for taskkill and checks the tree is gone before freeing the phone", {
+    skip: process.platform !== "win32" && "a real Windows run",
+    timeout: 60_000,
+  }, async () => {
+    const pids = join(dir, "pids");
+    const forever = join(dir, "forever.js");
+    const middle = join(dir, "middle.js");
+    writeFileSync(forever, "setInterval(() => {}, 1000);\n");
+    writeFileSync(middle, `
+      const child = require("node:child_process").spawn(process.execPath, [${JSON.stringify(forever)}], { stdio: "ignore" });
+      require("node:fs").appendFileSync(${JSON.stringify(pids)}, "grandchild " + child.pid + "\\n");
+      setInterval(() => {}, 1000);
+    `);
+    const script = `
+      const child = require("node:child_process").spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: "ignore" });
+      require("node:fs").appendFileSync(${JSON.stringify(pids)}, "child " + child.pid + "\\n");
+      setInterval(() => {}, 1000);
+    `;
+    const read = () => (existsSync(pids) ? readFileSync(pids, "utf8").trim().split("\n").filter(Boolean) : []);
+    const lock = new PhoneLock();
+    const controller = new AbortController();
+    const running = phoneExec(
+      { code: script },
+      { env: { ...process.env }, workspace, command: NODE, lock, signal: controller.signal },
+    );
+    assert.ok(await waitFor(() => read().length === 2, 20_000), "the script started its processes");
+    controller.abort();
+    const result = await running;
+    assert.match(String(result.details.error), /cancelled\. The script was stopped/);
+    for (const line of read()) {
+      const [name, pid] = line.split(" ");
+      assert.equal(alive(Number(pid)), false, `${name} survived`);
+    }
+    assert.equal(await lock.acquire(0), true, "the phone was not freed");
   });
 });
 

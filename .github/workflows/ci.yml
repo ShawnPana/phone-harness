@@ -11,7 +11,11 @@ env:
 
 jobs:
   openclaw-plugin:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: integrations/openclaw

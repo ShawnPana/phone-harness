@@ -26,13 +26,24 @@ yabai blanks the location to signal "focus"; we write the real point to make
 it a click. Every write stays inside the buffer, so a wrong value is a no-op,
 never a crash.
 
+The mouse data starts at 0x88, mapped on macOS 27 by posting records at a
+logging AppKit window: eventNumber (int16) at 0x8a, clickState (int32) at 0x8c,
+pressure (uint8, 255 = 1.0) at 0x90. A record that leaves them zero reaches an
+ordinary NSView as a click, but iPhone Mirroring drops a press with no click
+count and no pressure: every background tap silently did nothing.
+
+No record is preceded by _SLPSSetFrontProcessWithOptions any more. On macOS 27
+that call makes the target the front process outright (lsappinfo front flips
+to it and stays there), which is the focus steal this backend exists to avoid.
+Records and pid-posted keys both land without it.
+
 Select with PHONE_HARNESS_BACKGROUND=1. Coordinates use the same global
 screen-point convention as the mirror backend and screen(), so every helper on
 top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
 
-Keyboard (type_text/press) still briefly activates the window: the keyboard
-event-record layout isn't implemented yet, so those fall back to the mirror
-path. Mouse actions are fully background.
+Keyboard (type_text/press) makes the window key with a blanked-location
+record and posts the key to the process by pid, so it stays background too.
+Scroll is the one action that borrows the pointer; see scroll_wheel.
 """
 import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
 from contextlib import contextmanager
@@ -59,11 +70,8 @@ class _PSN(ctypes.Structure):
 
 _appserv.GetProcessForPID.argtypes = [ctypes.c_int, ctypes.POINTER(_PSN)]
 _appserv.GetProcessForPID.restype = ctypes.c_int
-_sky._SLPSSetFrontProcessWithOptions.argtypes = [
-    ctypes.POINTER(_PSN), ctypes.c_uint32, ctypes.c_uint32]
 _sky.SLPSPostEventRecordTo.argtypes = [ctypes.POINTER(_PSN), ctypes.c_void_p]
 
-_KCPS_USER_GENERATED = 0x200
 # CGSEventType values (share the CGEventType numbering)
 _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
@@ -172,18 +180,28 @@ def _screencapture(win, path):
 
 # --- input (hands), no focus ---
 
+_event_number = 0
+
+
 def _post(pid, wid, etype, gx, gy, lx, ly):
     """Deliver one synthesized mouse event record to the process by pid."""
+    global _event_number
+    if etype == _LMOUSE_DOWN:
+        _event_number = (_event_number + 1) & 0x7fff
     buf = (ctypes.c_uint8 * 0xf8)()
     buf[0x04] = 0xf8                       # record length
     buf[0x3a] = 0x10                       # yabai's required flag byte
     struct.pack_into("<I", buf, 0x3c, wid)          # target window id
     struct.pack_into("<dd", buf, 0x10, gx, gy)      # location (global points)
     struct.pack_into("<dd", buf, 0x20, lx, ly)      # windowLocation (local)
+    # A real press: one click, full pressure while the button is held. A zero
+    # click count is what made iPhone Mirroring ignore every background tap.
+    struct.pack_into("<h", buf, 0x8a, _event_number)  # pairs down with its up
+    struct.pack_into("<i", buf, 0x8c, 1)              # clickState
+    buf[0x90] = 0 if etype == _LMOUSE_UP else 255     # pressure
     buf[0x08] = etype
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
 
@@ -308,7 +326,6 @@ def _make_key(pid, wid):
         buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
     buf[0x08] = _LMOUSE_DOWN
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
     buf[0x08] = _LMOUSE_UP

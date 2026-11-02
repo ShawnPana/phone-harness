@@ -37,13 +37,13 @@ To install from a checkout instead:
 git clone https://github.com/phone-harness/phone-harness
 cd phone-harness/integrations/openclaw
 npm install --ignore-scripts && npm pack
-openclaw plugins install npm-pack:./phone-harness-0.1.1.tgz
+openclaw plugins install npm-pack:./phone-harness-0.1.2.tgz
 ```
 
 To use a cloud phone, sign in once on the Gateway machine:
 
 ```bash
-uvx phone-harness cloud login
+uvx --from phone-harness==0.3.3 phone-harness cloud login
 ```
 
 Phone Harness chooses the phone: an attached cloud phone, otherwise its default.
@@ -124,10 +124,14 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
    script's process tree, including processes in their own session or process
    group, every process that carries the tag or was noted, even after its parent
    exits, and their process groups, and repeats until none is left, for up to five
-   seconds. The phone is free again only then. On Windows, the process tree is
-   killed. A process that detaches before the plugin notes it can outlive the call
-   if it drops the tag, or on macOS if it is one of Apple's own programs, whose
-   environment macOS hides.
+   seconds. The phone is free again only then. On Windows, the plugin lists the
+   script's process tree, runs `taskkill` on it, waits for it to finish, and checks
+   that the script and every process that was under it are gone. If a stop cannot
+   be confirmed, the result says so and the phone stays reserved until it can be.
+   A process that detaches before the plugin notes it can outlive the call if it
+   drops the tag, or on macOS if it is one of Apple's own programs, whose
+   environment macOS hides. On Windows, a process whose parent has already exited
+   is no longer in the tree.
 
 ## What it touches
 
@@ -156,9 +160,11 @@ npm test
 ```
 
 The Phone Harness release is pinned on one line: `PHONE_HARNESS_VERSION` at the
-top of `src/phone-exec.ts`. `classifier.py` is the Hermes plugin's classifier, and
-`tests/test_openclaw_plugin.py` keeps the two identical.
+top of `src/phone-exec.ts`. The `uvx` commands in this README name the same
+release, and `tests/test_openclaw_plugin.py` checks that they do. `classifier.py`
+is the Hermes plugin's classifier, and the same tests keep the two identical.
 
 Phone Harness sends usage data, including scripts and what they print, to PostHog.
 To turn it off, set `DO_NOT_TRACK=1` in the Gateway's environment, or run
-`uvx phone-harness config set telemetry false` as the user the Gateway runs as.
+`uvx --from phone-harness==0.3.3 phone-harness config set telemetry false` as the
+user the Gateway runs as.

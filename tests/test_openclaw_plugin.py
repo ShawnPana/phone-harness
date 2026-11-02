@@ -123,7 +123,10 @@ class Pin(unittest.TestCase):
         for path in [PLUGIN / "README.md", PLUGIN / "src" / "index.ts", PLUGIN / "src" / "approval.ts",
                      PLUGIN / "scripts" / "build-skill.mjs", PLUGIN / "package.json",
                      PLUGIN / "openclaw.plugin.json"]:
-            self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")), path.name)
+            text = path.read_text(encoding="utf-8")
+            # The README's uvx commands name the release on purpose; Readme checks they match it.
+            text = text.replace(f"--from phone-harness=={version} phone-harness", "")
+            self.assertIsNone(pattern.search(text), path.name)
 
 
 class Classifier(unittest.TestCase):
@@ -216,8 +219,17 @@ class Readme(unittest.TestCase):
     def test_says_what_telemetry_sends_and_how_to_turn_it_off(self):
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
         for phrase in ("PostHog", "scripts and what they print", "`DO_NOT_TRACK=1`",
-                       "`uvx phone-harness config set telemetry false`"):
+                       "phone-harness config set telemetry false`"):
             self.assertIn(phrase, text)
+
+    def test_readme_commands_pin_the_release_the_plugin_runs(self):
+        text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+        source = (PLUGIN / "src" / "phone-exec.ts").read_text(encoding="utf-8")
+        version = re.search(r'PHONE_HARNESS_VERSION = "([^"]+)"', source).group(1)
+        commands = re.findall(r"uvx\s[^`\n]*", text)
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertIn(f"--from phone-harness=={version} phone-harness", command)
 
     def test_no_posthog_key_ships_in_the_plugin(self):
         for path in PLUGIN.rglob("*"):

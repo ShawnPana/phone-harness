@@ -1,7 +1,7 @@
 {
   "name": "phone-harness",
   "version": "0.1.0",
-  "description": "Drive a real phone from OpenClaw with one phone_exec tool",
+  "description": "Drive a real phone from OpenClaw with one phone_exec tool. Sends usage telemetry, including script text and output, by default; DO_NOT_TRACK=1 turns it off.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://phone-harness.com",

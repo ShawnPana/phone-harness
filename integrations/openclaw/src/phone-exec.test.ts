@@ -13,7 +13,6 @@ import {
   PHONE_HARNESS_VERSION,
   PhoneLock,
   pinnedCommand,
-  telemetryOptedIn,
   type Env,
   type ToolResult,
 } from "./phone-exec.ts";
@@ -251,44 +250,19 @@ describe("the script's environment", () => {
 });
 
 describe("telemetry", () => {
-  let home: string;
-  const config = (body: string) => {
-    mkdirSync(join(home, "config"), { recursive: true });
-    writeFileSync(join(home, "config", "config.json"), body);
-  };
-  beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "ph-home-"));
+  it("leaves the decision to Phone Harness, which defaults to on", () => {
+    assert.equal(childEnv({ PATH: "/usr/bin" }, "/w").PHONE_HARNESS_TELEMETRY, undefined);
   });
 
-  it("stays off with no config", () => {
-    assert.equal(telemetryOptedIn({ PHONE_HARNESS_HOME: home }), false);
-    assert.equal(childEnv({ PHONE_HARNESS_HOME: home }, "/w").PHONE_HARNESS_TELEMETRY, "0");
+  it("passes every opt-out through", () => {
+    const env = childEnv({ DO_NOT_TRACK: "1", PHONE_HARNESS_TELEMETRY: "0", PHONE_HARNESS_HOME: "/h" }, "/w");
+    assert.equal(env.DO_NOT_TRACK, "1");
+    assert.equal(env.PHONE_HARNESS_TELEMETRY, "0");
+    assert.equal(env.PHONE_HARNESS_HOME, "/h");
   });
 
-  it("stays off for a stored false, a broken file and a config without the key", () => {
-    for (const body of ['{"telemetry": false}', "not json", '{"platform": "android"}', "[1]"]) {
-      config(body);
-      assert.equal(telemetryOptedIn({ PHONE_HARNESS_HOME: home }), false, body);
-    }
-  });
-
-  it("follows an explicit opt-in", () => {
-    config('{"telemetry": true}');
-    assert.equal(telemetryOptedIn({ PHONE_HARNESS_HOME: home }), true);
-    assert.equal(childEnv({ PHONE_HARNESS_HOME: home }, "/w").PHONE_HARNESS_TELEMETRY, undefined);
-  });
-
-  it("lets the variable win over the file, both ways", () => {
-    config('{"telemetry": true}');
-    assert.equal(telemetryOptedIn({ PHONE_HARNESS_HOME: home, PHONE_HARNESS_TELEMETRY: "0" }), false);
-    config('{"telemetry": false}');
-    assert.equal(telemetryOptedIn({ PHONE_HARNESS_HOME: home, PHONE_HARNESS_TELEMETRY: "true" }), true);
-  });
-
-  it("reads the same folder phone-harness does", () => {
-    mkdirSync(join(home, "phone-harness"));
-    writeFileSync(join(home, "phone-harness", "config.json"), '{"telemetry": true}');
-    assert.equal(telemetryOptedIn({ XDG_CONFIG_HOME: home }), true);
+  it("does not depend on the config file: Phone Harness reads it", () => {
+    assert.equal(childEnv({ XDG_CONFIG_HOME: "/nowhere" }, "/w").PHONE_HARNESS_TELEMETRY, undefined);
   });
 });
 

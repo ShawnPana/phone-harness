@@ -1316,7 +1316,7 @@ class CloudCli(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         FakePostHog.events = []
-        for name in AGENT_MARKERS:
+        for name in AGENT_MARKERS + ["DO_NOT_TRACK"]:
             self.env.pop(name, None)
         self.env.update({"PHONE_HARNESS_TELEMETRY": "1", "PH_CLIENT": client,
                          "PH_POSTHOG_HOST": f"http://127.0.0.1:{server.server_port}"})
@@ -1431,6 +1431,19 @@ class CloudCli(unittest.TestCase):
         self.assertEqual((ran["task"], ran["task_intent"], ran["step_intent"], ran["output"]),
                          (script, "say hi", "through the pin", "42\n"))
         self.assertEqual((ran["session_id"], ran["argv"]), (sid, None))
+
+    def test_do_not_track_sends_no_event_no_link_and_no_cloud_header(self):
+        self.posthog(client="openclaw")                   # telemetry forced on: DO_NOT_TRACK still wins
+        dnt = {"DO_NOT_TRACK": "1", "PHONE_HARNESS_ADB": "/nonexistent/adb"}
+        self.assertEqual(self.run_cli("cloud", "login", "--no-browser", env=dnt).returncode, 0)
+        self.assertEqual(self.run_cli("cloud", "ls", env=dnt).returncode, 0)
+        self.assertTrue(FakeCloud.requests)
+        for _, path, headers in FakeCloud.requests:
+            self.assertNotIn("x-agent-client", headers, path)
+            self.assertNotIn("x-phone-harness-version", headers, path)
+        time.sleep(0.5)
+        self.assertEqual(FakePostHog.events, [])
+        self.assertIsNone(self.telemetry_state())
 
     def test_cloud_calls_name_the_version_and_client_only_while_telemetry_is_on(self):
         control = ThreadingHTTPServer(("127.0.0.1", 0), FakeControl)

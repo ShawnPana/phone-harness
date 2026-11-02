@@ -462,7 +462,9 @@ class TelemetryOptIn(Base):
         super().setUp()
         self.saved = dict(os.environ)
         os.environ["PHONE_HARNESS_HOME"] = str(self.data)
-        os.environ.pop("PHONE_HARNESS_TELEMETRY", None)
+        for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
+                     "HERMES_SESSION_ID", "HERMES_REAL_HOME", "HERMES_AGENT"):
+            os.environ.pop(name, None)
         # GitHub Actions sets CI=true, and this repo's workflow sets
         # PHONE_HARNESS_TELEMETRY=0. These checks are the ordinary opt-in rules,
         # including the child process.
@@ -503,8 +505,35 @@ class TelemetryOptIn(Base):
 
         set_config("telemetry", "true")
         env = self.plugin._env(self.data / "ws")
-        self.assertNotIn("PHONE_HARNESS_TELEMETRY", env)
+        self.assertEqual(env["PHONE_HARNESS_TELEMETRY"], "1")
         self.assertTrue(self.child_enabled())
+
+    def test_a_stored_true_reaches_a_child_with_another_home(self):
+        from phone_harness.config import set as set_config
+
+        set_config("telemetry", "true")
+        env = self.plugin._env(self.data / "ws")
+        env.pop("PHONE_HARNESS_HOME")
+        env["HOME"] = str(self.data / "profile-home")
+        env["PYTHONPATH"] = str(SRC)
+        proc = subprocess.run(
+            [sys.executable, "-c", "from phone_harness.telemetry import is_enabled; print(is_enabled())"],
+            capture_output=True, text=True, env=env, check=True,
+        )
+        self.assertEqual(proc.stdout.strip(), "True")
+
+    def test_do_not_track_reaches_the_child_and_beats_a_stored_true(self):
+        from phone_harness.config import set as set_config
+
+        set_config("telemetry", "true")
+        os.environ["DO_NOT_TRACK"] = "1"
+        self.assertEqual(self.plugin._env(self.data / "ws")["DO_NOT_TRACK"], "1")
+        self.assertFalse(self.child_enabled())
+
+    def test_do_not_track_survives_the_hermes_env_helper(self):
+        sys.modules["tools.environments.local"].hermes_subprocess_env = lambda: {"PATH": "/from-hermes"}
+        os.environ["DO_NOT_TRACK"] = "1"
+        self.assertEqual(self.plugin._env(self.data / "ws")["DO_NOT_TRACK"], "1")
 
     def test_an_explicit_stored_false_is_off(self):
         from phone_harness.config import set as set_config
@@ -519,7 +548,7 @@ class TelemetryOptIn(Base):
     def test_an_enabling_env_var_is_on(self):
         os.environ["PHONE_HARNESS_TELEMETRY"] = "true"
         env = self.plugin._env(self.data / "ws")
-        self.assertEqual(env["PHONE_HARNESS_TELEMETRY"], "true")
+        self.assertEqual(env["PHONE_HARNESS_TELEMETRY"], "1")
         self.assertTrue(self.child_enabled())
 
     def test_a_disabling_env_var_is_off(self):

@@ -30,7 +30,7 @@ class Telemetry(unittest.TestCase):
                                            "PHONE_HARNESS_TELEMETRY": "1"})
         env.start()
         self.addCleanup(env.stop)
-        for name in AGENT_MARKERS + ["PH_CLIENT", "PH_CLIENT_VERSION"]:
+        for name in AGENT_MARKERS + ["PH_CLIENT", "PH_CLIENT_VERSION", "DO_NOT_TRACK"]:
             os.environ.pop(name, None)
         self.sent = []
         sender = mock.patch.object(telemetry, "_send_detached", self.sent.append)
@@ -44,14 +44,15 @@ class Telemetry(unittest.TestCase):
         return self.sent[-1]["properties"]
 
     def test_off_sends_nothing_links_nothing_and_adds_no_header(self):
-        os.environ["PHONE_HARNESS_TELEMETRY"] = "0"
         os.environ["CLAUDECODE"] = "1"
-        telemetry.link_user("u1")
-        telemetry.capture_cli_event(action="completed", command="script")
-        self.assertEqual(self.sent, [])
-        self.assertEqual(telemetry.cloud_headers(), {})
-        self.assertIsNone(config.telemetry_user())
-        self.assertFalse(config.paths()["telemetry"].exists())
+        for off in ({"PHONE_HARNESS_TELEMETRY": "0"}, {"DO_NOT_TRACK": "1"}):
+            with self.subTest(off), mock.patch.dict(os.environ, off):
+                telemetry.link_user("u1")
+                telemetry.capture_cli_event(action="completed", command="script")
+                self.assertEqual(self.sent, [])
+                self.assertEqual(telemetry.cloud_headers(), {})
+                self.assertIsNone(config.telemetry_user())
+                self.assertFalse(config.paths()["telemetry"].exists())
 
     def test_the_install_is_linked_once_per_sign_in(self):
         install = config.install_id()

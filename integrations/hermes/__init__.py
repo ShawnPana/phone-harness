@@ -459,17 +459,19 @@ def _env(workspace: Path) -> dict:
 
     Starts from Hermes's scrubbed subprocess env when that module imports, otherwise
     from the process env minus ``*_API_KEY`` / ``*_TOKEN`` / ``*_SECRET``. Then sets
-    the workspace and client, and puts back any ``PHONE_HARNESS_*`` the user exported.
-    Telemetry stays off unless the user explicitly opted in.
+    the workspace and client, and puts back any ``PHONE_HARNESS_*`` the user exported,
+    and ``DO_NOT_TRACK``.
+
+    Telemetry stays off unless the user explicitly opted in. The child is told the answer
+    either way: Hermes can start it under another HOME, away from the config.json read here.
     """
     env = _base_child_env()
     for key, value in os.environ.items():
-        if key.startswith("PHONE_HARNESS_"):
+        if key.startswith("PHONE_HARNESS_") or key == "DO_NOT_TRACK":
             env[key] = value
     env["PH_AGENT_WORKSPACE"] = str(workspace)
     env["PH_CLIENT"] = "hermes"
-    if not _telemetry_opted_in():
-        env["PHONE_HARNESS_TELEMETRY"] = "0"
+    env["PHONE_HARNESS_TELEMETRY"] = "1" if _telemetry_opted_in() else "0"
     return env
 
 # ---------------------------------------------------------------------------------------------

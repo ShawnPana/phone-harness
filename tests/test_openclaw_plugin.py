@@ -70,6 +70,11 @@ class Manifest(unittest.TestCase):
         self.assertEqual(manifest()["configContracts"]["dangerousFlags"],
                          [{"path": "classifierAutoRun", "equals": True}])
 
+    def test_declares_the_host_telemetry_actually_sends_to(self):
+        source = (ROOT / "src" / "phone_harness" / "telemetry.py").read_text(encoding="utf-8")
+        host = re.search(r'^POSTHOG_HOST = "https://([^"/]+)"$', source, re.MULTILINE).group(1)
+        self.assertEqual(manifest()["providerEndpoints"], [{"endpointClass": "telemetry", "hosts": [host]}])
+
     def test_carries_no_version_that_could_drift_from_the_package(self):
         self.assertNotIn("version", manifest())
 

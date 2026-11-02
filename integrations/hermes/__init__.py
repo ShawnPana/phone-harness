@@ -84,8 +84,9 @@ CLASSIFIER_AUTO_RUN_ENV = "PHONE_HARNESS_CLASSIFIER_AUTO_RUN"
 # The only import the classifier treats as phone-only. Anything else asks.
 SAFE_MODULES = frozenset({"phone_harness.helpers"})
 # Builtins that read or write files, run arbitrary code, or wait on a terminal; shell() is
-# phone-harness's adb shell.
-RISKY_CALLS = frozenset({"open", "exec", "eval", "compile", "__import__", "breakpoint", "input", "shell"})
+# phone-harness's adb shell; push_file() sends a file from this computer to a cloud phone.
+RISKY_CALLS = frozenset({"open", "exec", "eval", "compile", "__import__", "breakpoint", "input", "shell",
+                         "push_file"})
 # Names helpers.py imports for itself. A script that pulls them in can reach this computer
 # (importlib.import_module, Path.home().read_text, the transport module).
 _HOST_NAMES = frozenset({
@@ -335,7 +336,7 @@ def _package_dir() -> Path | None:
     spec = importlib.util.find_spec("phone_harness")
     if spec is None or not spec.origin:
         return None
-    return Path(spec.origin).resolve().parent
+    return Path(spec.origin).parent
 
 
 def _command() -> list[str] | None:
@@ -469,6 +470,12 @@ def _env(workspace: Path) -> dict:
     for key, value in os.environ.items():
         if key.startswith("PHONE_HARNESS_") or key == "DO_NOT_TRACK":
             env[key] = value
+    # A standard Hermes runs on a bare Python, attaches its packages at boot and strips them
+    # from every child's PYTHONPATH. This child is that same Python, so it gets back the one
+    # folder it needs to import the phone_harness Hermes installed.
+    package = _package_dir()
+    if package is not None:
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(package.parent), env.get("PYTHONPATH"))))
     env["PH_AGENT_WORKSPACE"] = str(workspace)
     env["PH_CLIENT"] = "hermes"
     env["PHONE_HARNESS_TELEMETRY"] = "1" if _telemetry_opted_in() else "0"

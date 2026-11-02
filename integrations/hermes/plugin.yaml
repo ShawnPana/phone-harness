@@ -10,8 +10,9 @@ provides_tools:
   - phone_exec
 provides_hooks:
   - pre_tool_call
+requires_hermes: ">=0.21.6"
 python_dependencies:
-  - "phone-harness==0.3.2"
+  - "phone-harness==0.3.3"
 config_schema:
   classifier_auto_run:
     type: bool

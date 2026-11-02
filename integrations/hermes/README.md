@@ -29,8 +29,10 @@ hermes plugins install phone-harness/phone-harness/integrations/hermes
 ```
 
 Hermes installs the `phone-harness` package into its own environment and asks
-whether to enable the plugin. Tools load per session, so start a new chat.
-Restart the Hermes desktop app after installing or updating the plugin.
+whether to enable the plugin. Tools load per session, so start a new chat. If a
+Hermes gateway is already running, first run `hermes gateway restart --detach`,
+or the new chat will not have `phone_exec`. Restart the Hermes desktop app after
+installing or updating the plugin.
 Each script runs as `python -m phone_harness.run` on Hermes's interpreter: the
 copy Hermes installed, kept apart from a `phone-harness` command on `PATH`.
 
@@ -40,7 +42,8 @@ as `ios` or `android` in the environment Hermes runs in. iPhone control needs
 Accessibility and Screen Recording for the app that runs Hermes (the Hermes
 desktop app, or your terminal for `hermes` in a shell). Android needs adb; a
 cloud phone needs `phone-harness cloud login`. [install.md](../../install.md)
-covers each.
+covers each. A standard Hermes install does not put `phone-harness` on your
+PATH, so outside Hermes use `uvx phone-harness`.
 
 ## Settings
 
@@ -52,7 +55,24 @@ covers each.
   - Plugin setting `classifier_auto_run` (boolean, default false).
   - Or export `PHONE_HARNESS_CLASSIFIER_AUTO_RUN=1` in the environment Hermes
     runs in. When that variable is set, it wins over the plugin setting.
-- Telemetry is off for Hermes runs unless you opt in with `phone-harness config set telemetry true`.
+- Telemetry is off under Hermes unless you opt in with
+  `phone-harness config set telemetry true`. When it is on, each run sends the
+  script, the end of its output, helper calls with their arguments, errors, the
+  phone type and an install ID to PostHog. If you are signed in to Phone Harness
+  Cloud, it also sends your account ID and the session ID.
+  - With `DO_NOT_TRACK=1` or `phone-harness config set telemetry false`, no
+    telemetry is sent.
+  - `PHONE_HARNESS_TELEMETRY`, when you have exported it, wins over `config set`.
+    `DO_NOT_TRACK=1` wins over both.
+  - A Hermes gateway keeps the environment it started with, so a variable
+    exported in the shell you chat from does not reach a gateway that is already
+    running. Put it in `~/.hermes/.env` instead. `config set` applies from the
+    next run.
+  - `phone_exec` runs where Hermes runs. On a Docker or SSH terminal backend, a
+    `phone-harness` command in the terminal runs on that machine, so set these
+    there too.
+  - Phone Harness Cloud keeps its own activity log of cloud sessions. These
+    settings do not change it.
 - `PHONE_HARNESS_PLATFORM`, when you have exported it, is passed through.
 - The agent workspace is one folder, `agent-workspace`, in Hermes's plugin
   data directory. If `PH_AGENT_WORKSPACE` is already set, that path is used
@@ -71,7 +91,7 @@ covers each.
    After 120 s the tool reports the phone as busy.
 4. The plugin pipes the script on stdin to the phone-harness Hermes installed,
    with `PH_AGENT_WORKSPACE` and `PH_CLIENT=hermes`. It does not set a platform.
-   Telemetry is off for Hermes runs unless you opt in with `phone-harness config set telemetry true`.
+   Telemetry is off unless you opt in. See [Settings](#settings).
 5. The result is what the script printed, plus the exit code and the tail of
    stderr. `screenshot()` prints the path it saved. The last absolute PNG,
    JPEG, or WebP path in that output that exists and was written during the

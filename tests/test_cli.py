@@ -475,7 +475,7 @@ class TelemetryDefault(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {"PHONE_HARNESS_HOME": home.name}, clear=False):
             for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
-                         "HERMES_SESSION_ID", "HERMES_REAL_HOME"):
+                         "HERMES_SESSION_ID", "HERMES_REAL_HOME", "HERMES_AGENT"):
                 os.environ.pop(name, None)
             # GitHub Actions sets CI=true, and this repo's workflow sets
             # PHONE_HARNESS_TELEMETRY=0. This test is the ordinary default.

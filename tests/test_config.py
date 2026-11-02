@@ -26,7 +26,7 @@ class ConfigSetBooleanTests(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
-                     "HERMES_SESSION_ID", "HERMES_REAL_HOME"):
+                     "HERMES_SESSION_ID", "HERMES_REAL_HOME", "HERMES_AGENT"):
             os.environ.pop(name, None)
 
     def test_set_telemetry_off_coerces_to_boolean_false(self):

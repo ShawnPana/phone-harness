@@ -463,7 +463,7 @@ class TelemetryOptIn(Base):
         self.saved = dict(os.environ)
         os.environ["PHONE_HARNESS_HOME"] = str(self.data)
         for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
-                     "HERMES_SESSION_ID", "HERMES_REAL_HOME"):
+                     "HERMES_SESSION_ID", "HERMES_REAL_HOME", "HERMES_AGENT"):
             os.environ.pop(name, None)
         # GitHub Actions sets CI=true, and this repo's workflow sets
         # PHONE_HARNESS_TELEMETRY=0. These checks are the ordinary opt-in rules,

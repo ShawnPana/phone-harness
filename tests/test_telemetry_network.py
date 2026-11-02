@@ -54,6 +54,7 @@ HERMES_MARKS = (
     {"HERMES_SESSION_ID": "s1"},
     {"HERMES_SESSION_ID": ""},
     {"HERMES_REAL_HOME": "/home/me"},
+    {"HERMES_AGENT": "true"},                                     # all a Docker or SSH backend carries
     {"PH_CLIENT": "hermes"},
     {"HERMES_REAL_HOME": "/home/me", "CLAUDECODE": "1"},          # another agent's marker comes first
 )
@@ -269,7 +270,7 @@ class Hermes(Watched):
                 self.assert_nothing_left()
 
     def test_a_shell_call_sends_once_the_user_opted_in(self):
-        for marks in ({"HERMES_SESSION_ID": "s1"}, {"HERMES_REAL_HOME": "/home/me"}):
+        for marks in ({"HERMES_SESSION_ID": "s1"}, {"HERMES_REAL_HOME": "/home/me"}, {"HERMES_AGENT": "true"}):
             with self.subTest(marks):
                 self.fresh_machine()
                 self.choose("true")

@@ -55,7 +55,8 @@ _AGENT_ENV_MARKERS: tuple[tuple[str, str], ...] = (
     ("COPILOT_AGENT_SESSION_ID", "copilot-cli"),
     ("OPENCLAW_CLI", "openclaw"),
     ("HERMES_SESSION_ID", "hermes"),   # only while a session is bound
-    ("HERMES_REAL_HOME", "hermes"),    # on everything Hermes starts
+    ("HERMES_REAL_HOME", "hermes"),    # on what it starts on its own machine
+    ("HERMES_AGENT", "hermes"),        # on each command, also in a Docker or SSH backend
     ("CURSOR_AGENT", "cursor"),
     ("CURSOR_TRACE_ID", "cursor"),
     ("OPENCODE", "opencode"),

@@ -1,7 +1,7 @@
 # Publish to PyPI on a version tag. Uses PyPI trusted publishing (OIDC): no
 # tokens stored anywhere — PyPI is told to trust this repo + workflow +
 # environment. First-time setup on pypi.org: Publishing -> add a pending
-# publisher for project "phone-harness", owner ShawnPana, repository
+# publisher for project "phone-harness", owner phone-harness, repository
 # phone-harness, workflow publish.yml, environment pypi.
 name: publish
 

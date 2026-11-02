@@ -31,8 +31,8 @@ no hardware and is always the fallback.
 
 - If something is missing, name it and the one step the user can take.
 - Ask the user only to approve sign-in and to pick a phone.
-- Detail: [iPhone](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md), [Android](https://github.com/ShawnPana/phone-harness/blob/main/setup/android.md),
-  [Cloud](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md), [API](https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md).
+- Detail: [iPhone](https://github.com/phone-harness/phone-harness/blob/main/setup/ios.md), [Android](https://github.com/phone-harness/phone-harness/blob/main/setup/android.md),
+  [Cloud](https://github.com/phone-harness/phone-harness/blob/main/setup/cloud.md), [API](https://github.com/phone-harness/phone-harness/blob/main/setup/api.md).
 
 ## Helpers
 
@@ -527,7 +527,7 @@ that directory from the packaged defaults when it does not exist yet;
 an existing workspace is left as it is. To get a fresh default, delete
 the workspace folder; it is recreated on the next run. For setup or
 permission problems, read
-https://github.com/ShawnPana/phone-harness/blob/main/install.md.
+https://github.com/phone-harness/phone-harness/blob/main/install.md.
 
 ## Updates
 

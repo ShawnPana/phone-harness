@@ -25,7 +25,7 @@ registered. The agent reads the helpers from that skill.
 ## Install
 
 ```bash
-hermes plugins install ShawnPana/phone-harness/integrations/hermes
+hermes plugins install phone-harness/phone-harness/integrations/hermes
 ```
 
 Hermes installs the `phone-harness` package into its own environment and asks

@@ -13,7 +13,7 @@ the user in a sentence or two what you can drive from here, for example "This
 is a Linux box with no phone attached, so I can use a cloud iPhone or Android."
 iPhone Mirroring needs a Mac; without a Mac or a phone, the cloud (step 6) is
 the setup. If you cannot install anything, use the API:
-https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md
+https://github.com/phone-harness/phone-harness/blob/main/setup/api.md
 
 ## 1. One question
 
@@ -99,4 +99,4 @@ user up for anything or spend their cloud credit beyond the proof. Connecting
 the phone is the user's job — relay the doctor's message and wait; don't
 retry-loop. After this, day-to-day usage is the phone-harness skill.
 Setup reference and troubleshooting:
-https://github.com/ShawnPana/phone-harness/blob/main/install.md.
+https://github.com/phone-harness/phone-harness/blob/main/install.md.

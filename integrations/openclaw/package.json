@@ -7,7 +7,7 @@
   "homepage": "https://phone-harness.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ShawnPana/phone-harness.git",
+    "url": "git+https://github.com/phone-harness/phone-harness.git",
     "directory": "integrations/openclaw"
   },
   "files": [

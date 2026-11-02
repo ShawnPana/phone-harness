@@ -17,8 +17,9 @@ import sys
 # The only import the classifier treats as phone-only. Anything else asks.
 SAFE_MODULES = frozenset({"phone_harness.helpers"})
 # Builtins that read or write files, run arbitrary code, or wait on a terminal; shell() is
-# phone-harness's adb shell.
-RISKY_CALLS = frozenset({"open", "exec", "eval", "compile", "__import__", "breakpoint", "input", "shell"})
+# phone-harness's adb shell; push_file() sends a file from this computer to a cloud phone.
+RISKY_CALLS = frozenset({"open", "exec", "eval", "compile", "__import__", "breakpoint", "input", "shell",
+                         "push_file"})
 # Names helpers.py imports for itself. A script that pulls them in can reach this computer
 # (importlib.import_module, Path.home().read_text, the transport module).
 _HOST_NAMES = frozenset({

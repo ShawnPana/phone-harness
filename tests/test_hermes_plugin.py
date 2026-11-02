@@ -173,6 +173,8 @@ class ApprovalGate(Base):
         "from phone_harness import transport", "from phone_harness.helpers import Path",
         "from phone_harness.helpers import importlib", "from . import agent_helpers",
         'open("notes.txt", "w").write("x")', '__import__("os")', 'eval("1")',
+        'push_file("~/.ssh/id_rsa")', 'p = push_file\np("~/notes.txt")',
+        'from phone_harness.helpers import push_file as p\np("~/notes.txt")',
         "print.__self__", 'getattr(print, "__self__")', 'shell("pm list packages")',
         'send("raw", cmd="id")', 'send(op="raw")', 'op = "raw"\nsend(op)',
         'f = open\nf("/etc/passwd")', 's = send\ns("raw", cmd="id")',

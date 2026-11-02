@@ -63,8 +63,9 @@ needs adb. [install.md](../../install.md) covers each.
 
 ## Approvals
 
-Every `phone_exec` call asks you before it runs. You see the script, or both ends
-of it if it is long, and choose:
+Every `phone_exec` call asks you before it runs. The prompt shows the whole
+script, with each run of spaces and line breaks shown as one space and any
+invisible character spelled out, and you choose:
 
 - **Allow once** runs this script.
 - **Always allow** runs this script and every later script in the same session.
@@ -75,6 +76,11 @@ of it if it is long, and choose:
 Approve from the Control UI, or in a chat with `/approve`. If nobody can answer,
 the script does not run. That includes `openclaw agent` from a terminal and
 scheduled jobs. A prompt nobody answers expires after five minutes.
+
+OpenClaw holds 512 characters in a prompt, so a script longer than 500 as shown
+is not offered for approval at all. The agent is told to split it into shorter
+scripts, and the phone keeps its state between them. With classifier auto-run on,
+the reason takes part of the prompt, so a script that asks has less room.
 
 Only the owner can drive the phone. OpenClaw lets a chat answer its own approval
 prompts, so a sender it knows is not the owner is refused before any prompt.
@@ -102,7 +108,8 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
 ## How it works
 
 1. The model calls `phone_exec(code, timeout_s=300)`. The limit is 1800 seconds.
-2. A `before_tool_call` hook asks you to approve the script.
+2. A `before_tool_call` hook shows you the whole script and asks you to approve
+   it, or refuses a script too long to show whole.
 3. Subagents take turns on the phone. After 120 s the tool reports it as busy.
 4. The plugin pipes the script to the pinned Phone Harness through `uvx`, with
    `PH_AGENT_WORKSPACE` and `PH_CLIENT=openclaw`. The script's environment leaves
@@ -110,9 +117,17 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
    secrets, passwords), but keeps any `PHONE_HARNESS_*` you exported.
 5. The result is what the script printed, plus the exit code and the tail of
    stderr. A screenshot saved during the call is attached for the model to see.
-   If the file is not a real image, the result says so and nothing is attached. A
-   script past its timeout, or a cancelled call, is killed with everything it
-   started.
+   If the file is not a real image, the result says so and nothing is attached.
+6. A script past its timeout, or a cancelled call, is stopped with every process
+   it started. Each run tags its processes with an environment variable, and the
+   plugin notes which processes it sees under the script. Stopping kills the
+   script's process tree, including processes in their own session or process
+   group, every process that carries the tag or was noted, even after its parent
+   exits, and their process groups, and repeats until none is left, for up to five
+   seconds. The phone is free again only then. On Windows, the process tree is
+   killed. A process that detaches before the plugin notes it can outlive the call
+   if it drops the tag, or on macOS if it is one of Apple's own programs, whose
+   environment macOS hides.
 
 ## What it touches
 

@@ -12,9 +12,10 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
 try:
-    from phone_harness import ios
+    from phone_harness import ios, mirror
 except ImportError:                      # no pyobjc: stub the frameworks so the
     ios = None                           # session machine can still be tested
+    mirror = None
 
 if ios is None:
     import types

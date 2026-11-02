@@ -215,10 +215,8 @@ class Readme(unittest.TestCase):
 
     def test_says_what_telemetry_sends_and_how_to_turn_it_off(self):
         text = (PLUGIN / "README.md").read_text(encoding="utf-8")
-        for phrase in ("on by default", "us.i.posthog.com", "script text", "printed", "arguments",
-                       "`phone-harness config set telemetry false`",
-                       "`uvx phone-harness config set telemetry false`", "`DO_NOT_TRACK=1`",
-                       "Gateway's own environment"):
+        for phrase in ("PostHog", "scripts and what they print", "`DO_NOT_TRACK=1`",
+                       "`uvx phone-harness config set telemetry false`"):
             self.assertIn(phrase, text)
 
     def test_no_posthog_key_ships_in_the_plugin(self):

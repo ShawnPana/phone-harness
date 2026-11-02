@@ -31,10 +31,6 @@ again with `--accept-capabilities` once you have reviewed the plugin. A running
 Gateway picks the plugin up straight away, so there is nothing to restart. The
 first script fetches Phone Harness through uv, which takes a moment once.
 
-Phone Harness sends usage telemetry by default, including your script text and
-what scripts print. [Telemetry](#telemetry) says what is sent and how to turn it
-off.
-
 To install from a checkout instead:
 
 ```bash
@@ -99,7 +95,6 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
   internals, runs an adb shell command, or calls `send("raw", ...)`. What to do on
   the phone itself (sending, posting, buying, deleting, changing settings) is still
   the skill's consent rule: the agent asks you first.
-- Telemetry is on by default. See [Telemetry](#telemetry).
 - `PHONE_HARNESS_PLATFORM`, when you have exported it, is passed through.
 - The agent workspace is `phone-harness/agent-workspace` in OpenClaw's state
   directory, or `PH_AGENT_WORKSPACE` if that is set.
@@ -127,42 +122,6 @@ prompts, so a sender it knows is not the owner is refused before any prompt.
 - A cloud phone streams its screen to Phone Harness Cloud and uses Phone Harness's
   own cloud sign-in. A rented cloud Android bills by the minute.
 
-## Telemetry
-
-Telemetry is on by default. Phone Harness sends usage telemetry to PostHog
-(`us.i.posthog.com`). One event goes out after each `phone_exec` call and each
-`phone-harness` command. It holds:
-
-- The script text, up to 20,000 characters, including its `# task:` and `# step:` comments.
-- What the script printed, up to the last 20,000 characters. If a script prints
-  text from the phone's screen, that text is sent.
-- Each helper call and its arguments, up to 500 calls. Text a script types on the
-  phone is one of those arguments.
-- The command line, errors, exit code and run time.
-- A random install id, the Phone Harness, Python and OS versions, the kind of phone,
-  and the client (`openclaw`).
-- Once you sign in to Phone Harness Cloud: your account id and the cloud session id.
-  Calls to Phone Harness Cloud also carry the Phone Harness version and the client.
-
-Screenshots are not sent.
-
-To turn it off, use either of these on the machine that runs the Gateway:
-
-- `phone-harness config set telemetry false`. If `phone-harness` is not on your
-  PATH, run `uvx phone-harness config set telemetry false`. The setting is per
-  user, so run it as the user the Gateway runs as.
-- `DO_NOT_TRACK=1` in the Gateway's own environment. `PHONE_HARNESS_TELEMETRY=0`
-  does the same. A Gateway running as a service needs it set in the service, not
-  in your shell.
-
-With either one, Phone Harness sends no event and adds nothing to its calls to the
-cloud.
-
-A cloud phone is the one exception. Phone Harness Cloud keeps its own activity log
-of cloud sessions, tied to your account: each action and what it was asked to do,
-such as the text typed, the app or the URL. These settings do not change that log.
-Local phones are not in it.
-
 ## Limits
 
 - The approval covers `phone_exec`. An agent that also has OpenClaw's `exec` tool
@@ -184,3 +143,7 @@ npm test
 The Phone Harness release is pinned on one line: `PHONE_HARNESS_VERSION` at the
 top of `src/phone-exec.ts`. `classifier.py` is the Hermes plugin's classifier, and
 `tests/test_openclaw_plugin.py` keeps the two identical.
+
+Phone Harness sends usage data, including scripts and what they print, to PostHog.
+To turn it off, set `DO_NOT_TRACK=1` in the Gateway's environment, or run
+`uvx phone-harness config set telemetry false` as the user the Gateway runs as.

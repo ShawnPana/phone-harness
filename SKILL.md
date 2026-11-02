@@ -31,8 +31,8 @@ no hardware and is always the fallback.
 
 - If something is missing, name it and the one step the user can take.
 - Ask the user only to approve sign-in and to pick a phone.
-- Detail: [iPhone](https://github.com/ShawnPana/phone-harness/blob/main/setup/ios.md), [Android](https://github.com/ShawnPana/phone-harness/blob/main/setup/android.md),
-  [Cloud](https://github.com/ShawnPana/phone-harness/blob/main/setup/cloud.md), [API](https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md).
+- Detail: [iPhone](https://github.com/phone-harness/phone-harness/blob/main/setup/ios.md), [Android](https://github.com/phone-harness/phone-harness/blob/main/setup/android.md),
+  [Cloud](https://github.com/phone-harness/phone-harness/blob/main/setup/cloud.md), [API](https://github.com/phone-harness/phone-harness/blob/main/setup/api.md).
 
 ## Helpers
 
@@ -186,7 +186,7 @@ PY
 
 There are two things. A **phone** is a row in the account catalog (`GET /me`
 -> `available`): a label, a platform, an id, and whether it is a temporary
-phone. The service keeps no default phone; a preference is the chooser's. A **session** is one of those phones rented right now.
+phone. The service keeps no default phone; a preference is the chooser's. A **session** is one of those phones running right now.
 `cloud ls` prints one row per catalog phone and writes any live session on
 that row (`*` is the session this process targets). A session lines up with
 the row that has the same device_id or profile_id; a session with neither
@@ -252,8 +252,8 @@ phone-harness cloud open                     # the dashboard: the user takes the
   attach with `--session SID`. Do that; do not start a second one. `409`
   `device_unavailable` means the phone is granted but not on its host.
   `409` `session_limit` names how many sessions are in use. `503`
-  `phones_busy` includes `Retry-After`. `403` `account_blocked` means rentals
-  are blocked; a `403` about credit or balance means add credit. A `400` that
+  `phones_busy` includes `Retry-After`. `403` `account_blocked` means the account
+  is blocked from starting phones; a `403` about credit or balance means add credit. A `400` that
   names no such phone reprints the catalog.
 - **`Not signed in`** means the user runs `phone-harness cloud login` and
   approves it in a browser. Relay that; you cannot do it for them.
@@ -268,7 +268,7 @@ phone-harness cloud open                     # the dashboard: the user takes the
   session this command is using expires, the error says `session <sid> expired`.
   If the service loses it, the error says the cloud phone failed and is
   unreachable. That command stops. It does not drive another phone, and the
-  CLI does not rent a replacement. The saved note of that dead session is
+  CLI does not start a replacement. The saved note of that dead session is
   removed once the error has been reported, or once `phone-harness cloud` has
   shown it once, so later status output does not repeat it. A command that
   hits the dead session while that note is still there fails with the same
@@ -527,7 +527,7 @@ that directory from the packaged defaults when it does not exist yet;
 an existing workspace is left as it is. To get a fresh default, delete
 the workspace folder; it is recreated on the next run. For setup or
 permission problems, read
-https://github.com/ShawnPana/phone-harness/blob/main/install.md.
+https://github.com/phone-harness/phone-harness/blob/main/install.md.
 
 ## Updates
 

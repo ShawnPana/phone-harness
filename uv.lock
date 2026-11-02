@@ -4,7 +4,7 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "phone-harness"
-version = "0.3.3rc1"
+version = "0.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },

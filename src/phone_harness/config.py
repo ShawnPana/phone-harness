@@ -82,7 +82,7 @@ DEFAULTS = {
         "mirror": True,        # open scrcpy during `android awake` if installed
     },
     "cloud": {
-        "minutes": 15,         # how long `cloud start` rents a phone for
+        "minutes": 15,         # how long `cloud start` keeps a phone for
         "max_minutes": 30,     # the most one `cloud start` may ask for
         "watch": True,         # `cloud start` opens the phone's live view in the browser
         "phone": "",           # what a bare `cloud start` names: a catalog id or label; empty = the service's unnamed start

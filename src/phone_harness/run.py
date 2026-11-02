@@ -23,11 +23,11 @@ Commands:
   phone-harness doctor [ios|android]     same diagnosis as --doctor
   phone-harness skill       print the phone-harness skill text
   phone-harness android ... pair/connect/choose an Android phone
-  phone-harness cloud ...   rent a catalog phone: `cloud login`, `cloud ls`, `cloud start [PHONE]`
+  phone-harness cloud ...   start a catalog phone: `cloud login`, `cloud ls`, `cloud start [PHONE]`
   phone-harness config ...  settings: `config set platform android`
   phone-harness update      update this install: uv tool upgrade, git pull, or the pip command
 
---session SID (or PHONE_HARNESS_SESSION) selects one rented phone. With neither,
+--session SID (or PHONE_HARNESS_SESSION) selects one cloud phone. With neither,
 a script follows the attached session.
 """
 
@@ -356,7 +356,7 @@ def _build_parser():
 
     sub.add_parser(
         "cloud",
-        help="rent a catalog phone",
+        help="start a catalog phone",
         add_help=False,
     ).add_argument("rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
 

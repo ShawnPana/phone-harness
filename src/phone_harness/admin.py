@@ -42,7 +42,7 @@ CLOUD_HINT = ("\nNo working phone here? A cloud phone needs no hardware: "
               "`phone-harness cloud start PHONE` (a cloud iPhone needs no adb; "
               "a cloud Android needs adb). "
               "No install possible? Use the HTTPS API: "
-              "https://github.com/ShawnPana/phone-harness/blob/main/setup/api.md")
+              "https://github.com/phone-harness/phone-harness/blob/main/setup/api.md")
 
 
 def _host_app():

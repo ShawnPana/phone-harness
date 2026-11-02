@@ -1,6 +1,6 @@
 [project]
 name = "phone-harness"
-version = "0.3.3rc1"
+version = "0.3.3"
 description = "Let an agent drive a real phone: an iPhone through macOS iPhone Mirroring, an Android over adb, a rented cloud Android, or a cloud iPhone over HTTPS"
 readme = "README.md"
 license = "MIT"
@@ -27,8 +27,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://phone-harness.com"
-Repository = "https://github.com/ShawnPana/phone-harness"
-Issues = "https://github.com/ShawnPana/phone-harness/issues"
+Repository = "https://github.com/phone-harness/phone-harness"
+Documentation = "https://phone-harness.com/docs"
+Issues = "https://github.com/phone-harness/phone-harness/issues"
 
 [project.scripts]
 phone-harness = "phone_harness.run:main"

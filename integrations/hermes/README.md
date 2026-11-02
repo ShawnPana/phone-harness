@@ -29,8 +29,10 @@ hermes plugins install phone-harness/phone-harness/integrations/hermes
 ```
 
 Hermes installs the `phone-harness` package into its own environment and asks
-whether to enable the plugin. Tools load per session, so start a new chat.
-Restart the Hermes desktop app after installing or updating the plugin.
+whether to enable the plugin. Tools load per session, so start a new chat. If a
+Hermes gateway is already running, first run `hermes gateway restart --detach`,
+or the new chat will not have `phone_exec`. Restart the Hermes desktop app after
+installing or updating the plugin.
 Each script runs as `python -m phone_harness.run` on Hermes's interpreter: the
 copy Hermes installed, kept apart from a `phone-harness` command on `PATH`.
 
@@ -40,7 +42,8 @@ as `ios` or `android` in the environment Hermes runs in. iPhone control needs
 Accessibility and Screen Recording for the app that runs Hermes (the Hermes
 desktop app, or your terminal for `hermes` in a shell). Android needs adb; a
 cloud phone needs `phone-harness cloud login`. [install.md](../../install.md)
-covers each.
+covers each. A standard Hermes install does not put `phone-harness` on your
+PATH, so outside Hermes use `uvx phone-harness`.
 
 ## Settings
 
@@ -61,9 +64,13 @@ covers each.
     telemetry is sent.
   - `PHONE_HARNESS_TELEMETRY`, when you have exported it, wins over `config set`.
     `DO_NOT_TRACK=1` wins over both.
-  - If `phone-harness` is not on your PATH, use `uvx phone-harness`.
-  - On a Docker or SSH terminal backend, `phone-harness` runs on that machine, so
-    set these there.
+  - A Hermes gateway keeps the environment it started with, so a variable
+    exported in the shell you chat from does not reach a gateway that is already
+    running. Put it in `~/.hermes/.env` instead. `config set` applies from the
+    next run.
+  - `phone_exec` runs where Hermes runs. On a Docker or SSH terminal backend, a
+    `phone-harness` command in the terminal runs on that machine, so set these
+    there too.
   - Phone Harness Cloud keeps its own activity log of cloud sessions. These
     settings do not change it.
 - `PHONE_HARNESS_PLATFORM`, when you have exported it, is passed through.

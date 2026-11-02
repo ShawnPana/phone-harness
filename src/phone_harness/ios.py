@@ -516,6 +516,8 @@ def _blocked_guidance(said):
     if "touch id" in low or _has_word(low, "password"):
         return ("This needs you: the Mac is asking for Touch ID or a password. "
                 "Approve it or cancel it. I never type a password.")
+    if any(p in low for p in ("wi-fi", "wifi")):
+        return "This needs you: turn on Mac Wi-Fi to connect."
     return "This needs you: clear this on the Mac."
 
 

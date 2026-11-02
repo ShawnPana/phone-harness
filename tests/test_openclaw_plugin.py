@@ -208,8 +208,23 @@ class Readme(unittest.TestCase):
         self.assertIn("heuristic", text)
         self.assertIn("bypassed", text)
 
-    def test_says_telemetry_is_opt_in(self):
-        self.assertIn("phone-harness config set telemetry true", (PLUGIN / "README.md").read_text(encoding="utf-8"))
+    def test_says_what_telemetry_sends_and_how_to_turn_it_off(self):
+        text = (PLUGIN / "README.md").read_text(encoding="utf-8")
+        for phrase in ("on by default", "us.i.posthog.com", "script text", "printed", "arguments",
+                       "`phone-harness config set telemetry false`",
+                       "`uvx phone-harness config set telemetry false`", "`DO_NOT_TRACK=1`",
+                       "Gateway's own environment"):
+            self.assertIn(phrase, text)
+
+    def test_the_listing_summary_names_telemetry_and_the_way_out(self):
+        summary = json.loads((PLUGIN / "package.json").read_text(encoding="utf-8"))["description"]
+        self.assertIn("telemetry", summary)
+        self.assertIn("DO_NOT_TRACK=1", summary)
+
+    def test_no_posthog_key_ships_in_the_plugin(self):
+        for path in PLUGIN.rglob("*"):
+            if path.is_file() and "node_modules" not in path.parts:
+                self.assertNotIn(b"phc_", path.read_bytes(), path.name)
 
 
 class NodeSuite(unittest.TestCase):

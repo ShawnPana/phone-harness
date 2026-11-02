@@ -7,7 +7,8 @@
  * call is a fresh interpreter; the phone and the agent workspace persist.
  *
  * Safety that lives here:
- * - The child environment drops credentials, and telemetry stays off unless the user opted in.
+ * - The child environment drops credentials. Telemetry is Phone Harness's own, on by default
+ *   like the CLI's, and DO_NOT_TRACK or `config set telemetry false` reach it unchanged.
  * - One script drives the phone at a time, across subagents in this process.
  * - A script past its timeout, or a cancelled call, is killed with everything it started.
  */
@@ -59,28 +60,6 @@ export function truthy(value: unknown): boolean {
   return typeof value === "string" ? TRUTHY.has(value.trim().toLowerCase()) : Boolean(value);
 }
 
-/** config.json, using the same directory rules as phone_harness.config.config_dir. */
-function configJson(env: Env): string {
-  if (env.PHONE_HARNESS_HOME) return join(env.PHONE_HARNESS_HOME, "config", "config.json");
-  return join(env.XDG_CONFIG_HOME || join(homedir(), ".config"), "phone-harness", "config.json");
-}
-
-/**
- * True only for an explicit opt-in: `phone-harness config set telemetry true` (a value stored in
- * config.json), or PHONE_HARNESS_TELEMETRY set to an enabling value. The built-in default is on
- * for the CLI and is not an opt-in. An explicit false stays off.
- */
-export function telemetryOptedIn(env: Env): boolean {
-  const raw = env.PHONE_HARNESS_TELEMETRY;
-  if (raw !== undefined) return truthy(raw);
-  try {
-    const data: unknown = JSON.parse(readFileSync(configJson(env), "utf8"));
-    return typeof data === "object" && data !== null && "telemetry" in data && truthy(data.telemetry);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Environment for the Phone Harness child.
  *
@@ -100,7 +79,6 @@ export function childEnv(base: Env, workspace: string): Env {
   env[pathKey] = [env[pathKey], join(homedir(), ".local", "bin")].filter(Boolean).join(delimiter);
   env.PH_AGENT_WORKSPACE = workspace;
   env.PH_CLIENT = "openclaw";
-  if (!telemetryOptedIn(base)) env.PHONE_HARNESS_TELEMETRY = "0";
   return env;
 }
 

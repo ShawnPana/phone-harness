@@ -175,6 +175,16 @@ def save(data):
     _write(paths()["config"], data)
 
 
+def config_unreadable():
+    """config.json exists and cannot be read, so what it says is unknown."""
+    try:
+        return not isinstance(json.loads(paths()["config"].read_text()), dict)
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return True
+
+
 # --- settings ----------------------------------------------------------------
 
 def _dig(d, key):

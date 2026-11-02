@@ -474,7 +474,9 @@ class TelemetryDefault(unittest.TestCase):
         from phone_harness.telemetry import is_enabled
 
         with mock.patch.dict(os.environ, {"PHONE_HARNESS_HOME": home.name}, clear=False):
-            os.environ.pop("PHONE_HARNESS_TELEMETRY", None)
+            for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
+                         "HERMES_SESSION_ID", "HERMES_REAL_HOME"):
+                os.environ.pop(name, None)
             # GitHub Actions sets CI=true, and this repo's workflow sets
             # PHONE_HARNESS_TELEMETRY=0. This test is the ordinary default.
             os.environ.pop("CI", None)

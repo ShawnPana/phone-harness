@@ -1,10 +1,16 @@
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from phone_harness import config, telemetry
+SRC = str(Path(__file__).resolve().parents[1] / "src")
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
+from phone_harness import config, telemetry  # noqa: E402
 
 
 class ConfigSetBooleanTests(unittest.TestCase):
@@ -16,6 +22,12 @@ class ConfigSetBooleanTests(unittest.TestCase):
         patcher = patch.object(config, "config_dir", return_value=self.config_dir)
         patcher.start()
         self.addCleanup(patcher.stop)
+        env = patch.dict(os.environ)                       # CI sets PHONE_HARNESS_TELEMETRY=0
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("PHONE_HARNESS_TELEMETRY", "DO_NOT_TRACK", "PH_CLIENT",
+                     "HERMES_SESSION_ID", "HERMES_REAL_HOME"):
+            os.environ.pop(name, None)
 
     def test_set_telemetry_off_coerces_to_boolean_false(self):
         for off_val in ("off", "no", "false", "0"):

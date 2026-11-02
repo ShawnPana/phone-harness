@@ -12,9 +12,11 @@ the cloud carry the CLI's version and the client driving it
 (X-Phone-Harness-Version, X-Agent-Client), so phone-cloud can tag its events
 the same way.
 
-Off: `phone-harness config set telemetry false`, or PHONE_HARNESS_TELEMETRY=0
-for one call. Off sends no event, links no account and adds no header. The
-install id and the linked uid live in the state dir; see config.py.
+Off: DO_NOT_TRACK=1, `phone-harness config set telemetry false`, or
+PHONE_HARNESS_TELEMETRY=0 for one call. Off sends no event, links no account
+and adds no header. Under Hermes it is off until the user opts in, whether the
+run came through phone_exec or a shell. The install id and the linked uid live
+in the state dir; see config.py.
 """
 
 from __future__ import annotations
@@ -42,13 +44,6 @@ def _version() -> str:
         return ""
 
 
-def is_enabled() -> bool:
-    val = _config.get("telemetry")
-    if isinstance(val, str):
-        return val.strip().lower() in ("1", "true", "yes", "on")
-    return bool(val)
-
-
 # Env markers each coding agent injects into subprocesses
 _AGENT_ENV_MARKERS: tuple[tuple[str, str], ...] = (
     ("AGENT=amp", "amp"),
@@ -59,7 +54,8 @@ _AGENT_ENV_MARKERS: tuple[tuple[str, str], ...] = (
     ("COPILOT_CLI", "copilot-cli"),
     ("COPILOT_AGENT_SESSION_ID", "copilot-cli"),
     ("OPENCLAW_CLI", "openclaw"),
-    ("HERMES_SESSION_ID", "hermes"),
+    ("HERMES_SESSION_ID", "hermes"),   # only while a session is bound
+    ("HERMES_REAL_HOME", "hermes"),    # on everything Hermes starts
     ("CURSOR_AGENT", "cursor"),
     ("CURSOR_TRACE_ID", "cursor"),
     ("OPENCODE", "opencode"),
@@ -73,6 +69,27 @@ def _detect_agent_client() -> str | None:
         if value and (not required or value == required):
             return client
     return None
+
+
+def _do_not_track() -> bool:
+    return os.environ.get("DO_NOT_TRACK", "").strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _under_hermes() -> bool:
+    """Every marker counts, not the first that matches: another agent's can come first."""
+    return os.environ.get("PH_CLIENT") == "hermes" or any(
+        marker in os.environ for marker, client in _AGENT_ENV_MARKERS if client == "hermes")
+
+
+def is_enabled() -> bool:
+    """DO_NOT_TRACK, then the setting. A setting nobody chose is on, except under
+    Hermes, which is opt-in, and when config.json is unreadable: it may hold a no."""
+    if _do_not_track():
+        return False
+    value, source = _config.lookup("telemetry")
+    if source == "default":
+        return not (_under_hermes() or _config.config_unreadable())
+    return bool(value)
 
 
 def _client() -> str | None:

@@ -1498,5 +1498,15 @@ class CloudCli(unittest.TestCase):
         self.assertIn("temporary", temporary[header.index("NOTE"):])
 
 
+    def test_match_catalog_empty_query_returns_empty(self):
+        from phone_harness.cloud import _match_catalog
+        catalog = [
+            {"platform": "android", "id": None, "label": "Unnamed phone"},
+            {"platform": "android", "id": "phone-1", "label": ""},
+        ]
+        self.assertEqual(_match_catalog(catalog, ""), [])
+        self.assertEqual(_match_catalog(catalog, "   "), [])
+
+
 if __name__ == "__main__":
     unittest.main()

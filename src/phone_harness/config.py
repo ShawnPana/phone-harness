@@ -251,6 +251,8 @@ def unset(key):
         d = d.get(part) if isinstance(d, dict) else None
         if d is None:
             return
+    if not isinstance(d, dict):
+        return
     d.pop(parts[-1], None)
     save(data)
 

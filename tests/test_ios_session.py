@@ -71,6 +71,8 @@ TOUCH_ID = [("AXStaticText", "Passwords"),
             ("AXButton", "Home Screen"), ("AXButton", "App Switcher"),
             ("AXButton", "Cancel")]
 LIVE = []
+# macOS 27: a live session leaks window-chrome AXButtons with empty title/value/description.
+CHROME_BUTTONS = [("AXButton", ""), ("AXButton", ""), ("AXButton", "")]
 
 
 class FakeMirror:
@@ -133,6 +135,11 @@ class FakeMirror:
         if self.current == "no-window":
             return "no-window"
         if self.current:
+            if isinstance(self.current, list) and all(
+                role == "AXButton" and not (text or "").strip()
+                for role, text in self.current
+            ):
+                return "ready"
             return "blocked"
         return "ready"
 
@@ -225,6 +232,26 @@ class SessionRequire(unittest.TestCase):
         self.assertEqual(p.mirror.launched, 0)
         self.assertEqual(p.mirror.pressed, [])
         self.assertEqual(p.mirror.shown, 1, "the window is shown once")
+
+    def test_chrome_buttons_treated_as_ready(self):
+        p = self.phone(CHROME_BUTTONS)
+        self.assertEqual(p._session_state(), "ready")
+        self.assertEqual(p._session_require(), WIN)
+        self.assertEqual(p.mirror.launched, 0)
+        self.assertEqual(p.mirror.pressed, [])
+        self.assertEqual(p.mirror.shown, 1, "the window is shown once")
+
+    def test_structural_state_chrome_buttons_fallback(self):
+        p = self.phone(CHROME_BUTTONS)
+        p.mirror.ax_session_hint = None
+        self.assertEqual(p._structural_state(), "ready")
+
+    def test_chrome_buttons_do_not_block_live_actions(self):
+        p = self.phone(CHROME_BUTTONS)
+        p.send("input.scroll", x=1, y=1, dy=-10, dx=0)
+        p.send("input.tap", x=1, y=2)
+        self.assertEqual(p.mirror.actions, ["scroll", "tap"])
+        self.assertEqual(p.mirror.pressed, [])
 
     def test_launches_then_presses_connect_then_ready(self):
         p = self.phone(None, None, "no-window", CONNECT, CONNECT,
@@ -475,6 +502,66 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("screenshot()", str(cm.exception))
         self.assertEqual(p.mirror.actions, ["capture"])
 
+
+
+class TestMirrorAXSessionHint(unittest.TestCase):
+    def setUp(self):
+        try:
+            from phone_harness import mirror
+            self.mirror = mirror
+        except ImportError:
+            self.skipTest("mirror module not available")
+
+        self.orig_app = self.mirror.running_app
+        self.orig_win = self.mirror.find_window
+        self.orig_nodes = self.mirror._window_ax_nodes
+
+    def tearDown(self):
+        self.mirror.running_app = self.orig_app
+        self.mirror.find_window = self.orig_win
+        self.mirror._window_ax_nodes = self.orig_nodes
+
+    def test_not_running(self):
+        self.mirror.running_app = lambda: None
+        self.assertEqual(self.mirror.ax_session_hint(), "not-running")
+
+    def test_no_window(self):
+        self.mirror.running_app = lambda: object()
+        self.mirror.find_window = lambda on_screen=False: None
+        self.assertEqual(self.mirror.ax_session_hint(), "no-window")
+
+    def test_empty_nodes_is_ready(self):
+        self.mirror.running_app = lambda: object()
+        self.mirror.find_window = lambda on_screen=False: dict(WIN)
+        self.mirror._window_ax_nodes = lambda app, win: []
+        self.assertEqual(self.mirror.ax_session_hint(), "ready")
+
+    def test_chrome_buttons_with_empty_labels_is_ready(self):
+        self.mirror.running_app = lambda: object()
+        self.mirror.find_window = lambda on_screen=False: dict(WIN)
+        self.mirror._window_ax_nodes = lambda app, win: [
+            ("AXButton", "", object()),
+            ("AXButton", "  ", object()),
+            ("AXButton", "", object()),
+        ]
+        self.assertEqual(self.mirror.ax_session_hint(), "ready")
+
+    def test_labeled_button_is_blocked(self):
+        self.mirror.running_app = lambda: object()
+        self.mirror.find_window = lambda on_screen=False: dict(WIN)
+        self.mirror._window_ax_nodes = lambda app, win: [
+            ("AXButton", "Connect", object())
+        ]
+        self.assertEqual(self.mirror.ax_session_hint(), "blocked")
+
+    def test_interstitial_text_is_blocked(self):
+        self.mirror.running_app = lambda: object()
+        self.mirror.find_window = lambda on_screen=False: dict(WIN)
+        self.mirror._window_ax_nodes = lambda app, win: [
+            ("AXStaticText", "iPhone in Use", object()),
+            ("AXButton", "Try Again", object()),
+        ]
+        self.assertEqual(self.mirror.ax_session_hint(), "blocked")
 
 if __name__ == "__main__":
     unittest.main()

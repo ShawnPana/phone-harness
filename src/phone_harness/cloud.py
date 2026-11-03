@@ -1708,7 +1708,9 @@ def _keys(args):
         print(minted["key"])
         print(term.note("Shown once; store it now.", sys.stderr), file=sys.stderr)
         return 0
-    if args[:1] == ["revoke"] and len(args) == 2:
+    if args[:1] == ["revoke"]:
+        if len(args) != 2:
+            sys.exit("Usage: phone-harness cloud keys revoke HASH")
         keys = [k for k in _api("GET", "/me/keys") if k["key_hash"].startswith(args[1])]
         if len(keys) != 1:
             sys.exit(f"{args[1]!r} matches {len(keys)} keys")

@@ -1528,5 +1528,16 @@ class CloudCli(unittest.TestCase):
         self.assertIn("temporary", temporary[header.index("NOTE"):])
 
 
+    def test_keys_revoke_without_hash_shows_usage(self):
+        import io
+        from contextlib import redirect_stderr
+        from phone_harness import cloud
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code = cloud.cli(["keys", "revoke"])
+        self.assertEqual(code, 1)
+        self.assertIn("Usage: phone-harness cloud keys revoke HASH", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

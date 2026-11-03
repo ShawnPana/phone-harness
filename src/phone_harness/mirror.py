@@ -220,29 +220,34 @@ def ax_session_hint():
     win = find_window(on_screen=False)
     if win is None:
         return "no-window"
-    return "blocked" if _window_ax_nodes(app, win) else "ready"
+    target, nodes = _window_ax_probe(app, win)
+    if target is None:
+        # A failed accessibility read must not establish successful readiness.
+        # If the window exists but its accessibility element cannot be found or read,
+        # the session is not ready.
+        return "blocked"
+    return "blocked" if nodes else "ready"
 
 
-def _window_ax_nodes(app=None, win=None):
-    """[(role, text, element)] for the native UI inside the phone window.
+def _window_ax_probe(app=None, win=None):
+    """(target, nodes) for the native UI inside the phone window.
 
-    The shared walk behind window_ax_content() and window_ax_buttons().
-    `app` and `win` can be passed in by ax_session_hint() so a liveness
-    check does not look them up a second time.
+    target is the matched AXUIElement for the phone window, or None if the
+    window could not be found or accessibility failed. nodes is [(role, text, el)].
     """
     if app is None:
         app = running_app()
     if app is None:
-        return []
+        return None, []
     if win is None:
         win = find_window(on_screen=False)
     if win is None:
-        return []
+        return None, []
     err, ax_wins = _AS.AXUIElementCopyAttributeValue(
         _AS.AXUIElementCreateApplication(app.processIdentifier()),
         "AXWindows", None)
     if err or not ax_wins:
-        return []
+        return None, []
 
     def geom(node):
         e1, pos = _AS.AXUIElementCopyAttributeValue(node, "AXPosition", None)
@@ -264,7 +269,7 @@ def _window_ax_nodes(app=None, win=None):
             target = w
             break
     if target is None:
-        return []
+        return None, []
 
     out = []
 
@@ -281,12 +286,24 @@ def _window_ax_nodes(app=None, win=None):
                 if not ea and isinstance(v, str) and v.strip():
                     parts.append(v.strip())
             out.append((role, " ".join(parts), node))
-        ek, kids = _AS.AXUIElementCopyAttributeValue(node, "AXChildren", None)
-        for k in (kids or []):
-            walk(k, depth + 1)
+        for attr in ("AXChildren", "AXSheets"):
+            ek, kids = _AS.AXUIElementCopyAttributeValue(node, attr, None)
+            for k in (kids or []):
+                walk(k, depth + 1)
 
     walk(target)
-    return out
+    return target, out
+
+
+def _window_ax_nodes(app=None, win=None):
+    """[(role, text, element)] for the native UI inside the phone window.
+
+    The shared walk behind window_ax_content() and window_ax_buttons().
+    `app` and `win` can be passed in by ax_session_hint() so a liveness
+    check does not look them up a second time.
+    """
+    _target, nodes = _window_ax_probe(app, win)
+    return nodes
 
 
 def frontmost_window():

@@ -12,9 +12,10 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC))
 
 try:
-    from phone_harness import ios
+    from phone_harness import ios, mirror
 except ImportError:                      # no pyobjc: stub the frameworks so the
     ios = None                           # session machine can still be tested
+    mirror = None
 
 if ios is None:
     import types
@@ -36,9 +37,10 @@ if ios is None:
         _mod.__spec__ = importlib.machinery.ModuleSpec(_name, loader=None)
         sys.modules[_name] = _mod
     try:
-        from phone_harness import ios
+        from phone_harness import ios, mirror
     except ImportError:
         ios = None
+        mirror = None
 
 WIN = {"x": 0, "y": 0, "w": 400, "h": 800, "id": 1}
 CONNECT = [("AXImage", "iPhoneOff"), ("AXStaticText", "Timed Out"),
@@ -70,6 +72,9 @@ TOUCH_ID = [("AXStaticText", "Passwords"),
                              "enter your password to continue."),
             ("AXButton", "Home Screen"), ("AXButton", "App Switcher"),
             ("AXButton", "Cancel")]
+WIFI_OFF = [("AXStaticText", "Wi-Fi Off"),
+            ("AXStaticText", "Turn on Mac Wi-Fi to connect."),
+            ("AXButton", "Settings")]
 LIVE = []
 
 
@@ -474,6 +479,154 @@ class SessionRequire(unittest.TestCase):
         self.assertIn("iPhone in Use", str(cm.exception))
         self.assertIn("screenshot()", str(cm.exception))
         self.assertEqual(p.mirror.actions, ["capture"])
+
+    def test_wifi_off_interstitial_raises_without_pressing_settings(self):
+        p = self.phone(WIFI_OFF)
+        with self.assertRaises(RuntimeError) as cm:
+            p._session_require()
+        msg = str(cm.exception)
+        self.assertEqual(p.mirror.pressed, [])
+        self.assertIn("Wi-Fi Off", msg)
+        self.assertIn("Turn on Mac Wi-Fi to connect.", msg)
+        self.assertIn("turn on Mac Wi-Fi to connect", msg)
+        self.assertIn("Settings", msg)
+        self.assertNotIn("LOCK your iPhone", msg)
+        self.assertLess(self.clock[0], ios._CONNECT_WAIT, "fails fast on finished interstitial")
+
+    def test_blocked_guidance_for_wifi_off(self):
+        self.assertEqual(
+            ios._blocked_guidance("Wi-Fi Off Turn on Mac Wi-Fi to connect."),
+            "This needs you: turn on Mac Wi-Fi to connect.")
+        self.assertEqual(
+            ios._blocked_guidance("Turn on Mac Wi-Fi to connect."),
+            "This needs you: turn on Mac Wi-Fi to connect.")
+        self.assertEqual(
+            ios._blocked_guidance("wifi off"),
+            "This needs you: turn on Mac Wi-Fi to connect.")
+
+
+@unittest.skipIf(ios is None or mirror is None, "pyobjc / mirror not stubbed")
+class IsolatedAccessibilityErrorFixture(unittest.TestCase):
+    """Failed accessibility read must not establish successful readiness (#141)."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+        self._sleep, self._now = ios._sleep, ios._now
+        self.clock = [0.0]
+        ios._sleep = lambda s: self.clock.__setitem__(0, self.clock[0] + s)
+        ios._now = lambda: self.clock[0]
+        self.window = dict(x=0, y=0, w=400, h=800, id=1)
+        self.app = SimpleNamespace(processIdentifier=lambda: 123)
+        self.phone = ios.IPhone.__new__(ios.IPhone)
+        self.phone.mirror = mirror
+        self.phone.background = True
+
+    def tearDown(self):
+        ios._sleep, ios._now = self._sleep, self._now
+
+    def test_accessibility_error_returns_blocked_and_fails_readiness(self):
+        from unittest.mock import patch
+        with patch.object(mirror, "running_app", return_value=self.app), \
+             patch.object(mirror, "find_window", return_value=self.window), \
+             patch.object(mirror, "show", return_value=None), \
+             patch.object(mirror._AS, "AXUIElementCreateApplication", return_value=object()), \
+             patch.object(mirror._AS, "AXUIElementCopyAttributeValue", return_value=(-25204, None)):
+            self.assertEqual(mirror.ax_session_hint(), "blocked")
+            self.assertEqual(self.phone.send("session.state"), "blocked")
+            with self.assertRaises(RuntimeError) as cm:
+                self.phone.send("session.require")
+            self.assertIn("not connected", str(cm.exception))
+
+    def test_empty_live_tree_returns_ready_and_succeeds_readiness(self):
+        from unittest.mock import patch
+        target_win = object()
+        pos_val = object()
+        sz_val = object()
+
+        class Point:
+            x, y = 0, 0
+
+        class Size:
+            width, height = 400, 800
+
+        def fake_copy_attr(el, attr, _):
+            if attr == "AXWindows":
+                return 0, [target_win]
+            if attr == "AXPosition":
+                return 0, pos_val
+            if attr == "AXSize":
+                return 0, sz_val
+            if attr in ("AXChildren", "AXSheets"):
+                return 0, []
+            return 0, None
+
+        def fake_get_val(val, val_type, _):
+            if val is pos_val:
+                return True, Point()
+            if val is sz_val:
+                return True, Size()
+            return False, None
+
+        with patch.object(mirror, "running_app", return_value=self.app), \
+             patch.object(mirror, "find_window", return_value=self.window), \
+             patch.object(mirror, "show", return_value=None), \
+             patch.object(mirror._AS, "AXUIElementCreateApplication", return_value=object()), \
+             patch.object(mirror._AS, "AXUIElementCopyAttributeValue", side_effect=fake_copy_attr), \
+             patch.object(mirror._AS, "AXValueGetValue", side_effect=fake_get_val):
+            self.assertEqual(mirror.ax_session_hint(), "ready")
+            self.assertEqual(self.phone.send("session.state"), "ready")
+            self.assertEqual(self.phone.send("session.require"), self.window)
+
+    def test_native_interstitial_tree_returns_blocked(self):
+        from unittest.mock import patch
+        target_win = object()
+        text_node = object()
+        pos_val = object()
+        sz_val = object()
+
+        class Point:
+            x, y = 0, 0
+
+        class Size:
+            width, height = 400, 800
+
+        def fake_copy_attr(el, attr, _):
+            if el is target_win and attr == "AXWindows":
+                return 0, [target_win]
+            if el is target_win and attr == "AXPosition":
+                return 0, pos_val
+            if el is target_win and attr == "AXSize":
+                return 0, sz_val
+            if el is target_win and attr == "AXChildren":
+                return 0, [text_node]
+            if el is target_win and attr == "AXSheets":
+                return 0, []
+            if el is text_node:
+                if attr == "AXRole":
+                    return 0, "AXStaticText"
+                if attr == "AXValue":
+                    return 0, "Wi-Fi Off"
+                if attr in ("AXChildren", "AXSheets"):
+                    return 0, []
+            if attr == "AXWindows":
+                return 0, [target_win]
+            return 0, None
+
+        def fake_get_val(val, val_type, _):
+            if val is pos_val:
+                return True, Point()
+            if val is sz_val:
+                return True, Size()
+            return False, None
+
+        with patch.object(mirror, "running_app", return_value=self.app), \
+             patch.object(mirror, "find_window", return_value=self.window), \
+             patch.object(mirror, "show", return_value=None), \
+             patch.object(mirror._AS, "AXUIElementCreateApplication", return_value=object()), \
+             patch.object(mirror._AS, "AXUIElementCopyAttributeValue", side_effect=fake_copy_attr), \
+             patch.object(mirror._AS, "AXValueGetValue", side_effect=fake_get_val):
+            self.assertEqual(mirror.ax_session_hint(), "blocked")
+            self.assertEqual(self.phone.send("session.state"), "blocked")
 
 
 if __name__ == "__main__":

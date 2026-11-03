@@ -29,15 +29,29 @@ never a crash.
 Select with PHONE_HARNESS_BACKGROUND=1. Coordinates use the same global
 screen-point convention as the mirror backend and screen(), so every helper on
 top (tap_text, swipe, scroll_collect) works unchanged — just without focus.
-
-Keyboard (type_text/press) still briefly activates the window: the keyboard
-event-record layout isn't implemented yet, so those fall back to the mirror
-path. Mouse actions are fully background.
 """
-import ctypes, ctypes.util, os, struct, subprocess, tempfile, time
+import ctypes, os, struct, subprocess, tempfile, time
 from contextlib import contextmanager
 from pathlib import Path
 
+from Foundation import NSBundle
+
+# Framework builds of Python (Homebrew, python.org) re-exec inside Python.app,
+# whose Info.plist has CFBundlePackageType=APPL and no LSBackgroundOnly. Any
+# call into HIServices (such as GetProcessForPID) runs _RegisterApplication on
+# the calling process, which reads that Info.plist and registers Python with
+# launchservicesd and WindowServer as a Foreground GUI app (foreground=1),
+# popping a Python icon into the Dock/Cmd+Tab and stealing frontmost status.
+# Marking the in-memory bundle dictionary LSBackgroundOnly before any
+# registration check-in keeps Python background-only (foreground=0).
+try:
+    _bundle_info = NSBundle.mainBundle().infoDictionary()
+    if _bundle_info is not None:
+        _bundle_info["LSBackgroundOnly"] = "1"
+except Exception:
+    pass
+
+import objc
 import Quartz
 from AppKit import NSRunningApplication
 
@@ -48,20 +62,71 @@ BUNDLE_ID = "com.apple.ScreenContinuity"
 TMP = Path(tempfile.gettempdir()) / "phone-harness"
 TMP.mkdir(exist_ok=True)
 
-# --- SkyLight private API ---
+# --- SkyLight & CoreServices private API ---
+_libc = ctypes.CDLL(None)
+_libc.mach_absolute_time.restype = ctypes.c_uint64
 _sky = ctypes.CDLL("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight")
-_appserv = ctypes.CDLL(ctypes.util.find_library("ApplicationServices"))
+_cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+_cs = ctypes.CDLL("/System/Library/Frameworks/CoreServices.framework/CoreServices")
 
 
 class _PSN(ctypes.Structure):
     _fields_ = [("hi", ctypes.c_uint32), ("lo", ctypes.c_uint32)]
 
 
-_appserv.GetProcessForPID.argtypes = [ctypes.c_int, ctypes.POINTER(_PSN)]
-_appserv.GetProcessForPID.restype = ctypes.c_int
+class _CGPoint(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+
+_sky.SLSMainConnectionID.argtypes = []
+_sky.SLSMainConnectionID.restype = ctypes.c_uint32
+_sky.SLSMainConnectionID()
 _sky._SLPSSetFrontProcessWithOptions.argtypes = [
     ctypes.POINTER(_PSN), ctypes.c_uint32, ctypes.c_uint32]
 _sky.SLPSPostEventRecordTo.argtypes = [ctypes.POINTER(_PSN), ctypes.c_void_p]
+_sky.SLEventSetWindowLocation.argtypes = [ctypes.c_void_p, _CGPoint]
+_sky.SLEventSetWindowLocation.restype = ctypes.c_int
+
+_cf.CFNumberCreate.argtypes = [ctypes.c_void_p, ctypes.c_long, ctypes.c_void_p]
+_cf.CFNumberCreate.restype = ctypes.c_void_p
+_cf.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+_cf.CFArrayGetCount.restype = ctypes.c_long
+_cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+_cf.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+_cf.CFRelease.argtypes = [ctypes.c_void_p]
+
+_cs._LSCopyMatchingApplicationsWithItems.argtypes = [
+    ctypes.c_int, ctypes.c_int,
+    ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p)]
+_cs._LSCopyMatchingApplicationsWithItems.restype = ctypes.c_void_p
+_cs._LSASNExtractHighAndLowParts.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32)]
+_cs._LSASNExtractHighAndLowParts.restype = ctypes.c_uint32
+_kLSPIDKey = ctypes.c_void_p.in_dll(_cs, "_kLSPIDKey")
+
+
+def _psn_for_pid(pid):
+    """Resolve a PID's ProcessSerialNumber via CoreServices without calling
+    HIServices.GetProcessForPID (which calls INIT_Processes -> _RegisterApplication
+    on the calling Python process and promotes it to a foreground GUI app)."""
+    psn = _PSN()
+    pid_val = ctypes.c_int64(int(pid))
+    num = _cf.CFNumberCreate(None, 4, ctypes.byref(pid_val))  # kCFNumberSInt64Type = 4
+    num_ptr = ctypes.c_void_p(num)
+    arr = _cs._LSCopyMatchingApplicationsWithItems(
+        -2, 1, ctypes.byref(_kLSPIDKey), ctypes.byref(num_ptr))
+    if arr and _cf.CFArrayGetCount(arr) >= 1:
+        asn = _cf.CFArrayGetValueAtIndex(arr, 0)
+        hi, lo = ctypes.c_uint32(), ctypes.c_uint32()
+        _cs._LSASNExtractHighAndLowParts(
+            asn, ctypes.byref(hi), ctypes.byref(lo))
+        psn.hi, psn.lo = hi.value, lo.value
+    if arr:
+        _cf.CFRelease(arr)
+    if num:
+        _cf.CFRelease(num)
+    return psn
+
 
 _KCPS_USER_GENERATED = 0x200
 # CGSEventType values (share the CGEventType numbering)
@@ -181,8 +246,7 @@ def _post(pid, wid, etype, gx, gy, lx, ly):
     struct.pack_into("<dd", buf, 0x10, gx, gy)      # location (global points)
     struct.pack_into("<dd", buf, 0x20, lx, ly)      # windowLocation (local)
     buf[0x08] = etype
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
+    psn = _psn_for_pid(pid)
     _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
@@ -222,73 +286,85 @@ def drag(x1, y1, x2, y2, duration=0.35, steps=14):
     _emit(_LMOUSE_UP, x2, y2, pid, win)
 
 
-def scroll_wheel(dy, x, y, steps=6, dx=0):
-    """Scroll by borrowing the mouse pointer, not the focus.
+_SCROLL_PT_PER_EVENT = 7
+_SCROLL_EVENT_DELTA = 12
+_SCROLL_STEP_INTERVAL = 0.008
+_SCROLL_PHASE_BEGAN, _SCROLL_PHASE_CHANGED, _SCROLL_PHASE_ENDED = 1, 2, 4
 
-    macOS routes a scroll event to the window under the REAL cursor, not to the
-    active application and not to the event's own location field. That single
-    fact explains everything that failed here:
 
-      - the old flick (down 0.72h, drag, up 0.28h) never scrolled at all: iOS
-        read it as a TAP at the touch-down point and opened whatever row sat
-        there. Silent, and destructive on a Home Screen or a chat list.
-      - a wheel event posted with CGEventPostToPid does nothing, with or
-        without the continuous/scroll-phase fields a real trackpad sets:
-        posting to a pid bypasses the hit-testing that routes scrolls.
-      - a SkyLight scroll record (CGSEventType 22) over the channel the mouse
-        events use: nothing at any delta offset tried.
-      - arrow keys, space and cmd+down over the working background key path:
-        nothing; iOS lists don't scroll from those.
-      - posting to the HID tap with only CGEventSetLocation set: nothing,
-        because the cursor was elsewhere on screen.
+def _target_event_to_window(ev, wid, gx, gy, lx, ly):
+    """Stamp a CGEvent with window-id and window-local coordinates so
+    CGEventPostToPid delivers it to the mirroring window without moving the
+    physical cursor.
 
-    So put the cursor over the window for the length of the gesture and put it
-    straight back. Mirroring does NOT need to be frontmost — verified scrolling
-    with Finder active throughout. Warping costs the user their pointer for
-    ~0.3s, which is a great deal cheaper than an activation, and immeasurably
-    cheaper than opening a random row in whatever app is on screen.
+    Posting directly to a PID bypasses WindowServer's cursor hit-test, which
+    normally populates field 51 (kCGEventWindowNumber) and the event record's
+    window-local location. Without field 51 set, -[NSEvent _initWithCGEvent:]
+    calls [NSApp windowWithWindowNumber:0], gets nil, and drops the event in
+    -[NSApplication sendEvent:]. Furthermore, CGEventSetLocation (backed by
+    SLEventSetLocation) resets the internal windowLocation to (-1, -1), causing
+    -[NSThemeFrame _hitTestForEvent:] to miss CaptureView unless
+    SLEventSetWindowLocation is called afterwards with (lx, ly).
     """
-    _ctx()                       # window must exist; raises with a clear message
+    Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(gx, gy))
+    Quartz.CGEventSetIntegerValueField(ev, 51, wid)
+    Quartz.CGEventSetIntegerValueField(ev, 52, wid)
+    Quartz.CGEventSetIntegerValueField(ev, 91, wid)
+    _sky.SLEventSetWindowLocation(objc.pyobjc_id(ev), _CGPoint(lx, ly))
+    Quartz.CGEventSetTimestamp(ev, _libc.mach_absolute_time())
 
-    # A scroll goes to whatever window is under the cursor, so the phone window
-    # has to be the one on top at that point. It is not enough to move the
-    # pointer: with Chrome overlapping the mirroring window, the gesture was
-    # delivered to Chrome and silently scrolled the user's browser instead of
-    # the phone. Raise the window first, then give focus back.
-    from AppKit import NSWorkspace
-    prev = NSWorkspace.sharedWorkspace().frontmostApplication()
-    try:
-        mirror.activate()
-    except RuntimeError:
-        pass                     # not frontmost-able; the warp below may still win
 
-    # Refuse rather than scroll whatever the user just brought forward.
-    mirror.require_window_at(x, y)
+def _scroll_event(wid, gx, gy, lx, ly, phase, pt_y, pt_x):
+    ev = Quartz.CGEventCreateScrollWheelEvent(
+        None, Quartz.kCGScrollEventUnitPixel, 2, 0, 0)
+    sf = lambda f, v: Quartz.CGEventSetIntegerValueField(ev, f, v)
+    sf(88, 1)                                           # IsContinuous
+    sf(99, phase)                                       # ScrollPhase
+    sf(96, pt_y)                                        # PointDeltaAxis1
+    sf(93, int(pt_y * 65536 / 10))                      # FixedPtDeltaAxis1
+    sf(11, -1 if pt_y < 0 else (1 if pt_y > 0 else 0))  # DeltaAxis1
+    sf(97, pt_x)                                        # PointDeltaAxis2
+    if pt_x:
+        sf(94, int(pt_x * 65536 / 10))                  # FixedPtDeltaAxis2
+        sf(12, -1 if pt_x < 0 else 1)                   # DeltaAxis2
+    _target_event_to_window(ev, wid, gx, gy, lx, ly)
+    return ev
 
-    home = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
-    Quartz.CGWarpMouseCursorPosition(Quartz.CGPointMake(x, y))
-    time.sleep(0.05)
-    # The warp moves the pointer but does NOT re-run the hit-test that decides
-    # which window a scroll belongs to. Without this event the scroll is
-    # delivered to whatever was under the cursor before, and nothing moves.
+
+def scroll_wheel(dy, x, y, steps=6, dx=0):
+    """Scroll at (x, y) in the background without warping the mouse cursor or
+    raising the window.
+
+    Delivers a window-targeted kCGEventMouseMoved (so UniversalHID updates the
+    virtual pointer position inside CaptureViewController) followed by a phased
+    trackpad scroll gesture (began -> changed -> ended) via CGEventPostToPid.
+    """
+    if dy == 0 and dx == 0:
+        return
+    pid, win = _ctx()
+    wid = win["id"]
+    _make_key(pid, wid)
+
+    lx, ly = x - win["x"], y - win["y"]
     mv = Quartz.CGEventCreateMouseEvent(
         None, Quartz.kCGEventMouseMoved, Quartz.CGPointMake(x, y), 0)
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, mv)
-    time.sleep(0.05)
-    try:
-        for _ in range(steps):
-            ev = Quartz.CGEventCreateScrollWheelEvent(
-                None, Quartz.kCGScrollEventUnitPixel, 2,
-                int(dy / steps), int(dx / steps))
-            Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-            time.sleep(0.03)
-        time.sleep(0.15)         # let the pan land before the pointer leaves
-    finally:
-        Quartz.CGWarpMouseCursorPosition(home)
-        if prev is not None and prev.bundleIdentifier() != (
-                mirror.running_app() and mirror.running_app().bundleIdentifier()):
-            prev.activateWithOptions_(1 << 1)   # NSApplicationActivateIgnoringOtherApps
+    _target_event_to_window(mv, wid, x, y, lx, ly)
+    Quartz.CGEventPostToPid(pid, mv)
+    time.sleep(0.04)
+
+    dist = max(abs(dy), abs(dx))
+    n = max(1, round(dist / _SCROLL_PT_PER_EVENT))
+    pt_y = (_SCROLL_EVENT_DELTA if dy > 0 else -_SCROLL_EVENT_DELTA) if dy else 0
+    pt_x = (_SCROLL_EVENT_DELTA if dx > 0 else -_SCROLL_EVENT_DELTA) if dx else 0
+    sequence = (
+        [(_SCROLL_PHASE_BEGAN, pt_y, pt_x)]
+        + [(_SCROLL_PHASE_CHANGED, pt_y, pt_x)] * n
+        + [(_SCROLL_PHASE_ENDED, 0, 0)]
+    )
+    for phase, py, px in sequence:
+        Quartz.CGEventPostToPid(
+            pid, _scroll_event(wid, x, y, lx, ly, phase, py, px))
+        time.sleep(_SCROLL_STEP_INTERVAL)
 
 
 # --- keyboard (background), via make-key + CGEventPostToPid ---
@@ -306,8 +382,7 @@ def _make_key(pid, wid):
     struct.pack_into("<I", buf, 0x3c, wid)
     for i in range(0x10):
         buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
-    psn = _PSN()
-    _appserv.GetProcessForPID(pid, ctypes.byref(psn))
+    psn = _psn_for_pid(pid)
     _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
     buf[0x08] = _LMOUSE_DOWN
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))

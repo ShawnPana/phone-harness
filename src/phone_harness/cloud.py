@@ -1028,6 +1028,8 @@ def _match_catalog(catalog, query):
     """Catalog entries named by id, label, or `ios`/`android` when only one
     entry has that platform. Exact, case-insensitive. No partial matches."""
     q = query.strip().lower()
+    if not q:
+        return []
     by_id = [e for e in catalog if str(e.get("id") or "").lower() == q]
     if by_id:
         return by_id

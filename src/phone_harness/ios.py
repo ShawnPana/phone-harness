@@ -286,9 +286,12 @@ class IPhone(Backend):
             return "not-running"
         if self.mirror.find_window() is None:
             return "no-window"
-        if self.mirror.window_ax_content():
-            return "blocked"
-        return "ready"
+        content = self.mirror.window_ax_content()
+        if not content or all(
+            role == "AXButton" and not (text or "").strip() for role, text in content
+        ):
+            return "ready"
+        return "blocked"
 
     def _raise_not_live(self, state, pressed=None):
         """The error ensure_device raises, without pressing anything."""

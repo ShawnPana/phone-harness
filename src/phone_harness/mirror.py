@@ -220,7 +220,14 @@ def ax_session_hint():
     win = find_window(on_screen=False)
     if win is None:
         return "no-window"
-    return "blocked" if _window_ax_nodes(app, win) else "ready"
+    nodes = _window_ax_nodes(app, win)
+    if not nodes:
+        return "ready"
+    # macOS 27: a live session leaks window-chrome AXButtons with no title,
+    # value or description. Real interstitials have labels.
+    if all(role == "AXButton" and not text.strip() for role, text, _el in nodes):
+        return "ready"
+    return "blocked"
 
 
 def _window_ax_nodes(app=None, win=None):

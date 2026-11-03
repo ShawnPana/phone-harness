@@ -63,7 +63,30 @@ _sky._SLPSSetFrontProcessWithOptions.argtypes = [
     ctypes.POINTER(_PSN), ctypes.c_uint32, ctypes.c_uint32]
 _sky.SLPSPostEventRecordTo.argtypes = [ctypes.POINTER(_PSN), ctypes.c_void_p]
 
+
+class _CGPoint(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+
+# Routing a CGEvent to one window of a process (the scroll path). The public
+# CGEventSetIntegerValueField silently drops the window fields below (it reads
+# back 0), so they have to go through SkyLight's setter.
+_sky.SLEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
+_sky.SLEventPostToPid.argtypes = [ctypes.c_int, ctypes.c_void_p]
+_sky.CGEventSetWindowLocation.argtypes = [ctypes.c_void_p, _CGPoint]
+
 _KCPS_USER_GENERATED = 0x200
+
+
+def _front_process(psn, wid):
+    """Off by default: _SLPSSetFrontProcessWithOptions makes iPhone Mirroring
+    the front process. LaunchServices then reports it as the frontmost app
+    (the menu bar and Cmd shortcuts follow it), and its AXFrontmost stays true
+    after the user switches away, which is what mirror.activate() has to work
+    around with AXRaise. Taps, drags and keys land without it. Set
+    PHONE_HARNESS_FRONT_PROCESS=1 to bring it back if an update needs it."""
+    if os.environ.get("PHONE_HARNESS_FRONT_PROCESS") == "1":
+        _sky._SLPSSetFrontProcessWithOptions(psn, wid, _KCPS_USER_GENERATED)
 # CGSEventType values (share the CGEventType numbering)
 _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
@@ -183,7 +206,7 @@ def _post(pid, wid, etype, gx, gy, lx, ly):
     buf[0x08] = etype
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
+    _front_process(ctypes.byref(psn), wid)
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
 
@@ -222,32 +245,74 @@ def drag(x1, y1, x2, y2, duration=0.35, steps=14):
     _emit(_LMOUSE_UP, x2, y2, pid, win)
 
 
+def _post_to_window(ev, pid, win, x, y, group):
+    """Stamp a CGEvent with the window-routing fields and post it to the pid.
+
+    These are the fields a real event carries after the window server has hit
+    tested it; with them set, the event needs no cursor over the window."""
+    p = ev.__c_void_p__()
+    _sky.CGEventSetWindowLocation(p, _CGPoint(x - win["x"], y - win["y"]))
+    wid = win["id"]
+    for field, value in ((1, 0),       # mouseEventClickState
+                         (3, 0),       # mouseEventButtonNumber
+                         (7, 3),       # mouseEventSubtype
+                         (40, pid),    # eventTargetUnixProcessID
+                         (51, wid),    # window under the pointer
+                         (58, group),  # gesture/event group id
+                         (91, wid),    # window that can handle this event
+                         (92, wid)):
+        _sky.SLEventSetIntegerValueField(p, field, value)
+    _sky.SLEventPostToPid(pid, p)
+
+
 def scroll_wheel(dy, x, y, steps=6, dx=0):
-    """Scroll by borrowing the mouse pointer, not the focus.
+    """Scroll the phone window without focus and without the pointer.
 
-    macOS routes a scroll event to the window under the REAL cursor, not to the
-    active application and not to the event's own location field. That single
-    fact explains everything that failed here:
+    A wheel event is normally routed to the window under the real cursor. The
+    window server records the result of that hit test in the event itself
+    (window under pointer, window that can handle it, window location). Setting
+    those fields ourselves and posting the event to the process delivers it to
+    the phone window wherever the user's cursor is and whatever app is in
+    front. No focus record is needed: measured with and without one, the page
+    moved the same, and without it iPhone Mirroring's AXFrontmost never flips.
 
-      - the old flick (down 0.72h, drag, up 0.28h) never scrolled at all: iOS
-        read it as a TAP at the touch-down point and opened whatever row sat
-        there. Silent, and destructive on a Home Screen or a chat list.
-      - a wheel event posted with CGEventPostToPid does nothing, with or
-        without the continuous/scroll-phase fields a real trackpad sets:
-        posting to a pid bypasses the hit-testing that routes scrolls.
-      - a SkyLight scroll record (CGSEventType 22) over the channel the mouse
-        events use: nothing at any delta offset tried.
-      - arrow keys, space and cmd+down over the working background key path:
-        nothing; iOS lists don't scroll from those.
-      - posting to the HID tap with only CGEventSetLocation set: nothing,
-        because the cursor was elsewhere on screen.
-
-    So put the cursor over the window for the length of the gesture and put it
-    straight back. Mirroring does NOT need to be frontmost — verified scrolling
-    with Finder active throughout. Warping costs the user their pointer for
-    ~0.3s, which is a great deal cheaper than an activation, and immeasurably
-    cheaper than opening a random row in whatever app is on screen.
+    Dead ends, for the record:
+      - the old flick (down 0.72h, drag, up 0.28h): iOS reads it as a TAP at
+        the touch-down point. Silent, and destructive on a Home Screen.
+      - a wheel event posted with CGEventPostToPid and no window fields: does
+        nothing. Setting those fields with the public
+        CGEventSetIntegerValueField does nothing either, because it drops
+        them (they read back 0); SkyLight's SLEventSetIntegerValueField keeps
+        them.
+      - a SkyLight scroll record (CGSEventType 22): nothing at any offset.
+      - arrow keys, space, cmd+down: iOS lists don't scroll from those.
+      - activating the window and warping the pointer over it (the previous
+        version here): works, but takes the user's focus and pointer for
+        every scroll. Still available as PHONE_HARNESS_SCROLL=warp.
     """
+    if os.environ.get("PHONE_HARNESS_SCROLL", "").lower() == "warp":
+        return _scroll_wheel_warp(dy, x, y, steps=steps, dx=dx)
+    pid, win = _ctx()
+    group = int(time.time() * 1e6) & 0x7fffffff
+    mv = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventMouseMoved, Quartz.CGPointMake(x, y), 0)
+    _post_to_window(mv, pid, win, x, y, group)
+    time.sleep(0.06)
+    for _ in range(steps):
+        ev = Quartz.CGEventCreateScrollWheelEvent(
+            None, Quartz.kCGScrollEventUnitPixel, 2,
+            int(dy / steps), int(dx / steps))
+        Quartz.CGEventSetLocation(ev, Quartz.CGPointMake(x, y))
+        _post_to_window(ev, pid, win, x, y, group)
+        time.sleep(0.03)
+    time.sleep(0.15)             # let the pan land before the next screenshot
+
+
+def _scroll_wheel_warp(dy, x, y, steps=6, dx=0):
+    """The previous scroll: activate the window and borrow the pointer.
+
+    Kept for PHONE_HARNESS_SCROLL=warp in case a macOS or iPhone Mirroring
+    update stops honouring the routed path above."""
     _ctx()                       # window must exist; raises with a clear message
 
     # A scroll goes to whatever window is under the cursor, so the phone window
@@ -308,7 +373,7 @@ def _make_key(pid, wid):
         buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
+    _front_process(ctypes.byref(psn), wid)
     buf[0x08] = _LMOUSE_DOWN
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
     buf[0x08] = _LMOUSE_UP

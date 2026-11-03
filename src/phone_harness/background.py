@@ -77,6 +77,16 @@ _sky.CGEventSetWindowLocation.argtypes = [ctypes.c_void_p, _CGPoint]
 
 _KCPS_USER_GENERATED = 0x200
 
+
+def _front_process(psn, wid):
+    """Off by default: _SLPSSetFrontProcessWithOptions makes iPhone Mirroring
+    the front process. LaunchServices then reports it as the frontmost app
+    (the menu bar and Cmd shortcuts follow it), and its AXFrontmost stays true
+    after the user switches away, which is what mirror.activate() has to work
+    around with AXRaise. Taps, drags and keys land without it. Set
+    PHONE_HARNESS_FRONT_PROCESS=1 to bring it back if an update needs it."""
+    if os.environ.get("PHONE_HARNESS_FRONT_PROCESS") == "1":
+        _sky._SLPSSetFrontProcessWithOptions(psn, wid, _KCPS_USER_GENERATED)
 # CGSEventType values (share the CGEventType numbering)
 _LMOUSE_DOWN, _LMOUSE_UP, _LMOUSE_DRAGGED = 1, 2, 6
 
@@ -196,7 +206,7 @@ def _post(pid, wid, etype, gx, gy, lx, ly):
     buf[0x08] = etype
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
+    _front_process(ctypes.byref(psn), wid)
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
 
 
@@ -363,7 +373,7 @@ def _make_key(pid, wid):
         buf[0x20 + i] = 0xff            # blanked location => "focus", not a click
     psn = _PSN()
     _appserv.GetProcessForPID(pid, ctypes.byref(psn))
-    _sky._SLPSSetFrontProcessWithOptions(ctypes.byref(psn), wid, _KCPS_USER_GENERATED)
+    _front_process(ctypes.byref(psn), wid)
     buf[0x08] = _LMOUSE_DOWN
     _sky.SLPSPostEventRecordTo(ctypes.byref(psn), ctypes.byref(buf))
     buf[0x08] = _LMOUSE_UP

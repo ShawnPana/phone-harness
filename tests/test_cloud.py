@@ -14,6 +14,7 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 SRC = str(Path(__file__).resolve().parents[1] / "src")
 SUPPORT = str(Path(__file__).resolve().parent / "support")
@@ -24,7 +25,7 @@ if SUPPORT not in sys.path:
 import browser_recorder
 browser_recorder.install()
 
-from phone_harness import telemetry  # noqa: E402
+from phone_harness import cloud, telemetry  # noqa: E402
 
 FAKE_ADB = r'''#!/bin/sh
 # Locked until `shell unlock CODE`; state is a file next to this script.
@@ -58,6 +59,7 @@ def _fake_catalog(c):
 
 
 UNNAMED = {"platform": "android", "kind": "emulator", "temporary": True}
+ADB_BLOCK = {"host": "live.example", "port": 22220, "code": "ph_code"}
 
 
 def _fake_resolve(c, body):
@@ -78,6 +80,8 @@ class FakeCloud(BaseHTTPRequestHandler):
     control_url = None            # set: an iPhone's control grant points here
     available = None              # set: replaces the synthesized catalog
     fail = None                   # set: POST /sessions returns this instead
+    awaiting_adb = set()          # sids that are ready and have no adb block yet
+    adb_lag = 0                   # GETs that see a ready Android before its block lands
 
     def _oauth(self, path, form):
         c = FakeCloud
@@ -198,6 +202,9 @@ class FakeCloud(BaseHTTPRequestHandler):
             return self._send(202, c.sessions[sid])
         if (m, path) == ("GET", "/sessions"):
             return self._send(200, list(c.sessions.values()))
+        if m == "POST" and path.endswith("/adb") and path.split("/")[2] in c.sessions:
+            c.sessions[path.split("/")[2]]["adb"] = dict(ADB_BLOCK)
+            return self._send(201, {"enabled": True, "transport": "adb", **ADB_BLOCK})
         sid = path.rsplit("/", 1)[-1]
         if path.startswith("/sessions/") and sid in c.sessions:
             if m == "GET":
@@ -209,7 +216,14 @@ class FakeCloud(BaseHTTPRequestHandler):
                             "url": c.control_url or "http://127.0.0.1:1", "token": "ct_1",
                             "expires_at": c.sessions[sid]["expires_at"]}
                     else:
-                        c.sessions[sid]["adb"] = {"host": "live.example", "port": 22220, "code": "ph_code"}
+                        c.awaiting_adb.add(sid)
+                if sid in c.awaiting_adb:
+                    # The service says ready first; the block lands a moment later.
+                    if c.adb_lag:
+                        c.adb_lag -= 1
+                    else:
+                        c.awaiting_adb.discard(sid)
+                        c.sessions[sid]["adb"] = dict(ADB_BLOCK)
                 return self._send(200, c.sessions[sid])
             if m == "DELETE":
                 if c.sessions.pop(sid).get("profile"):
@@ -306,6 +320,7 @@ class CloudCli(unittest.TestCase):
         FakeCloud.control_url = None
         FakeCloud.available = None
         FakeCloud.fail = None
+        FakeCloud.awaiting_adb, FakeCloud.adb_lag = set(), 0
         FakeControl.launch_error = None
         FakeCloud.profile = {"id": "prof-1", "state": "stored", "session": None,
                              "saved_at": time.time() - 7200}
@@ -336,6 +351,16 @@ class CloudCli(unittest.TestCase):
 
     def adb_log(self):
         return (Path(self.home.name) / "adb.log").read_text()
+
+    def adb_requests(self):
+        return [r[:2] for r in FakeCloud.requests if r[0] == "POST" and r[1].endswith("/adb")]
+
+    def ready_without_adb(self, sid, lag=3):
+        """A running phone whose adb block has not landed, as `GET /sessions` lists it."""
+        FakeCloud.sessions[sid] = {"id": sid, "state": "ready", "platform": "android",
+                                   "kind": "emulator", "expires_at": time.time() + 600}
+        FakeCloud.awaiting_adb.add(sid)
+        FakeCloud.adb_lag = lag
 
     def test_needs_login(self):
         r = self.run_cli("cloud", "start")
@@ -500,6 +525,33 @@ class CloudCli(unittest.TestCase):
         over = self.run_cli("cloud", "start", "--minutes", "999")
         self.assertEqual(over.returncode, 1)
         self.assertIn("between 1 and 30", over.stderr)
+
+    def test_start_waits_for_the_adb_block_that_lands_after_ready(self):
+        self.login()
+        FakeCloud.adb_lag = 3
+        r = self.run_cli("cloud", "start", "--no-watch")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("(connected, unlocked)", r.stdout)
+        self.assertIn("shell unlock ph_code", self.adb_log())
+        self.assertEqual(FakeCloud.adb_lag, 0)              # it read through all of them
+        self.assertEqual(self.adb_requests(), [])
+
+    def test_a_pinned_script_waits_for_the_adb_block(self):
+        self.login()
+        self.ready_without_adb("pin001")
+        r = self.run_cli("--session", "pin001", stdin="print('attached')\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("attached", r.stdout)
+        self.assertIn("shell unlock ph_code", self.adb_log())
+        self.assertEqual(self.adb_requests(), [])
+
+    def test_use_waits_for_the_adb_block(self):
+        self.login()
+        self.ready_without_adb("use001")
+        r = self.run_cli("cloud", "use", "use001")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("shell unlock ph_code", self.adb_log())
+        self.assertEqual(self.adb_requests(), [])
 
     def test_attaches_when_the_phone_already_runs_elsewhere(self):
         self.login()
@@ -1526,6 +1578,67 @@ class CloudCli(unittest.TestCase):
         self.assertTrue(saved[state_at:].startswith("stored"))
         self.assertEqual(temporary.index("android"), header.index("PLATFORM"))
         self.assertIn("temporary", temporary[header.index("NOTE"):])
+
+
+class WaitForAdb(unittest.TestCase):
+    """What _wait_ready and _link do after `ready`, against a scripted API."""
+    ANDROID = {"id": "s1", "state": "ready", "platform": "android", "kind": "emulator"}
+
+    def setUp(self):
+        self.calls = []
+        for patcher in (mock.patch.object(cloud, "_adb_present"),
+                        mock.patch.object(cloud, "ADB_WAIT", 0.3)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def api(self, reads, post=None):
+        """A stand-in for cloud._api. The last read repeats."""
+        reads = list(reads)
+
+        def fake(method, path, *_args, **_kwargs):
+            self.calls.append((method, path))
+            if method == "GET":
+                return reads.pop(0) if len(reads) > 1 else reads[0]
+            if isinstance(post, Exception):
+                raise post
+            return post
+        return mock.patch.object(cloud, "_api", fake)
+
+    def test_only_a_ready_android_with_no_link_is_waited_for(self):
+        self.assertTrue(cloud._awaiting_adb(self.ANDROID))
+        self.assertFalse(cloud._awaiting_adb({**self.ANDROID, "adb": ADB_BLOCK}))
+        iphone = {"id": "s2", "state": "ready", "platform": "ios", "kind": "device"}
+        self.assertFalse(cloud._awaiting_adb(iphone))
+        self.assertFalse(cloud._awaiting_adb({**iphone, "control": {"url": "u", "token": "t"}}))
+
+    def test_a_phone_with_its_link_is_read_once(self):
+        with self.api([{**self.ANDROID, "adb": ADB_BLOCK}]):
+            self.assertEqual(cloud._wait_ready("s1")["adb"], ADB_BLOCK)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_block_that_never_lands_is_asked_for_when_the_wait_runs_out(self):
+        with self.api([self.ANDROID], post={"enabled": True, **ADB_BLOCK}):
+            link = cloud._link(cloud._wait_ready("s1"))
+        self.assertEqual(link, {"kind": "adb", **ADB_BLOCK})
+        self.assertGreater(self.calls.count(("GET", "/sessions/s1")), 1)
+        self.assertEqual(self.calls[-1], ("POST", "/sessions/s1/adb"))
+
+    def test_a_refused_block_says_the_phone_is_still_running(self):
+        refused = cloud.CloudError(500, {"error": "the phone's adb gate did not open"})
+        with self.api([self.ANDROID], post=refused), self.assertRaises(SystemExit) as caught:
+            cloud._link(self.ANDROID)
+        self.assertIn("still running", caught.exception.code)
+        self.assertIn("the phone's adb gate did not open", caught.exception.code)
+        self.assertIn("phone-harness cloud use s1", caught.exception.code)
+        self.assertIn("phone-harness cloud stop s1", caught.exception.code)
+        self.assertNotIn("DELETE", [method for method, _path in self.calls])
+
+    def test_a_phone_that_closes_during_the_wait_ends_the_wait(self):
+        closing = {**self.ANDROID, "state": "closing"}
+        with self.api([self.ANDROID, closing]), self.assertRaises(SystemExit) as caught:
+            cloud._wait_ready("s1")
+        self.assertIn("closing", caught.exception.code)
+        self.assertEqual(len(self.calls), 2)
 
 
 if __name__ == "__main__":

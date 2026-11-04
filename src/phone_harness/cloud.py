@@ -37,6 +37,7 @@ from . import term
 
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
 READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
+ADB_WAIT = 15         # seconds a ready Android gets to show its adb block
 LOW_TIME = 120        # warn the script when the session has less than this left
 # Named, because the sign-in host's CDN refuses urllib's default signature.
 USER_AGENT = "phone-harness-cli"
@@ -652,8 +653,16 @@ def _link(session):
     _adb_present()
     adb = session.get("adb") or {}
     if not adb.get("host") or not adb.get("code"):
-        # Only after someone turned ADB off for this session; ready phones have it.
-        adb = _api("POST", f"/sessions/{session['id']}/adb")
+        # _wait_ready gave the block ADB_WAIT to land, so ADB was turned off for
+        # this session or the service failed to enable it. This asks again.
+        sid = session["id"]
+        try:
+            adb = _api("POST", f"/sessions/{sid}/adb")
+        except (CloudError, OSError) as e:
+            why = _explain(e) if isinstance(e, CloudError) else e
+            sys.exit(f"Session {sid} is ready but has no adb ({why}). It is still running: "
+                     f"`phone-harness cloud use {sid}` tries again, "
+                     f"`phone-harness cloud stop {sid}` ends it.")
     return {"kind": "adb", "host": adb["host"], "port": adb["port"], "code": adb["code"]}
 
 
@@ -716,10 +725,7 @@ def _pull_pinned(pin):
     if len(hits) != 1:
         raise RuntimeError(f"{pin!r} matches {len(hits)} running sessions"
                            + (f": {', '.join(s['id'] for s in hits)}" if hits else ""))
-    session = hits[0]
-    if session.get("state") != "ready":
-        session = _wait_ready(session["id"])
-    return _store_session(_session_record(session), make_attached=False)
+    return _store_session(_session_record(_wait_ready(hits[0]["id"])), make_attached=False)
 
 
 def _detach(sid=None, gone=False):
@@ -868,13 +874,28 @@ def _resolve_sid(given):
     return hits[0]["id"]
 
 
+def _awaiting_adb(session):
+    """A ready session that will have an adb block and does not yet. The service
+    says `ready` first and enables adb after, about a second later. An iPhone's
+    device link is a control grant, which is there from `ready` on."""
+    return session.get("kind") != "device" and _link_kind(session) is None
+
+
 def _wait_ready(sid):
+    """The session once it can be attached: `ready`, with its adb block when it
+    is an Android. A block still missing after ADB_WAIT is left for _link."""
     deadline = time.monotonic() + READY_WAIT
+    adb_deadline = None
     shown = None
     while True:
         session = _api("GET", f"/sessions/{sid}")
         if session["state"] == "ready":
-            return session
+            now = time.monotonic()
+            adb_deadline = adb_deadline or now + ADB_WAIT
+            if not _awaiting_adb(session) or now >= adb_deadline:
+                return session
+            time.sleep(0.25)
+            continue
         if session["state"] in ("error", "closing"):
             sys.exit(f"The phone did not start: {session.get('error') or session['state']}")
         if time.monotonic() >= deadline:

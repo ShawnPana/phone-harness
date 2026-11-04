@@ -88,6 +88,11 @@ PY
 
 Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the full list. The agent saves its own helpers in `~/.phone-harness/agent-workspace`.
 
+For an icon with no text, `mark_screen()` numbers every tap target and
+`tap_mark(m, 7)` taps the badge the agent saw. Android gets the targets from
+the accessibility tree; on iPhone, `mark_screen(grid=True)` adds a pixel ruler
+for the agent's own vision.
+
 ## Phone Harness Cloud
 
 No phone on your desk, or need more than one? [Phone Harness Cloud](https://phone-harness.com/dashboard?utm_source=github&utm_medium=readme&utm_campaign=cloud-section) hosts them for you:
@@ -114,7 +119,7 @@ The same helpers drive a cloud phone: an Android over adb, an iPhone over HTTPS.
 Every phone sits behind the same helpers, so a script written for one runs on the others.
 
 - **iPhone:** captures the iPhone Mirroring window, reads it with Apple's Vision OCR, and sends taps, swipes and typing as input events.
-- **Android:** adb for screenshots and input, the accessibility tree for text. USB or Wi-Fi.
+- **Android:** adb for screenshots and input, the accessibility tree for text and tappable controls. USB or Wi-Fi.
 - **Cloud Android:** the same as Android, over adb to a hosted phone.
 - **Cloud iPhone:** ops over HTTPS.
 
@@ -123,8 +128,9 @@ Every phone sits behind the same helpers, so a script written for one runs on th
 ## Limits
 
 - Unlocking the iPhone pauses mirroring; a PIN-locked Android needs the user.
-- OCR sees text, not icons. Unlabeled controls need a screenshot and a
-  vision-capable model.
+- OCR sees text, not icons. On Android, `targets()` and `mark_screen()` include
+  unlabeled icons from the accessibility tree. On iPhone, use
+  `mark_screen(grid=True)` and let the agent's vision pick the point.
 - No multi-touch, no camera or Face ID flows. DRM video renders black.
 - Connecting the phone is always the user's job.
 

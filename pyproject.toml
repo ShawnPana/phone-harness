@@ -17,6 +17,8 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 dependencies = [
+    # mark_screen() draws numbered badges with Pillow on every OS.
+    "pillow>=10.1",
     # iPhone control (iPhone Mirroring, Vision OCR) needs macOS. Android is
     # plain adb and installs everywhere; these are skipped off macOS.
     "pyobjc-framework-Quartz; sys_platform == 'darwin'",

@@ -120,6 +120,30 @@ class Tree(unittest.TestCase):
         self.assertEqual(phone.dump_calls, 2)
         self.assertEqual(rows[0]["text"], "Apps")
 
+    def test_the_tree_carries_the_fields_targets_need(self):
+        tree = (
+            b'<?xml version="1.0"?><hierarchy>'
+            b'<node text="" content-desc="Search" '
+            b'resource-id="com.example:id/btn_search" '
+            b'class="android.widget.ImageButton" package="com.example" '
+            b'clickable="true" enabled="true" long-clickable="false" '
+            b'scrollable="false" checkable="false" checked="false" '
+            b'selected="false" bounds="[10,20][50,60]">'
+            b'<node text="child" class="android.widget.TextView" '
+            b'clickable="false" bounds="[15,25][45,55]"/>'
+            b'</node></hierarchy>')
+        phone = Recorded(dumps=[tree])
+        nodes = phone._tree()
+        self.assertEqual(nodes[0]["depth"], 0)
+        self.assertIsNone(nodes[0]["parent"])
+        self.assertEqual(nodes[1]["depth"], 1)
+        self.assertEqual(nodes[1]["parent"], 0)
+        self.assertEqual(nodes[0]["package"], "com.example")
+        self.assertFalse(nodes[0]["long_clickable"])
+        self.assertFalse(nodes[0]["scrollable"])
+        self.assertTrue(nodes[0]["enabled"])
+        self.assertIsNone(nodes[0]["checked"])
+
 
 class Launch(unittest.TestCase):
     INSTALLED = ["com.android.chrome", "com.android.chrome.helper", "com.facebook.orca",

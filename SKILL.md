@@ -61,6 +61,10 @@ no hardware and is always the fallback.
 - `wait_for_app(app_id, timeout=10.0, interval=0.3)` - Poll until `app_id` is the foreground app.
 - `ui()` - The accessibility tree, where the device has one.
 - `tap_ui(query, index=0, exact=False, clickable_only=False)` - Tap an element in the accessibility tree.
+- `targets(query=None, kind=None, exact=False, include_system=False)` - Every actionable element in reading order, numbered. Android includes unlabeled icons; iPhone is OCR text only.
+- `tap_target(query, index=None, exact=False, kind=None, include_system=False)` - Tap a unique labeled target; raises `AmbiguousTarget` when several match.
+- `mark_screen(path=None, targets=None, grid=False, max_marks=120, include_system=False)` - Screenshot with numbered badges over targets; prints the path and returns a MarkSet.
+- `tap_mark(marks, target_id, max_age=60.0)` - Tap a target by badge number from a MarkSet; raises `StaleMark` if the screen changed.
 - `current_app()` - Foreground app id, where the device exposes one.
 - `list_apps(include_system=False)` - Installed app ids.
 - `screen_info()` - `{window, frontmost, img_px}`: bounds, focus, and capture size.
@@ -69,6 +73,33 @@ no hardware and is always the fallback.
 - `tap_image_point(x, y, image_size=None)` - Tap a point taken from a screenshot.
 - `connection_state()` - Backend state string; `"ready"` means usable.
 - `shell(cmd, binary=False, timeout=60)` - Run a shell command on the phone, where the device has a shell.
+
+### Unlabeled controls
+
+`screen()` and `find_text()` only see text. For an icon-only control, number
+every tap target and look at the result:
+
+```python
+mark_screen()          # prints the PNG path; view it, badge 7 is on the icon
+# next script, using the path it printed:
+tap_mark("/tmp/phone-marks-....png", 7)
+```
+
+The MarkSet is saved beside the image and under the run directory by
+`mark_id`, so the next script can pass either the path or the id.
+
+On Android, targets come from the accessibility tree and include unlabeled
+icons. On iPhone, targets are OCR text only; for an icon use the pixel ruler:
+
+```python
+mark_screen(grid=True)   # prints the path
+tap_image_point(950, 120)   # the agent read this point off the ruler
+```
+
+A MarkSet is a snapshot. After an action that changes the screen, call
+`mark_screen()` again. `tap_mark` raises `StaleMark` instead of tapping old
+coordinates. For a labeled target, `tap_target("Sign in")` is one call and
+needs no screenshot.
 
 ## Which phone?
 
@@ -468,9 +499,10 @@ events into it for hands. All coordinates are global macOS screen points.
   `scroll("down")`. `swipe` is unchanged.)
 - `open_app("Notes")` goes through Spotlight.
 - **Home-Screen labels are not tap targets.** `tap_text("Weather")` hits the
-  label and nothing happens; the icon is ~35 points above it. Use
-  `tap_icon("Weather")` (agent helper) on the Home Screen; `tap_text` works
-  for in-app buttons and list rows.
+  label and nothing happens; the icon is ~35 points above it. On Android,
+  `tap_target("Weather")` taps the app icon from the accessibility tree. On
+  iPhone, use `tap_icon("Weather")` (agent helper) on the Home Screen;
+  `tap_text` works for in-app buttons and list rows.
 - **`type_text` pastes; it does not type.** The keystroke path runs through
   iOS autocorrect, which rewrites words as they land ("Thu" becomes "thru").
   Pass `keystrokes=True` for fields that need real key events. The typed text

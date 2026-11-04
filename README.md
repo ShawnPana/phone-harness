@@ -88,10 +88,10 @@ PY
 
 Helpers are pre-imported; [helpers.py](src/phone_harness/helpers.py) has the full list. The agent saves its own helpers in `~/.phone-harness/agent-workspace`.
 
-For an icon with no text, `mark_screen()` numbers every tap target and
-`tap_mark(m, 7)` taps the badge the agent saw. Android gets the targets from
-the accessibility tree; on iPhone, `mark_screen(grid=True)` adds a pixel ruler
-for the agent's own vision.
+For an icon with no text, `mark_screen()` numbers every tap target; after
+viewing the image, `tap_mark(path, 7)` taps the badge the agent saw. Android
+gets the targets from the accessibility tree; on iPhone,
+`mark_screen(grid=True)` adds a pixel ruler for the agent's own vision.
 
 ## Phone Harness Cloud
 

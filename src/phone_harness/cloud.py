@@ -38,6 +38,8 @@ from . import term
 SAVE_WAIT = 90        # seconds to let a stopped profile phone finish closing and saving
 READY_WAIT = 240      # seconds to wait for `ready` before giving the phone back
 LOW_TIME = 120        # warn the script when the session has less than this left
+ADB_SETTLE = 20       # seconds a phone that just became ready may take to answer adb and unlock
+ADB_HANDSHAKE = 4     # seconds one adb connection gets to leave "offline" before it is redone
 # Named, because the sign-in host's CDN refuses urllib's default signature.
 USER_AGENT = "phone-harness-cli"
 
@@ -617,24 +619,52 @@ def _adb_present():
 def ensure_connected(sess, quiet=False):
     """adb connect + unlock, skipped when the link is already up. Every new
     adb connection starts locked, so this runs once per process and again
-    after a drop. -> the adb serial."""
+    after a drop. -> the adb serial.
+
+    A phone that has just become ready can answer adb "offline" for a few
+    seconds, and the service reuses ports across sessions, so a transport
+    this machine still holds for host:port may belong to an earlier phone.
+    Both settle on their own; this waits for them (ADB_SETTLE) instead of
+    calling the phone locked after one try."""
     from .android import _run
     serial = serial_of(sess)
     probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
     if "ph-ok" not in probe:
-        # A link that went `offline` still counts as connected to adb, and
-        # `connect` would answer "already connected": drop it first.
-        _run("disconnect", serial, timeout=10, check=False)
-        out = _run("connect", serial, timeout=20, check=False)
-        if "connected" not in out or "cannot" in out or "failed" in out:
-            raise RuntimeError(f"could not reach the cloud phone at {serial}: {out.strip()} "
-                               "— `phone-harness cloud` shows whether it is still running")
-        _run("-s", serial, "shell", "unlock", sess["link"]["code"], timeout=20, check=False)
-        probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
-        if "ph-ok" not in probe:
-            raise RuntimeError(f"the cloud phone at {serial} stayed locked; its unlock code "
-                               "may have been reset — run `phone-harness cloud use "
-                               f"{sess.get('sid', 'SID')}` to fetch the current one")
+        deadline = time.monotonic() + ADB_SETTLE
+        state = out = ""
+        unlocked_once = False
+        while True:
+            # Drop any transport this machine holds for host:port first: an
+            # `offline` link still counts as connected, and `connect` would
+            # answer "already connected".
+            _run("disconnect", serial, timeout=10, check=False)
+            out = _run("connect", serial, timeout=20, check=False)
+            if "connected" in out and "cannot" not in out and "failed" not in out:
+                # The handshake finishes on its own; reconnecting while it is
+                # pending only starts it over, so wait for it here.
+                handshake = min(deadline, time.monotonic() + ADB_HANDSHAKE)
+                state = _run("-s", serial, "get-state", timeout=10, check=False).strip()
+                while state != "device" and time.monotonic() < handshake:
+                    time.sleep(0.25)
+                    state = _run("-s", serial, "get-state", timeout=10, check=False).strip()
+                if state == "device":
+                    _run("-s", serial, "shell", "unlock", sess["link"]["code"], timeout=20, check=False)
+                    unlocked_once = True
+                    probe = _run("-s", serial, "shell", "echo", "ph-ok", timeout=15, check=False)
+                    if "ph-ok" in probe:
+                        break
+            if time.monotonic() >= deadline:
+                sid = sess.get("sid", "SID")
+                if unlocked_once:
+                    raise RuntimeError(f"the cloud phone at {serial} stayed locked; its unlock code "
+                                       "may have been reset — run `phone-harness cloud use "
+                                       f"{sid}` to fetch the current one")
+                if "connected" not in out or "cannot" in out or "failed" in out:
+                    raise RuntimeError(f"could not reach the cloud phone at {serial}: {out.strip()} "
+                                       "— `phone-harness cloud` shows whether it is still running")
+                raise RuntimeError(f"the cloud phone at {serial} did not answer adb within "
+                                   f"{ADB_SETTLE}s — run `phone-harness cloud use {sid}` to try again")
+            time.sleep(0.5)
     left = (sess.get("expires_at") or 0) - time.time()
     if not quiet and 0 < left < LOW_TIME:
         print(term.note(
@@ -891,7 +921,11 @@ def _wait_ready(sid):
         if line != shown:
             print(term.note(f"  … {line}"))
             shown = line
-        time.sleep(2)
+        # Look often once the phone is due, so `ready` is seen within half a
+        # second rather than up to two; rarely while the wait is long.
+        eta = prog.get("eta_seconds")
+        due = prog.get("still_starting") or not isinstance(eta, (int, float)) or eta <= 5
+        time.sleep(0.5 if due else 2)
 
 
 # --- login -------------------------------------------------------------------

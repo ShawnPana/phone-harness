@@ -146,9 +146,14 @@ def _doctor_android():
     _check("scrcpy found (optional: live mirror during `android awake`)",
            bool(shutil.which("scrcpy")), _SCRCPY_INSTALL + " — not required", fatal=False)
 
-    from . import android
+    from . import android, cloud
     phone = android.Android()
-    state = phone.send("session.state")
+    try:
+        state = phone.send("session.state")
+    except (android.PrimaryUnreachable, cloud.CloudPhoneError) as e:
+        # session.state raises these rather than hide them; the message is the hint.
+        _check("a phone is reachable and ready", False, str(e))
+        return
     hints = {
         "no-device": "plug in with USB debugging on and tap Allow, or "
                      "Wireless debugging + `phone-harness android pair CODE`",

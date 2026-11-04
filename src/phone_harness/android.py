@@ -286,7 +286,10 @@ class Android(Backend):
             if chosen is None:
                 raise PrimaryUnreachable(
                     f"The primary Android phone {primary_name!r} is unreachable. "
-                    "This did not connect to another phone.")
+                    "This did not connect to another phone. Plug it in, or turn on "
+                    "Wireless debugging with it on this Wi-Fi. To use a different phone: "
+                    "`phone-harness android use NAME`, or "
+                    f"`phone-harness android forget {primary_name}`.")
             return finish(chosen)
 
         def pick(ready):

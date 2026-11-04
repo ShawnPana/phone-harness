@@ -63,6 +63,25 @@ class BackendContract(unittest.TestCase):
                                     f"but {method.__qualname__} does not take it")
         self.assertEqual(problems, [])
 
+    def test_type_text_helper_sends_clear_and_replace(self):
+        from phone_harness import helpers
+        recorded = []
+        old_send = helpers.send
+        helpers.send = lambda op, **kw: recorded.append((op, kw))
+        self.addCleanup(setattr, helpers, "send", old_send)
+
+        helpers.type_text("foo")
+        self.assertEqual(recorded[-1], ("input.text", {"s": "foo", "delay": 0.03, "keystrokes": False, "clear": False}))
+
+        helpers.type_text("bar", clear=True)
+        self.assertEqual(recorded[-1], ("input.text", {"s": "bar", "delay": 0.03, "keystrokes": False, "clear": True}))
+
+        helpers.type_text("baz", replace=True)
+        self.assertEqual(recorded[-1], ("input.text", {"s": "baz", "delay": 0.03, "keystrokes": False, "clear": True}))
+
+        helpers.clear_text()
+        self.assertEqual(recorded[-1], ("input.text", {"s": "", "delay": 0.03, "keystrokes": False, "clear": True}))
+
 
 if __name__ == "__main__":
     unittest.main()

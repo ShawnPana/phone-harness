@@ -151,7 +151,9 @@ class FakeMirror:
     def press(self, combo):
         self.actions.append("press")
 
-    def type_text(self, text, delay=0.03, keystrokes=False):
+    def type_text(self, text, delay=0.03, keystrokes=False, clear=False):
+        if clear:
+            self.actions.append("clear")
         self.actions.append("type")
 
     def activate(self):

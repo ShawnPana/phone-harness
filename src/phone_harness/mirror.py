@@ -791,17 +791,24 @@ def _type_keystrokes(text, delay=0.03):
             time.sleep(delay)
 
 
-def type_text(text, delay=0.03, keystrokes=False):
+def type_text(text, delay=0.03, keystrokes=False, clear=False):
     """Type text into the focused iOS field.
 
     Pastes by default, which is immune to both autocorrect and keyboard layout
     -- the text arrives exactly as given. Set keystrokes=True for fields that
     need real key events.
 
+    clear=True selects all and deletes existing content before typing.
+
     Either path needs a focused field. Neither can tell whether it got one:
     text sent to an unfocused field goes nowhere, silently, so verify with a
     capture afterwards.
     """
+    if clear:
+        press("cmd+a")
+        time.sleep(0.05)
+        press("delete")
+        time.sleep(0.05)
     if keystrokes or not text:
         return _type_keystrokes(text, delay)
     paste_with(press, text)

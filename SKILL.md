@@ -85,8 +85,8 @@ mark_screen()          # prints the PNG path; view it, badge 7 is on the icon
 tap_mark("/tmp/phone-marks-....png", 7)
 ```
 
-The MarkSet is saved beside the image and under the run directory by
-`mark_id`, so the next script can pass either the path or the id.
+The image and MarkSet are saved under the run directory by `mark_id`, so the
+next script can pass either the printed path or the id. Images are kept.
 
 On Android, targets come from the accessibility tree and include unlabeled
 icons. On iPhone, targets are OCR text only; for an icon use the pixel ruler:

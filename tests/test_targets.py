@@ -121,13 +121,36 @@ class TreeTargets(unittest.TestCase):
         self.assertEqual(
             len(t.from_tree([system], include_system=True, screen=SCREEN)), 1)
 
-    def test_a_full_screen_unlabeled_scroll_is_skipped(self):
+    def test_scroll_containers_are_not_tap_targets(self):
         full = node("android.widget.ScrollView", scrollable=True,
                     x=540, y=1200, w=1080, h=2400)
         self.assertEqual(t.from_tree([full], screen=SCREEN), [])
         inner = node("android.widget.ScrollView", scrollable=True,
                      x=540, y=1200, w=400, h=400)
-        self.assertEqual(len(t.from_tree([inner], screen=SCREEN)), 1)
+        self.assertEqual(t.from_tree([inner], screen=SCREEN), [])
+
+    def test_a_thin_full_width_unlabeled_divider_is_skipped(self):
+        divider = node("android.widget.FrameLayout", clickable=True,
+                       x=540, y=1000, w=1080, h=88)
+        self.assertEqual(t.from_tree([divider], screen=SCREEN), [])
+
+    def test_an_app_bar_and_its_title_wrapper_are_skipped(self):
+        nodes = [
+            node("android.widget.FrameLayout", clickable=True,
+                 id="com.example:id/action_bar_container",
+                 x=540, y=200, w=1080, h=401),
+            node("android.widget.LinearLayout", clickable=True,
+                 x=230, y=315, w=319, h=117, depth=1, parent=0),
+            node("android.widget.TextView", text="Settings",
+                 x=230, y=315, w=319, h=117, depth=2, parent=1),
+            node("android.widget.FrameLayout", clickable=True,
+                 id="com.example:id/header_view",
+                 x=540, y=478, w=1080, h=154),
+            node("android.widget.TextView", text="Search settings",
+                 x=600, y=478, w=800, h=60, depth=1, parent=3),
+        ]
+        items = t.from_tree(nodes, screen=SCREEN)
+        self.assertEqual([i["label"] for i in items], ["Search settings"])
 
 
 class TextTargets(unittest.TestCase):

@@ -409,10 +409,11 @@ def mark_screen(path=None, targets=None, grid=False, max_marks=120,
                 include_system=False):
     """Capture the screen with numbered badges over every tap target.
 
-    Prints the PNG path and returns a MarkSet. The MarkSet is also written
-    beside the image and under the run directory by mark_id, so the next
-    script can call tap_mark(path, 7) or tap_mark(mark_id, 7) after the agent
-    has looked at the picture. `targets=` accepts a filtered list such as
+    Prints the PNG path and returns a MarkSet. By default the image is kept
+    under the run directory as run/marks/<mark_id>.png; the MarkSet is written
+    beside it and as run/marks/<mark_id>.json, so the next script can call
+    tap_mark(path, 7) or tap_mark(mark_id, 7) after the agent has looked at
+    the picture. `targets=` accepts a filtered list such as
     targets(kind="icon"); badges keep the original ids.
 
     `grid=True` adds a pixel ruler labelled in image pixels, for things that
@@ -431,9 +432,7 @@ def mark_screen(path=None, targets=None, grid=False, max_marks=120,
     if not window:
         raise RuntimeError("no device window to mark")
     from . import marks as _marks
-    out_path, img_px, omitted = _marks.draw_marks(
-        image_path, items, window, grid=grid, max_marks=max_marks,
-        out_path=path)
+    img_px = _marks.image_size(image_path)
 
     try:
         app = current_app()
@@ -443,9 +442,19 @@ def mark_screen(path=None, targets=None, grid=False, max_marks=120,
     coverage_name = _coverage(items)
     if targets is not None and not items:
         coverage_name = "tree" if supports("tree") else "text"
+    mark_id = _mark_id(app, orientation, img_px, coverage_name, items)
+    if path is None:
+        folder = _marks_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{mark_id}.png"
+
+    out_path, img_px, omitted = _marks.draw_marks(
+        image_path, items, window, grid=grid, max_marks=max_marks,
+        out_path=path)
+
     mark = {
         "schema": 1,
-        "mark_id": _mark_id(app, orientation, img_px, coverage_name, items),
+        "mark_id": mark_id,
         "path": out_path,
         "targets": items,
         "img_px": list(img_px),

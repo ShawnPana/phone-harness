@@ -40,6 +40,7 @@ def from_tree(nodes, include_system=False, screen=None):
         children.setdefault(node.get("parent"), []).append(i)
 
     candidates = {i for i, node in enumerate(nodes) if _is_candidate(node)}
+    bars = {i for i in candidates if _is_bar_container(nodes[i])}
     records = []
     for i in sorted(candidates):
         node = nodes[i]
@@ -49,9 +50,31 @@ def from_tree(nodes, include_system=False, screen=None):
             continue
         label, source = _label(i, nodes, children, candidates)
         kind = _kind(node)
+        if i in bars:
+            # An app-bar container is a layout, not a tap target. Its icon and
+            # button children are separate candidates and stay.
+            continue
+        if (kind == "control" and _inside_bar(i, nodes, bars)
+                and not (node.get("text") or "").strip()
+                and not (node.get("desc") or "").strip()
+                and not _searchish(node)):
+            # A clickable title wrapper inside the app bar. Keep search
+            # headers: "header_view" is the real search field.
+            continue
+        if kind == "scroll":
+            # A scroll container is not a tap target. scroll(at=...) accepts
+            # any row box, so numbering the container only adds a badge that
+            # sits on top of the first row.
+            continue
         area = max(0, node.get("w", 0)) * max(0, node.get("h", 0))
-        if (label is None and kind in ("control", "scroll") and screen
+        if (label is None and kind == "control" and screen
                 and area > 0.8 * screen["w"] * screen["h"]):
+            continue
+        if (label is None and kind == "control" and screen
+                and node["h"] <= max(24, screen["h"] * 0.05)
+                and node["w"] >= 0.8 * screen["w"]):
+            # A thin full-width unlabeled clickable row is a divider, not a
+            # control. Real rows carry a label from their child text.
             continue
         target = _target(node, label, source, kind)
         records.append({
@@ -152,6 +175,29 @@ def _is_candidate(node):
     return False
 
 
+def _is_bar_container(node):
+    rid = (node.get("id") or "").lower()
+    return any(rid.endswith(suffix) for suffix in (
+        "action_bar_container", "actionbar", "appbar", "toolbar"))
+
+
+def _inside_bar(index, nodes, bars):
+    parent = nodes[index].get("parent")
+    seen = set()
+    while parent is not None and parent not in seen and parent < len(nodes):
+        if parent in bars:
+            return True
+        seen.add(parent)
+        parent = nodes[parent].get("parent")
+    return False
+
+
+def _searchish(node):
+    text = " ".join((node.get("id") or "", node.get("text") or "",
+                     node.get("desc") or "")).lower()
+    return "search" in text or "header" in text
+
+
 def _kind(node):
     cls = (node.get("class") or "").lower()
     if any(k in cls for k in _INPUT_CLASSES):
@@ -186,8 +232,15 @@ def _label(index, nodes, children, candidates):
 
     parts = []
     sources = set()
+    blocked = set()
     for child in _descendants(index, children):
+        if child in blocked:
+            continue
         if child in candidates:
+            # A clickable child is its own target; do not mine its text for
+            # the parent. Block its whole subtree, not just the child, or a
+            # scroll container would inherit every row label below it.
+            blocked.update(_descendants(child, children))
             continue
         child_node = nodes[child]
         child_text = (child_node.get("text") or "").strip()

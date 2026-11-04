@@ -9,6 +9,13 @@ import os
 import tempfile
 
 
+def image_size(path):
+    """Pixel size of a capture, without pulling Pillow into helpers."""
+    from PIL import Image
+    with Image.open(path) as image:
+        return image.size
+
+
 def draw_marks(image_path, targets, window, grid=False, max_marks=120,
                out_path=None):
     """Annotate `image_path` and return (path, (width, height), omitted).

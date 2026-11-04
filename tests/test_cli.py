@@ -510,7 +510,7 @@ class DoctorSuggestsCloud(unittest.TestCase):
         from phone_harness import admin
         out = io.StringIO()
         with mock.patch.object(admin, "_doctor_android",
-                               lambda: admin._check("adb found", False)), \
+                               lambda: ["adb found"]), \
                 contextlib.redirect_stdout(out):
             code = admin.run_doctor("android")
         self.assertEqual(code, 1)
@@ -523,7 +523,7 @@ class DoctorSuggestsCloud(unittest.TestCase):
         from phone_harness import admin
         out = io.StringIO()
         with mock.patch.object(admin, "_doctor_android",
-                               lambda: admin._check("adb found", True)), \
+                               lambda: []), \
                 contextlib.redirect_stdout(out):
             self.assertEqual(admin.run_doctor("android"), 0)
         self.assertNotIn("cloud login", out.getvalue())

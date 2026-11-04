@@ -392,9 +392,10 @@ def _load_marks(marks):
         return marks
     if isinstance(marks, (str, Path)):
         path = Path(marks)
-        if path.suffix == ".png":
+        suffix = path.suffix.lower()
+        if suffix == ".png":
             path = Path(str(path) + ".json")
-        elif path.suffix != ".json":
+        elif suffix != ".json":
             path = _marks_dir() / f"{marks}.json"
         try:
             return json.loads(path.read_text())

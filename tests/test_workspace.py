@@ -183,6 +183,14 @@ def _build_wheel(directory):
 class PackagedWorkspace(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # uv venvs often ship without pip. `python -m pip` then errors with
+        # "No module named pip" and fails the class; skip instead.
+        probe = subprocess.run(
+            [sys.executable, "-c", "import pip"],
+            capture_output=True)
+        if probe.returncode != 0:
+            raise unittest.SkipTest(
+                f"pip is not importable in sys.executable ({sys.executable})")
         cls._tmp = tempfile.TemporaryDirectory()
         cls.out = Path(cls._tmp.name)
         # Build with a secret-shaped .env beside the defaults, the way a

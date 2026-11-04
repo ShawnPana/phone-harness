@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+PH_EXPERIMENT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "$(uname -s)" != Darwin ]; then
+    echo 'The native experiment requires macOS and Xcode Command Line Tools.' >&2
+    exit 1
+fi
+PH_EXPERIMENT_SDK=${PH_MIRRORING_SDK:-$(xcrun --sdk macosx --show-sdk-path)}
+xcrun clang -isysroot "$PH_EXPERIMENT_SDK" -fobjc-arc -Wall -Wextra -Werror \
+    -framework Cocoa -framework ApplicationServices \
+    "$PH_EXPERIMENT_DIR/native/mirror_events.m" \
+    -o "$PH_EXPERIMENT_DIR/native/mirror_events"

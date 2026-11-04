@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+PH_EXPERIMENT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PH_CHECKOUT_DIR=$(CDPATH= cd -- "$PH_EXPERIMENT_DIR/../.." && pwd)
+if [ "$(uname -s)" != Darwin ]; then
+    echo 'This experiment requires macOS and iPhone Mirroring.' >&2
+    exit 1
+fi
+if [ ! -x "$PH_EXPERIMENT_DIR/native/mirror_events" ]; then
+    echo 'Build the native helper with experiments/iphone-mirroring/build first.' >&2
+    exit 1
+fi
+export PH_AGENT_WORKSPACE="$PH_EXPERIMENT_DIR"
+export PHONE_HARNESS_PLATFORM=ios
+export PHONE_HARNESS_BACKGROUND=1
+export PHONE_HARNESS_TELEMETRY=0
+export PHONE_HARNESS_NO_UPDATE_CHECK=1
+export PYTHONPATH="$PH_CHECKOUT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "${PH_MIRRORING_PYTHON:-python3}" -m phone_harness.run "$@"

@@ -473,8 +473,9 @@ events into it for hands. All coordinates are global macOS screen points.
   for in-app buttons and list rows.
 - **`type_text` pastes; it does not type.** The keystroke path runs through
   iOS autocorrect, which rewrites words as they land ("Thu" becomes "thru").
-  Pass `keystrokes=True` for fields that need real key events. The typed text
-  stays on the Mac clipboard afterwards. If a tap will not take focus,
+  Pass `keystrokes=True` for fields that need real key events. The Mac
+  clipboard is restored about two seconds after the paste, so typed secrets
+  do not linger (`ios.restore_clipboard=false` keeps the text there). If a tap will not take focus,
   `press("tab")` moves between fields.
 - **What the harness cannot clear is physical.** Connect only works while
   the iPhone is locked; "iPhone in Use" and "Timed Out ... due to iPhone use"

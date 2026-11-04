@@ -88,8 +88,8 @@ DEFAULTS = {
         "phone": "",           # what a bare `cloud start` names: a catalog id or label; empty = the service's unnamed start
     },
     "ios": {
-        "restore_clipboard": False,   # put the old clipboard back after a paste
-        "paste_settle": 2.0,          # ...after this many seconds, if so
+        "restore_clipboard": True,    # put the old clipboard back after a paste, so typed secrets don't linger
+        "paste_settle": 2.0,          # ...after this many seconds
     },
 }
 

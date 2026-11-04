@@ -746,14 +746,15 @@ def paste_with(press_fn, text):
     pid) and only the caller knows which is in play. The clipboard round-trip
     itself is identical, and worth having in exactly one place.
 
-    The typed text stays on the Mac clipboard afterwards. Restoring the
-    previous contents was a race: the phone pulls the clipboard through the
-    Mirroring session some unknown time after cmd+v, and nothing reports
-    when it has — restore too early and the phone pastes what was on the
-    clipboard BEFORE (a URL, a token, a password) into the field. A
-    deterministic "your clipboard now holds what was typed" beats a
-    sometimes-leak. Set ios.restore_clipboard=true in config to restore
-    after a generous settle anyway (ios.paste_settle seconds).
+    The clipboard is put back afterwards, so a password or token passed to
+    type_text does not linger there for anything else to read. The phone pulls
+    the clipboard through the Mirroring session some unknown time after cmd+v
+    and nothing reports when it has, so the restore waits ios.paste_settle
+    seconds first: restoring too early would paste the previous contents (a
+    URL, a token, a password) into the field. If the clipboard no longer holds
+    the typed text by then, the user copied something in the meantime and it
+    is left alone. Set ios.restore_clipboard=false to leave the typed text on
+    the clipboard instead.
     """
     from . import config
     prior = subprocess.run(["pbpaste"], capture_output=True).stdout
@@ -761,11 +762,16 @@ def paste_with(press_fn, text):
     # Fail here rather than pasting stale clipboard contents into the phone.
     if subprocess.run(["pbpaste"], capture_output=True).stdout != text.encode():
         raise RuntimeError("clipboard did not take the text; cannot paste")
-    time.sleep(0.15)   # the Mac clipboard has to reach the phone
-    press_fn("cmd+v")
-    if config.get("ios.restore_clipboard"):
-        time.sleep(float(config.get("ios.paste_settle")))
-        subprocess.run(["pbcopy"], input=prior)
+    try:
+        time.sleep(0.15)   # the Mac clipboard has to reach the phone
+        press_fn("cmd+v")
+        if config.get("ios.restore_clipboard"):
+            time.sleep(float(config.get("ios.paste_settle")))
+    finally:
+        if config.get("ios.restore_clipboard"):
+            current = subprocess.run(["pbpaste"], capture_output=True).stdout
+            if current == text.encode():
+                subprocess.run(["pbcopy"], input=prior)
 
 
 def _type_keystrokes(text, delay=0.03):

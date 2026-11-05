@@ -18,11 +18,13 @@ live inside one backend each, behind the ops documented in transport.py, so
 `nav.home` and `screen.text` mean the same thing everywhere even though an
 iPhone answers them with a Cmd+1 keystroke and Vision OCR.
 """
-import hashlib, importlib.util, time
+import hashlib, importlib.util, json, time
 from pathlib import Path
 
-from . import transport
-from .transport import Unsupported          # re-exported for agent scripts
+from . import config, transport
+from .transport import TreeUnavailable, Unsupported   # re-exported for scripts
+from .targets import (coverage as _coverage, filter_targets, from_text,
+                      from_tree, mark_id as _mark_id)
 from .workspace import agent_workspace, repo_root
 
 CORE_DIR = Path(__file__).resolve().parent
@@ -34,6 +36,22 @@ AGENT_WORKSPACE = agent_workspace()
 # this one.
 phone = transport.connect()
 connect = transport.connect
+
+
+class StaleMark(RuntimeError):
+    """The MarkSet no longer matches the screen. Call mark_screen() again."""
+
+
+class AmbiguousTarget(RuntimeError):
+    """More than one target matches. Pick one with index=."""
+
+    def __init__(self, message, candidates):
+        super().__init__(message)
+        self.candidates = candidates
+
+
+class TargetDisabled(RuntimeError):
+    """The target is on screen but disabled; tapping it would do nothing."""
 
 
 def send(op, **kw):
@@ -258,6 +276,253 @@ def tap_ui(query, index=0, exact=False, clickable_only=False):
                    for n in nodes if n["text"] or n["desc"] or n["id"]][:30]
         raise RuntimeError(f"no element matches {query!r}; saw: {visible}")
     return tap_node(hits[index])
+
+
+# --- tap targets -------------------------------------------------------------
+#
+# screen() sees text. targets() sees everything tappable: on Android that
+# includes an ImageButton with no text, a content-description or a resource-id
+# to name it. iPhone has no tree for phone content, so its targets are OCR
+# text only; mark_screen(grid=True) gives the agent a pixel ruler for icons.
+#
+# A MarkSet is a snapshot. It is passed to tap_mark explicitly instead of
+# living in a module global, so badge 7 can never be reinterpreted against a
+# different screen.
+
+def _read_targets(include_system=False):
+    """Tree targets where the device has a tree, text targets otherwise."""
+    bounds = find_window()
+    if supports("tree"):
+        try:
+            nodes = ui()
+        except TreeUnavailable:
+            nodes = None
+        if nodes is not None:
+            return from_tree(nodes, include_system=include_system, screen=bounds)
+    return from_text(screen(), include_system=include_system, screen=bounds)
+
+
+def targets(query=None, kind=None, exact=False, include_system=False):
+    """Every actionable element in reading order, numbered 1..N.
+
+    On Android the list comes from the accessibility tree and includes
+    unlabeled icons. On iPhone it is OCR text only. Filters keep the original
+    ids, so targets(kind="icon") is a subset of the same numbering.
+
+    `query` matches label, text, desc, id_hint, kind and role. `kind` accepts
+    one string or an iterable. `include_system=True` keeps status/navigation
+    bar targets that are dropped by default.
+    """
+    return filter_targets(_read_targets(include_system=include_system),
+                          query=query, kind=kind, exact=exact)
+
+
+def tap_target(query, index=None, exact=False, kind=None,
+               include_system=False):
+    """Tap a target by label, text, content-description or id hint.
+
+    Acts only on a unique match. If several match, raises AmbiguousTarget
+    with the candidates; pass index= to choose one explicitly. `index` is the
+    position among the matches, not a target id. `exact=True` disables the
+    substring fallback.
+    """
+    items = _read_targets(include_system=include_system)
+    pool = filter_targets(items, kind=kind)
+    hits = filter_targets(pool, query=query, exact=True)
+    if not hits and not exact:
+        hits = filter_targets(pool, query=query, exact=False)
+    if not hits:
+        visible = [t.get("label") or t.get("id_hint") or t["kind"]
+                   for t in pool][:30]
+        raise RuntimeError(f"no target matches {query!r}; saw: {visible}")
+    if len(hits) > 1 and index is None:
+        candidates = [{"id": t["id"], "label": t.get("label"),
+                       "kind": t["kind"], "x": t["x"], "y": t["y"]}
+                      for t in hits]
+        names = ", ".join(f"#{t['id']} {t.get('label') or t['kind']}"
+                          for t in hits[:10])
+        raise AmbiguousTarget(
+            f"{len(hits)} targets match {query!r}: {names}; pass index= to "
+            "choose one", candidates)
+    if index is not None:
+        if not 0 <= index < len(hits):
+            raise RuntimeError(
+                f"index {index} is out of range; {len(hits)} targets match "
+                f"{query!r}")
+        hit = hits[index]
+    else:
+        hit = hits[0]
+    if not hit.get("enabled", True):
+        raise TargetDisabled(
+            f"target #{hit['id']} {hit.get('label') or hit['kind']} is disabled")
+    tap(hit["x"], hit["y"])
+    return hit
+
+
+def _marks_dir():
+    return config.run_dir() / "marks"
+
+
+def _save_marks(mark):
+    """Keep the MarkSet for the next script, where the Python variable is gone.
+
+    The sidecar sits beside the image, and a copy under the run directory is
+    keyed by mark_id. Both are best-effort: the in-process dict still works
+    when neither write succeeds.
+    """
+    payload = json.dumps(mark)
+    try:
+        Path(str(mark["path"]) + ".json").write_text(payload)
+    except OSError:
+        pass
+    folder = _marks_dir()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{mark['mark_id']}.json").write_text(payload)
+        old = sorted(folder.glob("m*.json"),
+                     key=lambda p: p.stat().st_mtime, reverse=True)[20:]
+        for path in old:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _load_marks(marks):
+    if isinstance(marks, dict):
+        return marks
+    if isinstance(marks, (str, Path)):
+        path = Path(marks)
+        suffix = path.suffix.lower()
+        if suffix == ".png":
+            path = Path(str(path) + ".json")
+        elif suffix != ".json":
+            path = _marks_dir() / f"{marks}.json"
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"cannot read MarkSet {path}: {exc}") from exc
+    raise RuntimeError(
+        "tap_mark needs the MarkSet, the path mark_screen() printed, or its mark_id")
+
+
+def mark_screen(path=None, targets=None, grid=False, max_marks=120,
+                include_system=False):
+    """Capture the screen with numbered badges over every tap target.
+
+    Prints the PNG path and returns a MarkSet. By default the image is kept
+    under the run directory as run/marks/<mark_id>.png; the MarkSet is written
+    beside it and as run/marks/<mark_id>.json, so the next script can call
+    tap_mark(path, 7) or tap_mark(mark_id, 7) after the agent has looked at
+    the picture. `targets=` accepts a filtered list such as
+    targets(kind="icon"); badges keep the original ids.
+
+    `grid=True` adds a pixel ruler labelled in image pixels, for things that
+    are not targets, especially iPhone icons. Use it with tap_image_point().
+    `max_marks` caps how many badges are drawn; the rest stay in the MarkSet
+    and are counted in "omitted".
+    """
+    if targets is None:
+        items = _read_targets(include_system=include_system)
+        complete = _coverage(items) == "tree" or not supports("tree")
+    else:
+        items = list(targets)
+        complete = True
+
+    image_path, window = send("screen.capture")
+    if not window:
+        raise RuntimeError("no device window to mark")
+    from . import marks as _marks
+    img_px = _marks.image_size(image_path)
+
+    try:
+        app = current_app()
+    except (Unsupported, RuntimeError):
+        app = None
+    orientation = "landscape" if img_px[0] > img_px[1] else "portrait"
+    coverage_name = _coverage(items)
+    if targets is not None and not items:
+        coverage_name = "tree" if supports("tree") else "text"
+    mark_id = _mark_id(app, orientation, img_px, coverage_name, items)
+    if path is None:
+        folder = _marks_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{mark_id}.png"
+
+    out_path, img_px, omitted = _marks.draw_marks(
+        image_path, items, window, grid=grid, max_marks=max_marks,
+        out_path=path)
+
+    mark = {
+        "schema": 1,
+        "mark_id": mark_id,
+        "path": out_path,
+        "targets": items,
+        "img_px": list(img_px),
+        "window": {"x": window["x"], "y": window["y"],
+                   "w": window["w"], "h": window["h"]},
+        "app": app,
+        "orientation": orientation,
+        "coverage": coverage_name,
+        "complete": complete,
+        "omitted": omitted,
+        "created_at": time.time(),
+    }
+    _save_marks(mark)
+    print(out_path)
+    return mark
+
+
+def tap_mark(marks, target_id, max_age=60.0):
+    """Tap target `target_id` (the badge number) from a mark_screen() result.
+
+    `marks` may be the MarkSet dict, the PNG path mark_screen() printed, or
+    its mark_id. The path and id forms are how a later script picks up the
+    snapshot after the agent has looked at the image.
+
+    Fails with StaleMark when the MarkSet is too old, the foreground app
+    changed, or the screen bounds changed. It never re-reads the tree and
+    never reinterprets the number against a different screen. Re-run
+    mark_screen() after any action that changes what is on screen.
+    """
+    marks = _load_marks(marks)
+    if not isinstance(marks, dict) or marks.get("schema") != 1:
+        raise RuntimeError("tap_mark needs the MarkSet returned by mark_screen()")
+    try:
+        target_id = int(target_id)
+    except (TypeError, ValueError):
+        pass
+    items = marks.get("targets") or []
+    hit = next((t for t in items if t.get("id") == target_id), None)
+    if hit is None:
+        ids = [t.get("id") for t in items]
+        raise RuntimeError(
+            f"no target {target_id!r} in this mark set; ids: {ids[:20]}")
+    if not hit.get("enabled", True):
+        raise TargetDisabled(
+            f"target #{hit['id']} {hit.get('label') or hit['kind']} is disabled")
+
+    age = time.time() - float(marks.get("created_at") or 0)
+    if age > max_age:
+        raise StaleMark(
+            f"this mark set is {age:.0f}s old; call mark_screen() again")
+    app = marks.get("app")
+    if app is not None:
+        try:
+            now_app = current_app()
+        except (Unsupported, RuntimeError):
+            now_app = None
+        if now_app is not None and now_app != app:
+            raise StaleMark(
+                f"the foreground app changed from {app!r} to {now_app!r}; "
+                "call mark_screen() again")
+    want = marks.get("window") or {}
+    now = find_window()
+    if not now or any(now.get(k) != want.get(k) for k in ("x", "y", "w", "h")):
+        raise StaleMark(
+            "the screen bounds changed since mark_screen(); call it again")
+
+    tap(hit["x"], hit["y"])
+    return hit
 
 
 # --- input ------------------------------------------------------------------

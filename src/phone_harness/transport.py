@@ -89,6 +89,16 @@ class Unsupported(RuntimeError):
     """
 
 
+class TreeUnavailable(RuntimeError):
+    """The device has a tree, but this screen will not produce one.
+
+    Android's uiautomator waits for the UI to go idle and refuses on screens
+    that never do: a playing video, some Settings pages. Distinct from
+    Unsupported, because the capability exists and another screen will answer.
+    Callers fall back to screen() text instead of giving up on the device.
+    """
+
+
 OP_NAMES = (
     "screen.capture", "screen.bounds", "screen.require",
     "screen.text", "screen.text_pixels",

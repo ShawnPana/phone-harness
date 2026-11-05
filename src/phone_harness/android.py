@@ -43,7 +43,7 @@ from datetime import datetime, timezone
 
 from . import config
 from . import term
-from .transport import Backend, Unsupported
+from .transport import Backend, TreeUnavailable, Unsupported
 
 # Apple's Vision OCR ships with the iPhone backend; on a Mac it can read an
 # Android screenshot too, so a screen the accessibility tree cannot describe
@@ -184,10 +184,6 @@ def _remember(cfg, serial, model, host=None, name=None, primary=False):
         cfg["primary"] = key
     _store(cfg)
     return key
-
-
-class TreeUnavailable(RuntimeError):
-    """uiautomator would not dump this screen; retrying will not change that."""
 
 
 class PrimaryUnreachable(RuntimeError):
@@ -675,12 +671,20 @@ class Android(Backend):
     # --- tree / raw ---------------------------------------------------------
 
     def _tree(self):
-        """[{text, desc, id, class, clickable, x, y, w, h}] from
-        `uiautomator dump`. uiautomator waits about ten seconds for the UI to
-        go idle and then refuses ("could not get idle state"); a screen that
-        never idles — a playing video, some Settings pages — answers that
-        every time, so it is asked once and remembered. Other failures (a
-        transition mid-dump, a truncated tree) are retried briefly."""
+        """[{text, desc, id, class, clickable, long_clickable, scrollable,
+        enabled, selected, checked, checkable, password, package, depth,
+        parent, x, y, w, h}] from `uiautomator dump`.
+
+        uiautomator waits about ten seconds for the UI to go idle and then
+        refuses ("could not get idle state"); a screen that never idles — a
+        playing video, some Settings pages — answers that every time, so it is
+        asked once and remembered. Other failures (a transition mid-dump, a
+        truncated tree) are retried briefly.
+
+        depth and parent are kept because targets.py needs the hierarchy to
+        aggregate a row's child labels and to tell a wrapper from its child.
+        The extra keys are additive: screen.text, find_nodes and tap_ui only
+        read the fields they already used."""
         self._screen_require()
         self._gate()
         last = None
@@ -710,19 +714,39 @@ class Android(Backend):
         else:
             raise RuntimeError(f"uiautomator dump failed: {last}")
         nodes = []
-        for el in root.iter("node"):
-            m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", el.get("bounds", ""))
-            if not m:
-                continue
-            x1, y1, x2, y2 = map(int, m.groups())
-            nodes.append({
-                "text": el.get("text", ""), "desc": el.get("content-desc", ""),
-                "id": el.get("resource-id", ""),
-                "class": el.get("class", ""),
-                "clickable": el.get("clickable") == "true",
-                "x": (x1 + x2) // 2, "y": (y1 + y2) // 2,
-                "w": x2 - x1, "h": y2 - y1,
-            })
+
+        def walk(parent_el, depth, parent):
+            for el in parent_el.findall("node"):
+                m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                             el.get("bounds", ""))
+                if not m:
+                    continue
+                x1, y1, x2, y2 = map(int, m.groups())
+                index = len(nodes)
+                checkable = el.get("checkable") == "true"
+                nodes.append({
+                    "text": el.get("text", ""),
+                    "desc": el.get("content-desc", ""),
+                    "id": el.get("resource-id", ""),
+                    "class": el.get("class", ""),
+                    "package": el.get("package", ""),
+                    "clickable": el.get("clickable") == "true",
+                    "long_clickable": el.get("long-clickable") == "true",
+                    "scrollable": el.get("scrollable") == "true",
+                    "enabled": el.get("enabled", "true") == "true",
+                    "selected": el.get("selected") == "true",
+                    "checkable": checkable,
+                    "checked": (el.get("checked") == "true"
+                                if checkable else None),
+                    "password": el.get("password") == "true",
+                    "depth": depth,
+                    "parent": parent,
+                    "x": (x1 + x2) // 2, "y": (y1 + y2) // 2,
+                    "w": x2 - x1, "h": y2 - y1,
+                })
+                walk(el, depth + 1, index)
+
+        walk(root, 0, None)
         return nodes
 
     def _raw(self, cmd, binary=False, timeout=60):

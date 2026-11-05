@@ -110,11 +110,26 @@ def screen_info():
 
     On iPhone Mirroring this still works when the session is blocked, as
     long as the mirroring window exists."""
-    from . import ocr as _vision
     path, win = send("screen.capture")
-    w, h = _vision.image_size(path)
+    size = _png_size(path)
+    if size is None:  # not a PNG: only the macOS Vision backend reads it
+        from . import ocr as _vision
+        size = _vision.image_size(path)
+    w, h = size
     return {"window": win, "frontmost": bool(send("focus.probe")[0]),
             "img_px": [w, h]}
+
+
+def _png_size(path):
+    """(width, height) from a PNG's IHDR chunk, or None if it is not a PNG.
+
+    Keeps screen_info() free of the macOS-only `ocr` import (Quartz), so it
+    works for Android and cloud backends on Linux and Windows hosts."""
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
 
 
 def screenshot(path=None):

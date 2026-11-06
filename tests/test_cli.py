@@ -528,6 +528,15 @@ class DoctorSuggestsCloud(unittest.TestCase):
             self.assertEqual(admin.run_doctor("android"), 0)
         self.assertNotIn("cloud login", out.getvalue())
 
+    def test_unknown_platform_rejected(self):
+        import contextlib, io
+        from phone_harness import admin
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = admin.run_doctor("bogus")
+        self.assertEqual(code, 2)
+        self.assertIn("platform must be ios or android", err.getvalue())
+
 
 class DoctorNamesTheHostApp(unittest.TestCase):
     def test_outermost_app_is_named(self):

@@ -556,7 +556,9 @@ class Android(Backend):
     def _launch_by_label(self, name):
         """Tap the icon labelled `name` on the home screen, else in the app
         drawer. -> the package that came to the front, or None."""
-        want = name.strip().lower()
+        want = (name or "").strip().lower()
+        if not want:
+            return None
         self._nav_home()
         launcher = self._apps_current()
         for opened_drawer in (False, True):
@@ -570,7 +572,8 @@ class Android(Backend):
             except RuntimeError:
                 continue
             for n in nodes:
-                if (n["text"] or n["desc"]).strip().lower() == want:
+                label = (n.get("text") or n.get("desc") or "").strip().lower()
+                if label and label == want:
                     self._sh(f"input tap {n['x']} {n['y']}")
                     for _ in range(20):
                         time.sleep(0.25)

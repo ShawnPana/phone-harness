@@ -139,6 +139,18 @@ class Launch(unittest.TestCase):
                 self.assertEqual(got, pkg)
                 self.assertEqual(last, f"am start -W -n {pkg}/.Main")
 
+    def test_launch_by_label_empty_or_whitespace_returns_none(self):
+        phone = Recorded(self.INSTALLED)
+        self.assertIsNone(phone._launch_by_label(""))
+        self.assertIsNone(phone._launch_by_label("   "))
+        self.assertEqual(phone.sent, [])
+
+    def test_launch_by_label_handles_none_text_and_desc(self):
+        phone = Recorded(self.INSTALLED)
+        phone._tree = lambda: [{"text": None, "desc": None, "x": 100, "y": 100}]
+        phone._apps_current = lambda: "com.android.launcher"
+        self.assertIsNone(phone._launch_by_label("NonExistentApp"))
+
 
 class ResolvePrimary(unittest.TestCase):
     """A saved primary that is gone is a failure. Another paired phone is not a substitute."""

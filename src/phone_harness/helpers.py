@@ -363,14 +363,16 @@ def swipe(direction, distance=0.4, at=None):
 
     `at` aims the gesture; defaults to the window centre.
     """
+    if direction not in ("down", "left", "right", "up"):
+        raise ValueError(
+            f"direction must be one of ['down', 'left', 'right', 'up'], "
+            f"got {direction!r}")
+    if distance <= 0:
+        raise ValueError(f"distance must be positive, got {distance!r}")
     w = _win()
     cx, cy = _point(at, w)
     dx = {"left": -1, "right": 1}.get(direction, 0) * w["w"] * distance
     dy = {"up": -1, "down": 1}.get(direction, 0) * w["h"] * distance
-    if not dx and not dy:
-        raise ValueError(
-            f"direction must be one of ['down', 'left', 'right', 'up'], "
-            f"got {direction!r}")
     # Fast, short drag = a momentum flick. A slow drag barely registers on iOS
     # (it won't even flip a Home-Screen page); the flick is what snaps pages
     # and carousels. For scrolling lists use scroll()/scroll_collect() instead.

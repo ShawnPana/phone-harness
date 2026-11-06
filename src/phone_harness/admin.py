@@ -23,6 +23,9 @@ _failures = []
 def run_doctor(platform=None):
     from . import config
     platform = (platform or config.get("platform")).lower()
+    if platform not in ("ios", "android"):
+        print(f"platform must be ios or android, not {platform!r}", file=sys.stderr)
+        return 2
     print(f"phone-harness doctor — {platform}"
           f"{'' if platform == config.get('platform') else '  (default is ' + config.get('platform') + ')'}\n")
     _failures.clear()

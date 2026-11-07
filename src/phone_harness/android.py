@@ -375,9 +375,28 @@ class Android(Backend):
         b = self._screen_bounds()
         return b if b is not None else self._session_require()
 
+    def _lit_display_args(self):
+        """["-d", id] for the one screen that is on, when the phone has more
+        than one screen. Empty when there is nothing to pick."""
+        try:
+            out = self._adb("shell", "dumpsys", "display", timeout=15)
+        except Exception:
+            return []
+        if isinstance(out, bytes):
+            out = out.decode(errors="replace")
+        rows = re.findall(r'uniqueId="local:(\d+)".*?\bstate (\w+)', out)
+        if len({d for d, _ in rows}) < 2:
+            return []
+        lit = sorted({d for d, state in rows if state == "ON"})
+        return ["-d", lit[0]] if len(lit) == 1 else []
+
     def _screen_capture(self, path=None):
         bounds = self._screen_require()
-        png = self._adb("exec-out", "screencap", "-p", binary=True)
+        png = self._adb("exec-out", "screencap", *self._lit_display_args(),
+                        "-p", binary=True)
+        start = png.find(b"\x89PNG")
+        if start > 0:
+            png = png[start:]
         if path is None:
             fd, path = tempfile.mkstemp(prefix="phone-android-", suffix=".png")
             os.close(fd)

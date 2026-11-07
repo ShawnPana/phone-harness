@@ -61,5 +61,92 @@ class AndroidScreenBoundsTests(unittest.TestCase):
             self.assertIsNone(self.phone.send("screen.bounds"))
 
 
+class AndroidScreenCaptureTests(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        self.phone = Android(serial="test-device")
+
+    def test_lit_display_args_single_display(self):
+        dump = (
+            'Display Devices: size=1\n'
+            '  DisplayDeviceInfo{"Built-in Screen": uniqueId="local:0", 1080 x 2400, state ON}\n'
+        )
+        with patch.object(self.phone, "_adb", return_value=dump):
+            self.assertEqual(self.phone._lit_display_args(), [])
+
+    def test_lit_display_args_foldable_one_on(self):
+        dump = (
+            'Display Devices: size=2\n'
+            '  DisplayDeviceInfo{"Inner Display": uniqueId="local:4619827259835644672", 2076 x 2152, state OFF}\n'
+            '  DisplayDeviceInfo{"Outer Display": uniqueId="local:4619827259835644673", 1080 x 2342, state ON}\n'
+        )
+        with patch.object(self.phone, "_adb", return_value=dump):
+            self.assertEqual(self.phone._lit_display_args(), ["-d", "4619827259835644673"])
+
+    def test_lit_display_args_foldable_both_on_or_off(self):
+        dump = (
+            'Display Devices: size=2\n'
+            '  DisplayDeviceInfo{"Inner Display": uniqueId="local:4619827259835644672", 2076 x 2152, state ON}\n'
+            '  DisplayDeviceInfo{"Outer Display": uniqueId="local:4619827259835644673", 1080 x 2342, state ON}\n'
+        )
+        with patch.object(self.phone, "_adb", return_value=dump):
+            self.assertEqual(self.phone._lit_display_args(), [])
+
+    def test_lit_display_args_adb_failure(self):
+        with patch.object(self.phone, "_adb", side_effect=RuntimeError("dumpsys failed")):
+            self.assertEqual(self.phone._lit_display_args(), [])
+
+    def test_screen_capture_strips_warning_prefix(self):
+        warning = (
+            b"[Warning] Multiple displays were found, but no display id was specified!\n"
+            b"Defaulting to the first display found.\n"
+        )
+        valid_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        raw_output = warning + valid_png
+
+        def adb_call(*args, **kwargs):
+            if "dumpsys" in args:
+                return ""
+            if "screencap" in args:
+                return raw_output
+            raise AssertionError(args)
+
+        with patch.object(self.phone, "_screen_require", return_value={"w": 1080, "h": 2342}), \
+             patch.object(self.phone, "_adb", side_effect=adb_call):
+            path, bounds = self.phone._screen_capture()
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+                self.assertNotIn(b"[Warning]", data)
+                self.assertEqual(data, valid_png)
+            finally:
+                if os.path.exists(path):
+                    os.unlink(path)
+
+    def test_screen_capture_passes_display_id_when_available(self):
+        screencap_args = []
+        valid_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+        def adb_call(*args, **kwargs):
+            if "screencap" in args:
+                screencap_args.extend(args)
+                return valid_png
+            raise AssertionError(args)
+
+        with patch.object(self.phone, "_screen_require", return_value={"w": 1080, "h": 2342}), \
+             patch.object(self.phone, "_lit_display_args", return_value=["-d", "4619827259835644673"]), \
+             patch.object(self.phone, "_adb", side_effect=adb_call):
+            path, bounds = self.phone._screen_capture()
+            try:
+                self.assertIn("-d", screencap_args)
+                self.assertIn("4619827259835644673", screencap_args)
+            finally:
+                if os.path.exists(path):
+                    os.unlink(path)
+
+
 if __name__ == "__main__":
     unittest.main()
